@@ -46,12 +46,19 @@ test('Hot finds activity below the viewport on the homepage and in a community, 
   await page.goto('/t/hot-lab');
   await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toBeVisible();
   const firstContent=performance.now()-started;
+  if(await page.locator('[data-route-active="true"] article h2').first().textContent() !== active.content) {
+    await page.getByRole('button',{name:'Show updated posts',exact:true}).click();
+  }
   await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(active.content);
   await page.getByRole('button',{name:'New',exact:true}).click();
   await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(quiet[0].content);
   await page.getByRole('button',{name:'Hot',exact:true}).click();
   await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(active.content);
   await page.goto('/');
+  await expect(page.locator('[data-route-active="true"] article h2').first()).toBeVisible();
+  if(await page.locator('[data-route-active="true"] article h2').first().textContent() !== active.content) {
+    await page.getByRole('button',{name:'Show updated posts',exact:true}).click();
+  }
   await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(active.content);
   expect(modelRequests).toEqual([]);
   await page.screenshot({path:info.outputPath('hot-desktop.png')});
@@ -70,6 +77,10 @@ test('local AI improves a specific interest over social-only ranking and preserv
   await page.goto('/t/hot-ai');
   await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible({timeout:30_000});
   const elapsed=performance.now()-started;
+  // Background AI updates the proposed order without moving painted cards.
+  await expect(page.getByRole('button',{name:'Show updated posts',exact:true})).toBeVisible();
+  expect(await page.locator('[data-route-active="true"] article h2').allTextContents()).toEqual(social);
+  await page.getByRole('button',{name:'Show updated posts',exact:true}).click();
   const ranked=await page.locator('[data-route-active=\"true\"] article h2').allTextContents();
   expect(ranked[0]).toBe(texts[0][0]);expect(new Set(ranked)).toEqual(new Set(texts.map(([title])=>title)));
   expect(social[0]).not.toBe(texts[0][0]);
@@ -86,6 +97,8 @@ test('local AI improves a specific interest over social-only ranking and preserv
   for(const [query,title] of [['repairing a slipping bicycle chain',texts[1][0]],['coffee brewing',texts[2][0]]]) {
     await page.getByLabel('Your interests').fill(query);await page.getByRole('heading',{name:'Hot feed',exact:true}).click();
     await page.goto('/t/hot-ai');await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible({timeout:30_000});
+    const update=page.getByRole('button',{name:'Show updated posts',exact:true});
+    if(await update.isVisible())await update.click();
     await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(title);
     await page.goto('/settings');
   }

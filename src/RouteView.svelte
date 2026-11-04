@@ -57,20 +57,11 @@
   import { hotPreferences } from './lib/hot-preferences';
   import { rankHot, hotQuery, hotCandidates } from './lib/hot';
   import { createHotSession } from './lib/hot-session';
+  import { createFeedPresentation } from './lib/feed-presentation';
   import FeedComposer from './components/FeedComposer.svelte';
-  let initialFeedReady = false;
-  let initialFeedStarted = 0;
-  let initialFeedTimer: ReturnType<typeof setTimeout> | undefined;
-  // Coalesce the first relay bursts before presenting cards, rather than moving
-  // already painted cards each time another part of the initial batch arrives.
-  function prepareInitialFeed(enabled: boolean, rows: Post[]) {
-    if (initialFeedReady || !enabled || !rows.length) return;
-    initialFeedStarted ||= performance.now();
-    clearTimeout(initialFeedTimer);
-    initialFeedTimer = setTimeout(() => { initialFeedReady = true; },
-      Math.max(0, Math.min(120, 480 - (performance.now() - initialFeedStarted))));
-  }
+  const feedPresentation = createFeedPresentation();
   export let active = true;
+  export let returnTo: string | undefined = undefined;
   export let navigate: (path: string) => void;
   type Route = { page: string; value: string; connections?: Relationship; fromTopic?: string };
   function readRoute(): Route {
@@ -177,7 +168,6 @@
   const hotAssistance = createHotSession(), hotObserver = createHotObserver();
   let seenHot = readLocal<string[]>('seenHot', []);
   let baseHot: Post[] = [], ranked: Post[] = [];
-  let heldHot: string[] | undefined;
   let hotRefresh = 0;
   let related = readLocal<boolean>('relatedSearch', true);
   let searchOrder = 'Best match';
@@ -231,6 +221,7 @@
     )
       return;
     e.preventDefault();
+    if (a.dataset.historyBack) { history.back(); return; }
     go(a.pathname + a.search);
   }
   function showModal(name: string) {
@@ -320,7 +311,7 @@
       assistance.reset();
       activeCleanup?.();
       observedCleanup?.();
-      clearTimeout(alertTimer); clearTimeout(initialFeedTimer);
+      clearTimeout(alertTimer); feedPresentation.destroy();
       document.removeEventListener('click', intercept);
       document.removeEventListener('keydown', keypress);
     };
@@ -394,23 +385,21 @@
       return score(b)-score(a) || b.created_at-a.created_at || a.id.localeCompare(b.id);
     });
   $: rankedById = new Map(ranked.map(p=>[p.id,p]));
-  $: heldIds = new Set(heldHot);
-  $: ordered = hotActive && heldHot ? [
-    ...heldHot.map(id=>rankedById.get(id)).filter((p):p is Post=>Boolean(p)),
-    ...ranked.filter(p=>!heldIds.has(p.id)),
-  ] : ranked;
-  $: hotChanged = hotActive && heldHot && ranked.slice(0,limit).some((p,i)=>ordered[i]?.id !== p.id);
-  $: coalesceInitialFeed = hotActive && ['home', 'topic'].includes(route.page);
-  $: if (mounted && active) prepareInitialFeed(coalesceInitialFeed, ranked);
-  $: if (!active) clearTimeout(initialFeedTimer);
-  $: preparingFeed = coalesceInitialFeed && !initialFeedReady && ranked.length > 0;
-  $: visible = preparingFeed ? [] : ordered.slice(0,limit);
-  function holdHotOrder() {
-    if (!active) return;
-    if(hotActive && !heldHot && window.scrollY > 160) heldHot=ranked.map(p=>p.id);
+  $: stableFeed = ['home','topic','following','network','saved','profile'].includes(route.page) && !route.connections;
+  $: if (mounted) feedPresentation.update(`${activeOrder}:${$account?.pubkey || 'guest'}`,
+    ranked.map(p=>p.id), stableFeed && pageVisible);
+  $: ordered = stableFeed ? $feedPresentation.map(id=>rankedById.get(id)).filter((p):p is Post=>Boolean(p)) : ranked;
+  $: feedChanged = stableFeed && ordered.length > 0 && ranked.slice(0,limit).some((p,i)=>ordered[i]?.id !== p.id);
+  $: preparingFeed = stableFeed && !ordered.length && ranked.length > 0;
+  $: visible = ordered.slice(0,limit);
+  function showUpdatedPosts() {
+    feedPresentation.reveal();
+    window.scrollTo({top:0,behavior:'instant'});
   }
   function refreshHot() {
-    heldHot=undefined;hotOptions={...hotOptions,now:Date.now()/1000};hotRefresh++;
+    hotOptions={...hotOptions,now:Date.now()/1000};hotRefresh++;
+    // Let the explicit refresh's ranking settle before one atomic replacement.
+    tick().then(() => feedPresentation.reveal());
     refreshFeed();
     notify('Hot refreshed');
     window.scrollTo({top:0,behavior:'instant'});
@@ -556,7 +545,6 @@
     }
   }
   function changeOrder(name: string) {
-    heldHot = undefined;
     sorting = name;
     writeLocal('sort', name);
   }
@@ -576,7 +564,6 @@
   <button class="outline compact" onclick={() => location.reload()}>Reload page</button>
 {/snippet}
 
-<svelte:window onscroll={holdHotOrder}/>
 <svelte:document onvisibilitychange={() => documentVisible = document.visibilityState === 'visible'} />
 
 <header class="topbar">
@@ -653,7 +640,7 @@
       {#each topics.map((t) => t.slug) as slug (slug)}<a
           class="nav-row topic-row"
           class:active={route.page === 'topic' && route.value === slug}
-          href={topicPath(slug)}><TopicIcon {slug} small />t/{slug}</a
+          href={topicPath(slug)}><TopicIcon {slug} small />{slug}</a
         >{/each}
     </div>
     <a class="nav-row" class:active={route.page === 'settings'} aria-current={route.page === 'settings' ? 'page' : undefined} href="/settings"><Icon name="settings" size={18} />Settings</a>
@@ -743,7 +730,7 @@
             <a href={topicPath(slug)}
               ><TopicIcon {slug} />
               <div>
-                <strong>t/{slug}</strong>
+                <strong>{slug}</strong>
               </div></a
             >
           </div>
@@ -751,13 +738,13 @@
         {#if directoryTopic && !discovered.includes(directoryTopic)}<a
             class="new-topic"
             href={topicPath(directoryTopic)}
-            >Open t/{directoryTopic}
+            >Open {directoryTopic}
             <Icon name="next" size={15} /></a
           >{/if}
       </section>
     {:else if route.page === 'thread'}
-      <a class="back-link" href={threadTopic ? topicPath(threadTopic) : '/'}
-        ><Icon name="back" size={15} />{thread
+      <a class="back-link" data-history-back={returnTo ? 'true' : undefined} href={returnTo ?? (threadTopic ? topicPath(threadTopic) : '/')}
+        ><Icon name="back" size={15} />{returnTo ? 'Back' : thread
           ? 't/' + threadTopic
           : 'Home feed'}</a
       >
@@ -840,7 +827,7 @@
           >{/if}
         {#if topicMatches.length}<div class="search-topics">
             {#each topicMatches as slug}<a href={topicPath(slug)}
-                ><TopicIcon {slug} small />t/{slug}</a
+                ><TopicIcon {slug} small />{slug}</a
               >{/each}
           </div>{/if}
       {/if}
@@ -872,13 +859,16 @@
           }}
         ><Icon name="image" size={16} /><span>Previews</span></button>
       </div>
-      {#if hotActive && (route.page === 'home' || route.page === 'topic')}
+      {#if stableFeed}
         <div class="hot-controls">
+          {#if hotActive && (route.page === 'home' || route.page === 'topic')}
           <a href="/settings" class="hot-status">{$hotPreferences.ai && hotInterest
             ? $hotAssistance.status === 'loading' ? 'Personalizing…' : $hotAssistance.status === 'ready' ? 'Personalized on this device'
               : $hotAssistance.status === 'unavailable' ? 'AI unavailable · social ranking' : 'Hot preferences'
             : 'Hot preferences'}</a>
-          <button onclick={refreshHot}>{hotChanged ? 'Show updated posts' : 'Refresh Hot'}</button>
+          {:else}<span></span>{/if}
+          {#if feedChanged}<button onclick={showUpdatedPosts}>Show updated posts</button>
+          {:else if hotActive && (route.page === 'home' || route.page === 'topic')}<button onclick={refreshHot}>Refresh Hot</button>{/if}
         </div>
       {/if}
       <section class="feed-list" aria-label="Discussions">
@@ -981,7 +971,7 @@
           class="rail-topic"
           href={topicPath(item.slug)}
           ><TopicIcon slug={item.slug} />
-          <div><strong>t/{item.slug}</strong></div>
+          <div><strong>{item.slug}</strong></div>
           <Icon name="next" size={12} /></a
         >{/each}
       <a class="all-topics" href="/topics"
@@ -1092,7 +1082,7 @@
   .profile-loading{min-height:452.75px;box-sizing:border-box;border:1px solid var(--line);border-radius:13px;background:var(--paper);padding:20px}
   @media(max-width:520px){.profile-loading{min-height:436.75px}}
 
-  .hot-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 12px;font-size:12px;color:var(--muted)}
+  .hot-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:24px;margin:-4px 0 12px;font-size:12px;color:var(--muted)}
   .hot-status{color:var(--muted)}
   .hot-controls button{font-size:12px;color:var(--accent)}
 </style>
