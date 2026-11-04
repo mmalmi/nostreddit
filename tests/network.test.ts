@@ -124,5 +124,5 @@ test('signed writes require acknowledgment and preserve follow tags and private 
   await signInExtension();
   const inFlight = signEvent({kind:1,content:'Wait for the signer',tags:[],created_at:baseTime});
   signOut(); release?.();
-  await assert.rejects(inFlight,/account changed/i);
+  await assert.rejects(inFlight,/profile changed/i);
 });

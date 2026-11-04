@@ -25,7 +25,7 @@
   </section>
 {:else if !$notifications.length}
   <section class="empty"><Icon name="comment" size={28}/><h2>No notifications loaded</h2>
-    <p>Replies, mentions, and reactions addressed to your Nostr account appear here.</p>
+    <p>Replies, mentions, and reactions addressed to your Nostr profile appear here.</p>
   </section>
 {:else}
   <section aria-label="Recent notifications" class="inbox">

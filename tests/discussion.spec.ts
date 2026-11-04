@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('a guest can browse and save posts; a new account can publish, reply, like and follow across sessions', async ({ page, browser }) => {
+test('a guest can browse and save posts; a new profile can publish, reply, like and follow across sessions', async ({ page, browser }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
@@ -16,9 +16,13 @@ test('a guest can browse and save posts; a new account can publish, reply, like 
   await expect(page.getByRole('heading',{name:'r/photography',exact:true})).toBeVisible();
 
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
-  await page.getByRole('button',{name:'Create an account'}).click();
-  await page.getByLabel('Display name').fill('Rain Reader');
-  await page.getByRole('button',{name:'Create account',exact:true}).click();
+  const displayName = page.getByLabel('Display name', {exact:true});
+  const suggested = await displayName.inputValue();
+  expect(suggested.trim()).not.toBe('');
+  await page.getByRole('button',{name:'Suggest another name'}).click();
+  await expect(displayName).not.toHaveValue(suggested);
+  await displayName.fill('Rain Reader');
+  await page.getByRole('button',{name:'Create profile',exact:true}).click();
   await page.getByRole('button',{name:'Continue to Nostreddit'}).click();
   await page.getByLabel('Title', {exact:true}).fill('Where do shorebirds shelter?');
   await page.getByLabel(/Body/).fill('I saw a flock just before the storm.');
@@ -49,14 +53,15 @@ test('a guest can browse and save posts; a new account can publish, reply, like 
   await expect(page.getByRole('link',{name:'Notes from the coast',exact:true})).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button',{name:'Rain Reader',exact:true})).toBeVisible();
+  await page.goto('/settings');
+  await expect(page.getByRole('heading',{name:'Settings',level:1})).toBeVisible();
   expect(errors).toEqual([]);
 });
 
 test('a rejected submission retains the draft and makes no claim of publication', async ({page}) => {
   await page.goto('/');
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
-  await page.getByRole('button',{name:'Create an account'}).click();
-  await page.getByRole('button',{name:'Create account',exact:true}).click();
+  await page.getByRole('button',{name:'Create profile',exact:true}).click();
   await page.getByRole('button',{name:'Continue to Nostreddit'}).click();
   await page.getByLabel('Title',{exact:true}).fill('Relay rejection /reject-for-test/');
   await page.getByRole('button',{name:'Publish post'}).click();
@@ -88,6 +93,7 @@ test('extension sign-in, notifications and profile updates work for the active i
   } finally { relay.close(); }
   await page.goto('/notifications');
   await page.getByRole('button',{name:'Sign in',exact:true}).first().click();
+  await page.getByRole('button',{name:'Use an existing profile'}).click();
   await page.getByRole('button',{name:'Sign in with extension'}).click();
   await expect(page.getByText(mention.content,{exact:true})).toBeVisible();
   await page.goto('/u/'+pubkey);
@@ -117,4 +123,42 @@ test('a guest can expand a local search to relays and open a Nostr event identif
   await search.fill('r/observatory');
   await search.press('Enter');
   await expect(page.getByRole('heading',{name:'r/observatory',exact:true})).toBeVisible();
+});
+
+
+test('mobile guests can open Settings and persist their feed preferences', async ({page}) => {
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/');
+  await expect(page.locator('main').getByRole('heading').first()).toHaveText('Discussions');
+  await expect(page.getByRole('heading',{name:'About Nostreddit'})).toHaveCount(0);
+  await page.getByRole('button',{name:'Toggle navigation'}).click();
+  await page.getByRole('link',{name:'Settings',exact:true}).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await page.getByLabel('Feed order').selectOption('New');
+  await page.getByLabel('Show image previews').uncheck();
+  await page.reload();
+  await expect(page.getByLabel('Feed order')).toHaveValue('New');
+  await expect(page.getByLabel('Show image previews')).not.toBeChecked();
+  await page.goto('/');
+  await expect(page.getByRole('button',{name:'New',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('article').first()).toBeVisible();
+  await expect(page.locator('.post-photo')).toHaveCount(0);
+});
+
+test('pasting an existing secret key into the name prompt opens private sign-in', async ({page}) => {
+  const {generateSecretKey,getPublicKey} = await import('nostr-tools/pure');
+  const {nsecEncode} = await import('nostr-tools/nip19');
+  const key = generateSecretKey();
+  await page.goto('/');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByLabel('Display name').evaluate((el, secret) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text',secret);
+    el.dispatchEvent(new ClipboardEvent('paste',{clipboardData,cancelable:true,bubbles:true}));
+  }, nsecEncode(key));
+  await expect(page.getByRole('heading',{name:'Sign in to your profile'})).toBeVisible();
+  await expect(page.getByLabel('Secret key',{exact:true})).toHaveAttribute('type','password');
+  await page.getByRole('button',{name:'Sign in with secret key'}).click();
+  await page.getByRole('button',{name:'Profile',exact:true}).click();
+  await expect(page.getByRole('link',{name:'View profile',exact:true})).toHaveAttribute('href','/u/'+getPublicKey(key));
 });

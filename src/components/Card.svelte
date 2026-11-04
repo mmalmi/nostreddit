@@ -14,6 +14,7 @@
   import TopicIcon from './TopicIcon.svelte';
   export let post: Post;
   export let saved = false;
+  export let showPreviews = true;
   export let full = false;
   export let comment = false;
   export let onaction: (action: string, post: Post) => void;
@@ -77,7 +78,7 @@
       ></a
     >
   </div>
-  {#if photo && !full && !comment}<a
+  {#if showPreviews && photo && !full && !comment}<a
       class="post-photo"
       href={'/post/' + post.id}
       aria-label="Open image discussion"

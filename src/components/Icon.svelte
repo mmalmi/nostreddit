@@ -19,6 +19,7 @@
     share: 'M13 6l5-4 5 4 M18 3v11 M13 8H5v13h15v-5',
     link: 'M10 13a4 4 0 0 0 6 .5l4-4a4 4 0 0 0-6-6l-2 2 M14 11a4 4 0 0 0-6-.5l-4 4a4 4 0 0 0 6 6l2-2',
     external: 'M13 4h7v7 M20 4l-11 11 M9 5H4v15h15v-5',
+    settings: 'M4 6h7m4 0h5M4 12h2m4 0h10M4 18h10m4 0h2 M11 3v6 M7 9v6 M15 15v6',
     menu: 'M3 6h18 M3 12h18 M3 18h18',
     close: 'M5 5l14 14 M19 5 5 19',
     next: 'm9 5 7 7-7 7',

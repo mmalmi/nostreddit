@@ -391,12 +391,13 @@ export async function importAccount(input:string) {
   catch { throw new Error('Enter a valid Nostr secret key starting with nsec1.'); }
   remember({pubkey:getPublicKey(sk),method:'local'},sk);
 }
-export async function createAccount(name = '') {
-  const sk = generateSecretKey(); remember({pubkey:getPublicKey(sk),method:'local'},sk);
-  if (name.trim()) {
-    // A freshly generated key has no earlier metadata to merge.
-    await publish({kind:0, tags:[], content:JSON.stringify({name:name.trim().slice(0,80)})});
-  }
+export async function createProfile(name: string) {
+  const displayName = name.trim();
+  if (!displayName || displayName.length > 60) throw new Error('Choose a display name of up to 60 characters.');
+  if (/nsec1[0-9a-z]+/i.test(displayName)) throw new Error('Use the secret key to sign in to your existing profile.');
+  const sk = generateSecretKey();
+  remember({ pubkey: getPublicKey(sk), method: 'local' }, sk);
+  await publish({kind:0, tags:[], content:JSON.stringify({name:displayName, display_name:displayName})});
 }
 export function exportKey() {
   if (!secret) throw new Error('Your signing extension manages this key.');
@@ -412,7 +413,7 @@ export async function signEvent(template:EventTemplate):Promise<NostrEvent> {
   if (!verifyEvent(signed) || signed.pubkey !== session.pubkey || signed.kind !== template.kind ||
       signed.content !== template.content || signed.created_at !== template.created_at || JSON.stringify(signed.tags) !== JSON.stringify(template.tags))
     throw new Error('Your signer returned an event that does not match this action.');
-  if (get(account)?.pubkey !== session.pubkey) throw new Error('The signed-in account changed. Please try again.');
+  if (get(account)?.pubkey !== session.pubkey) throw new Error('The signed-in profile changed. Please try again.');
   return signed;
 }
 type Draft = Omit<EventTemplate,'created_at'> & {created_at?:number};
@@ -465,7 +466,7 @@ async function updateReplaceable(kind:0|3|10000, create:(latest?:NostrEvent)=>Dr
     const candidates = await request({type:'latest',kind,pubkey:me.pubkey});
     const stored = (kind === 0 ? metadata : kind === 3 ? contacts : muteEvents).get(me.pubkey);
     const latest = [stored,...candidates].filter((e):e is NostrEvent => Boolean(e)).sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id))[0];
-    if (get(account)?.pubkey !== me.pubkey) throw new Error('The signed-in account changed. Please try again.');
+    if (get(account)?.pubkey !== me.pubkey) throw new Error('The signed-in profile changed. Please try again.');
     const draft = create(latest);
     if (draft) await publish({...draft,created_at:Math.max(Math.floor(Date.now()/1000),(latest?.created_at ?? 0)+1)});
   } finally { modifying = false; }

@@ -40,7 +40,6 @@
   import Notifications from './components/Notifications.svelte';
   import Mark from './components/Mark.svelte';
   import Icon from './components/Icon.svelte';
-  import Landscape from './components/Landscape.svelte';
   import TopicIcon from './components/TopicIcon.svelte';
   import Card from './components/Card.svelte';
   import AccountPanel from './components/AccountPanel.svelte';
@@ -69,6 +68,7 @@
         'saved',
         'network',
         'notifications',
+        'settings',
       ].includes(base)
         ? base
         : 'missing',
@@ -109,6 +109,7 @@
   let joined = readLocal<string[]>('joined', []),
     saved = readLocal<Post[]>('saved', []),
     sorting = readLocal<string>('sort', 'Hot');
+  let showPreviews = readLocal<boolean>('showPreviews', true);
   let reply = '',
     replyParent: Post | undefined,
     replyBusy = false,
@@ -189,6 +190,11 @@
     menu = false;
     tick().then(() => {
       if (dialog && !dialog.open) dialog.showModal();
+      if (name === 'account' && !$account) {
+        const input = dialog?.querySelector<HTMLInputElement>('input[name="display-name"]');
+        input?.focus();
+        input?.select();
+      }
     });
   }
   function closeModal() {
@@ -368,7 +374,7 @@
       ? thread
         ? [thread.id, ...replies.slice(0, 32).map((x) => x.id)]
         : []
-      : ['topics', 'missing', 'notifications'].includes(route.page)
+      : ['topics', 'missing', 'notifications', 'settings'].includes(route.page)
         ? []
         : visible.slice(0, 48).map((p) => p.id)
   )
@@ -394,7 +400,7 @@
       : [];
   $: title =
     route.page === 'home'
-      ? 'The Commons'
+      ? 'Discussions'
       : route.page === 'topic'
         ? 'r/' + route.value
         : route.page === 'following'
@@ -403,7 +409,9 @@
             ? 'In network'
             : route.page === 'saved'
               ? 'Saved posts'
-              : route.page === 'notifications'
+              : route.page === 'settings'
+                ? 'Settings'
+                : route.page === 'notifications'
                 ? 'Notifications'
                 : route.page === 'topics'
                   ? 'Communities'
@@ -415,9 +423,7 @@
                         ? 'Discussion'
                         : 'Page not found';
   $: subtitle =
-    route.page === 'home'
-      ? 'An open gathering place for conversations on Nostr.'
-      : route.page === 'topic'
+    route.page === 'topic'
         ? topic.desc
         : route.page === 'following'
           ? 'Conversations from people you follow.'
@@ -426,7 +432,7 @@
             : route.page === 'saved'
               ? 'Posts bookmarked in this browser.'
               : route.page === 'notifications'
-                ? 'Replies, mentions, and likes for your account.'
+                ? 'Replies, mentions, and likes for your profile.'
                 : route.page === 'topics'
                   ? 'Find your corner of the network.'
                   : route.page === 'search'
@@ -600,7 +606,7 @@
         }}
         ><Icon name="user" size={16} /><span
           >{$account
-            ? $profiles[$account.pubkey]?.name || 'Account'
+            ? $profiles[$account.pubkey]?.display_name || $profiles[$account.pubkey]?.name || 'Profile'
             : 'Sign in'}</span
         ></button
       >
@@ -634,6 +640,7 @@
           href={'/r/' + slug}><TopicIcon {slug} small />r/{slug}</a
         >{/each}
     </div>
+    <a class="nav-row" class:active={route.page === 'settings'} aria-current={route.page === 'settings' ? 'page' : undefined} href="/settings"><Icon name="settings" size={18} />Settings</a>
     <div class="left-foot">
       <span class="signal-dot" class:offline={$status === 'offline'}
       ></span>{$status === 'live'
@@ -644,16 +651,11 @@
     </div>
   </aside>
   <main>
-    {#if ['home', 'topic', 'following', 'network', 'saved'].includes(route.page)}
-      <section class="hero" class:home={route.page === 'home'}>
-        {#if route.page === 'home'}<Landscape />{/if}
+    {#if ['topic', 'following', 'network', 'saved'].includes(route.page)}
+      <section class="hero">
         <div class="hero-content">
           <div class="hero-kicker">
-            <span></span>{route.page === 'home'
-              ? 'THE PUBLIC FEED'
-              : route.page === 'topic'
-                ? 'COMMUNITY FEED'
-                : 'PERSONAL FEED'}
+            <span></span>{route.page === 'topic' ? 'COMMUNITY FEED' : 'PERSONAL FEED'}
           </div>
           <h1>{title}</h1>
           <p>{subtitle}</p>
@@ -682,7 +684,21 @@
         </p>
       </div>
     {/if}
-    {#if route.page === 'notifications'}
+    {#if route.page === 'settings'}
+      <div class="page-head"><h1>Settings</h1><p>Preferences are saved in this browser.</p></div>
+      <section class="preferences" aria-labelledby="feed-preferences">
+        <h2 id="feed-preferences">Feed preferences</h2>
+        <label><span>Feed order</span>
+          <select value={sorting} onchange={(event) => changeOrder(event.currentTarget.value)}>
+            {#each orders as order}<option value={order.name}>{order.name}</option>{/each}
+          </select>
+        </label>
+        <label><span>Show image previews</span><input type="checkbox" checked={showPreviews} onchange={(event) => {
+          showPreviews = event.currentTarget.checked;
+          writeLocal('showPreviews', showPreviews);
+        }} /></label>
+      </section>
+    {:else if route.page === 'notifications'}
       <Notifications onSignIn={() => showModal('account')} />
     {:else if route.page === 'topics'}
       <label class="directory-input"
@@ -893,7 +909,7 @@
           </div>{/if}
       {/if}
       <div class="feed-heading">
-        <h2>{route.page === 'profile' ? 'Posts' : 'Discussions'}</h2>
+        {#if route.page === 'home'}<h1>Discussions</h1>{:else}<h2>{route.page === 'profile' ? 'Posts' : 'Discussions'}</h2>{/if}
         <div class="sort-bar" aria-label="Sort discussions">
           {#each orders as o}<button
               class:selected={sorting === o.name}
@@ -905,6 +921,7 @@
       </div>
       <section class="feed-list" aria-label="Discussions">
         {#each visible as p (p.id)}<Card
+            {showPreviews}
             post={p}
             saved={saved.some((s) => s.id === p.id)}
             onaction={action}
@@ -980,28 +997,12 @@
     {/if}
   </main>
   <aside class="right-rail" aria-label="Community information">
-    <section class="rail-panel about">
-      <div class="rail-eyebrow">
-        <span class="signal-dot"></span> FIELD NOTES
-      </div>
-      <h2>
-        {route.page === 'topic' ? 'About r/' + route.value : 'About Nostreddit'}
-      </h2>
-      <p>
-        {route.page === 'topic'
-          ? 'A feed of public posts tagged #' +
-            route.value +
-            ' and discussions in matching Nostr communities.'
-          : 'A community forum built on Nostr. Follow your curiosity across topics, share a link, or start a discussion.'}
-      </p>
-      <div class="rail-rule"></div>
-      <div class="rail-caption">
-        <span class="tiny-symbol">✳</span>
-        {route.page === 'topic'
-          ? 'Open community'
-          : 'Open protocol, open conversations'}
-      </div>
-    </section>
+    {#if route.page === 'topic'}
+      <section class="rail-panel about">
+        <h2>About r/{route.value}</h2>
+        <p>Public posts tagged #{route.value} and discussions in matching Nostr communities.</p>
+      </section>
+    {/if}
     <section class="rail-panel popular">
       <div class="rail-eyebrow"><Icon name="compass" size={14} /> DISCOVER</div>
       <h2>Explore communities</h2>
@@ -1026,7 +1027,7 @@
     bind:this={dialog}
     class="modal"
     aria-label={modal === 'account'
-      ? 'Nostr account'
+      ? 'Nostr profile'
       : modal === 'compose'
         ? 'Create post'
         : modal === 'zap'
