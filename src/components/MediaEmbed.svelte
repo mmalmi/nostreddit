@@ -24,7 +24,17 @@
     e.preventDefault();
     enlargedUrl = item.url;
   }
-  function showImageDialog(node: HTMLDialogElement) { node.showModal(); }
+  function showImageDialog(node: HTMLDialogElement) {
+    function closeOnBackdrop(event: MouseEvent) {
+      if (event.target !== node) return;
+      const bounds = node.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right ||
+          event.clientY < bounds.top || event.clientY > bounds.bottom) node.close();
+    }
+    node.addEventListener('click', closeOnBackdrop);
+    node.showModal();
+    return { destroy() { node.removeEventListener('click', closeOnBackdrop); } };
+  }
   async function loadPlayer() {
     openedUrl = item.url;
     // Playback begins only after an explicit Play action. If the browser declines,

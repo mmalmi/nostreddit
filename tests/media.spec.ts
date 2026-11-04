@@ -61,6 +61,16 @@ test('photos expand, native video stays idle, and a provider is contacted only o
   const viewer = page.getByRole('dialog',{name:'Expanded image'});
   await expect(viewer.getByRole('img',{name:'Harbor at sunset'})).toBeVisible();
   await expect(viewer.getByRole('link',{name:'Open original'})).toHaveAttribute('href',photo);
+  await viewer.getByRole('img',{name:'Harbor at sunset'}).click();
+  await expect(viewer).toBeVisible();
+  await page.screenshot({path:test.info().outputPath('expanded-image.png')});
+  await page.mouse.click(5, 5);
+  await expect(viewer).toHaveCount(0);
+  await expand.click();
+  await expect(viewer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(viewer).toHaveCount(0);
+  await expand.click();
   await viewer.getByRole('button',{name:'Close image'}).click();
   await expect(viewer).toHaveCount(0);
 
