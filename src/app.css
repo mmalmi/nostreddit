@@ -970,6 +970,7 @@ main > .feed-heading:first-child { margin-top: 0; }
   background: #142a24a6;
   backdrop-filter: blur(3px);
 }
+.modal.post-modal {width:min(720px,calc(100% - 30px));max-height:90dvh}
 .modal-close {
   position: absolute;
   top: 12px;
@@ -1329,6 +1330,9 @@ main > .feed-heading:first-child { margin-top: 0; }
   }
 }
 @media (max-width: 360px) {
+  .header-actions .account-button {
+    max-width: 78px;
+  }
   .bar-inner {
     gap: 4px;
     padding: 0 8px;

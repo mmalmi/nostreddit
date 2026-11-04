@@ -1,0 +1,82 @@
+import {expect,test} from '@playwright/test';
+import {allowFixtureAuthors} from './helpers/graphPreferences';
+
+test.beforeEach(async({context})=>{await allowFixtureAuthors(context);});
+
+for(const width of [1440,390,320]) {
+  test(`feed composer and inline replies preserve drafts at ${width}px`,async({page},info)=>{
+    await page.setViewportSize({width,height:width===320?640:900});
+    await page.goto('/t/photography');
+    await expect(page.getByRole('heading',{name:'t/photography',exact:true})).toBeVisible();
+    await expect(page.getByRole('link',{name:'Notes from the coast',exact:true}).first()).toBeVisible();
+    await page.screenshot({path:info.outputPath('feed-prompt.png')});
+    await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).first().click();
+    await page.getByRole('button',{name:'Create profile',exact:true}).click();
+    const editor=page.getByRole('dialog',{name:'Create post',exact:true});
+    await expect(editor.getByLabel('Topic',{exact:true})).toHaveValue('photography');
+    await expect(editor.getByRole('tab',{name:'Text',exact:true})).toHaveAttribute('aria-selected','true');
+    await expect(editor).not.toContainText('No #hashtag needed');
+    const title=`Field notes at ${width}px`;
+    await editor.getByLabel('Title',{exact:true}).fill(title);
+    await editor.getByLabel('Body (optional)',{exact:true}).fill('The tide is turning.');
+    await editor.getByRole('tab',{name:'Link',exact:true}).click();
+    await editor.getByRole('textbox',{name:'Link',exact:true}).fill('https://example.com/unused-link');
+    await editor.getByRole('tab',{name:'Text',exact:true}).click();
+    await editor.getByRole('button',{name:'Cancel',exact:true}).click();
+    await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).first().click();
+    await expect(editor.getByLabel('Title',{exact:true})).toHaveValue(title);
+    await expect(editor.getByLabel('Body (optional)',{exact:true})).toHaveValue('The tide is turning.');
+    await editor.getByRole('tab',{name:'Text',exact:true}).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(editor.getByRole('tab',{name:'Link',exact:true})).toHaveAttribute('aria-selected','true');
+    await expect(editor.getByRole('textbox',{name:'Link',exact:true})).toHaveValue('https://example.com/unused-link');
+    await page.keyboard.press('ArrowLeft');
+    await page.screenshot({path:info.outputPath('post-editor.png')});
+    await editor.getByRole('button',{name:'Publish post',exact:true}).click();
+    await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
+    await expect(page.locator('main article').first()).not.toContainText('unused-link');
+    const reply=page.getByLabel('Your reply',{exact:true});
+    await expect(reply).toHaveAttribute('rows','1');
+    await reply.fill('Looking out from the pier.');
+    await expect(reply).toHaveAttribute('rows','3');
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    await expect(reply).toHaveAttribute('rows','1');
+    await reply.click();
+    await expect(reply).toHaveValue('Looking out from the pier.');
+    await page.getByRole('button',{name:'Post reply',exact:true}).click();
+    const row=page.locator('li[data-comment-id]').filter({hasText:'Looking out from the pier.'});
+    await row.getByRole('button',{name:'Reply to comment',exact:true}).click();
+    const nested=row.getByRole('textbox');
+    await expect(nested).toBeFocused();
+    await nested.fill('I can see the boats from here.');
+    await page.screenshot({path:info.outputPath('inline-reply.png')});
+    await row.getByRole('button',{name:'Post reply',exact:true}).click();
+    await expect(page.locator('li[data-depth="1"]').filter({hasText:'I can see the boats from here.'})).toBeVisible();
+    await page.screenshot({path:info.outputPath('published-replies.png')});
+    const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>({tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right})).slice(0,12));
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),JSON.stringify(overflow)).toBe(true);
+  });
+}
+
+test('the feed link shortcut requires a topic and publishes a link post',async({page},info)=>{
+  await page.goto('/');
+  await page.getByRole('main').getByRole('button',{name:'Create a link post',exact:true}).click();
+  await page.getByRole('button',{name:'Create profile',exact:true}).click();
+  const editor=page.getByRole('dialog',{name:'Create post',exact:true});
+  await expect(editor.getByRole('tab',{name:'Link',exact:true})).toHaveAttribute('aria-selected','true');
+  await expect(editor.getByLabel('Topic',{exact:true})).toHaveValue('');
+  await editor.getByLabel('Title',{exact:true}).fill('A useful field guide');
+  await editor.getByRole('textbox',{name:'Link',exact:true}).fill('https://example.org/field-guide');
+  const publish=editor.getByRole('button',{name:'Publish post',exact:true});
+  await expect(publish).toBeDisabled();
+  await editor.getByLabel('Topic',{exact:true}).fill('t/field-guides');
+  await expect(publish).toBeEnabled();
+  await editor.getByRole('textbox',{name:'Link',exact:true}).fill('not a link');
+  await expect(publish).toBeDisabled();
+  await editor.getByRole('textbox',{name:'Link',exact:true}).fill('https://example.org/field-guide');
+  await page.screenshot({path:info.outputPath('link-editor.png')});
+  await publish.click();
+  await expect(page.getByRole('heading',{name:'A useful field guide',exact:true})).toBeVisible();
+  await expect(page.locator('main article').first().getByRole('link',{name:'t/field-guides',exact:true})).toBeVisible();
+  await expect(page.locator('main article a[href="https://example.org/field-guide"]').first()).toBeVisible();
+});

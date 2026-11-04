@@ -72,6 +72,7 @@
   import ProfileBackup from './components/ProfileBackup.svelte';
   import EditProfile from './components/EditProfile.svelte';
   import Composer from './components/Composer.svelte';
+  import FeedComposer from './components/FeedComposer.svelte';
   import ZapPanel from './lib/ZapPanel.svelte';
   type Route = { page: string; value: string; connections?: Relationship; fromTopic?: string };
   function readRoute(): Route {
@@ -166,6 +167,7 @@
   let showPreviews = readLocal<boolean>('showPreviews', true);
   let limit = 24,
     showAccountAfter = '';
+  let composeMode:'text'|'link'|undefined;
   let searchInput: HTMLInputElement;
   let activeCleanup: (() => void) | undefined,
     observedCleanup: (() => void) | undefined,
@@ -284,7 +286,8 @@
     clearTimeout(alertTimer);
     alertTimer = setTimeout(() => (toast = ''), 4200);
   }
-  function compose() {
+  function compose(mode?:'text'|'link') {
+    composeMode=mode;
     if (!$account) {
       showAccountAfter = 'compose';
       showModal('account');
@@ -607,7 +610,7 @@
       /><kbd>/</kbd>
     </form>
     <div class="header-actions">
-      <button class="create-button" aria-label="Create post" onclick={compose}
+      <button class="create-button" aria-label="Create post" onclick={()=>compose()}
         ><Icon name="plus" size={17} /><span>Create post</span></button
       >
       <button
@@ -839,6 +842,7 @@
               >{/each}
           </div>{/if}
       {/if}
+      {#if ['home','topic','following','network'].includes(route.page)}<FeedComposer oncreate={compose}/>{/if}
       <div class="feed-heading">
         {#if route.page === 'home'}<h1 class="visually-hidden">Home feed</h1>{/if}
         {#if route.page === 'search'}
@@ -941,7 +945,7 @@
               </p>
               {#if route.page === 'topic'}<button
                   class="primary compact"
-                  onclick={compose}>Create a post</button
+                  onclick={()=>compose()}>Create a post</button
                 >{:else}<a href="/topics">Explore topics</a>{/if}
             {/if}
           </div>{/each}
@@ -991,6 +995,7 @@
   <dialog
     bind:this={dialog}
     class="modal"
+    class:post-modal={modal==='compose'}
     aria-label={modal === 'account'
       ? 'Nostr profile'
       : modal === 'compose'
@@ -1021,7 +1026,9 @@
     {#if modal === 'account'}<AccountPanel onclose={accountDone} {notify} />
     {:else if modal === 'compose' && $account}<Composer
         initialTopic={route.page === 'topic' ? route.value : ''}
+        initialMode={composeMode}
         owner={$account.pubkey}
+        oncancel={closeModal}
         onpublish={(p) => {
           closeModal();
           go(postUrl(p.id));

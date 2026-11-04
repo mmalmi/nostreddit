@@ -85,16 +85,18 @@
 </script>
 
 {#snippet composer(parent: Post, nested: boolean)}
+  {@const editing = active === parent.id || sending.has(parent.id)}
   <form class="reply-form" onsubmit={(e) => {e.preventDefault(); send(parent);}}>
     <textarea id={'reply-' + parent.id} aria-label={nested ? 'Your reply to ' + author(parent.pubkey, $profiles[parent.pubkey]) : 'Your reply'}
       placeholder={nested ? 'Reply to ' + author(parent.pubkey, $profiles[parent.pubkey]) + '…' : 'Add to the discussion…'}
       value={drafts[parent.id] ?? ''} oninput={(e) => drafts = {...drafts, [parent.id]:e.currentTarget.value}}
-      rows="2" maxlength="20000" disabled={sending.has(parent.id)}></textarea>
+      onfocus={() => active = parent.id}
+      rows={editing ? 3 : 1} maxlength="20000" disabled={sending.has(parent.id)}></textarea>
     {#if errors[parent.id]}<p class="error" role="alert">{errors[parent.id]}</p>{/if}
-    <div class="form-actions">
-      {#if nested}<button type="button" class="cancel" onclick={() => active = ''}>Cancel</button>{/if}
+    {#if editing}<div class="form-actions">
+      <button type="button" class="cancel" disabled={sending.has(parent.id)} onclick={() => active = ''}>Cancel</button>
       <button class="primary compact" disabled={!drafts[parent.id]?.trim() || sending.has(parent.id)}>{sending.has(parent.id) ? 'Publishing…' : 'Post reply'}</button>
-    </div>
+    </div>{/if}
   </form>
 {/snippet}
 
@@ -159,6 +161,11 @@
   .collapsed-label span,.parent-context,.cancel {font-size:12px;color:var(--muted)}
   .parent-context {display:inline-block;margin:6px 0 2px;text-decoration:underline}
   .form-actions {display:flex;gap:12px;align-items:center}
+  .reply-form {border:1px solid var(--line);border-radius:16px;padding:10px 12px;gap:8px;background:var(--paper)}
+  .reply-form:focus-within {border-color:var(--accent)}
+  .reply-form textarea {border:0;border-radius:0;background:transparent;margin:0;padding:2px;line-height:1.5;outline:none}
+  .reply-form textarea[rows='1'] {resize:none}
+  .reply-form .error {justify-self:start}
   .branch-body .reply-form {margin:3px 0 10px}
   @media(max-width:710px) {
     .thread-list {--step:12px;--max-depth:5}

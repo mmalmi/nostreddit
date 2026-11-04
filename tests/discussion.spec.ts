@@ -69,6 +69,7 @@ test('a relay-rejected post stays local and its delivery can be retried from Set
   await page.goto('/');
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
   await page.getByRole('button',{name:'Create profile',exact:true}).click();
+  await page.getByLabel('Topic',{exact:true}).fill('nostr');
   await page.getByLabel('Title',{exact:true}).fill(title);
   await page.getByRole('button',{name:'Publish post'}).click();
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
