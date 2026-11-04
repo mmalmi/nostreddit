@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { allowFixtureAuthors } from './helpers/graphPreferences';
+
+test.beforeEach(async ({context}) => { await allowFixtureAuthors(context); });
 
 test('a guest can browse and save posts; a new profile can publish, reply, like and follow across sessions', async ({ page, browser }) => {
   const errors: string[] = [];
@@ -23,7 +26,8 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
   await expect(displayName).not.toHaveValue(suggested);
   await displayName.fill('Rain Reader');
   await page.getByRole('button',{name:'Create profile',exact:true}).click();
-  await page.getByRole('button',{name:'Continue to Nostreddit'}).click();
+  await expect(page.getByRole('heading',{name:'Create a post',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);
   await page.getByLabel('Title', {exact:true}).fill('Where do shorebirds shelter?');
   await page.getByLabel(/Body/).fill('I saw a flock just before the storm.');
   await page.getByRole('button',{name:'Publish post'}).click();
@@ -38,6 +42,7 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
 
   const reader = await browser.newContext();
   try {
+    await allowFixtureAuthors(reader);
     const second = await reader.newPage();
     await second.goto(publishedUrl);
     await expect(second.getByRole('heading',{name:'Where do shorebirds shelter?'})).toBeVisible();
@@ -62,7 +67,8 @@ test('a rejected submission retains the draft and makes no claim of publication'
   await page.goto('/');
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
   await page.getByRole('button',{name:'Create profile',exact:true}).click();
-  await page.getByRole('button',{name:'Continue to Nostreddit'}).click();
+  await expect(page.getByRole('heading',{name:'Create a post',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);
   await page.getByLabel('Title',{exact:true}).fill('Relay rejection /reject-for-test/');
   await page.getByRole('button',{name:'Publish post'}).click();
   await expect(page.getByRole('alert')).toBeVisible({timeout:15000});
@@ -101,6 +107,9 @@ test('extension sign-in, notifications and profile updates work for the active i
   await page.getByRole('textbox',{name:'Display name'}).fill('Field Guide');
   await page.getByRole('button',{name:/Save profile|Save changes/}).click();
   await expect(page.getByRole('heading',{name:'Field Guide',exact:true})).toBeVisible();
+  await page.goto('/settings');
+  await expect(page.getByText('Your signing extension manages this profile’s secret key.')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);
 });
 
 test('a guest can expand a local search to relays and open a Nostr event identifier', async ({ page }) => {
@@ -134,6 +143,7 @@ test('mobile guests can open Settings and persist their feed preferences', async
   await page.getByRole('button',{name:'Toggle navigation'}).click();
   await page.getByRole('link',{name:'Settings',exact:true}).click();
   await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole('heading',{name:'Profile backup'})).toHaveCount(0);
   await page.getByLabel('Feed order').selectOption('New');
   await page.getByLabel('Show image previews').uncheck();
   await page.reload();
@@ -159,6 +169,37 @@ test('pasting an existing secret key into the name prompt opens private sign-in'
   await expect(page.getByRole('heading',{name:'Sign in to your profile'})).toBeVisible();
   await expect(page.getByLabel('Secret key',{exact:true})).toHaveAttribute('type','password');
   await page.getByRole('button',{name:'Sign in with secret key'}).click();
-  await page.getByRole('button',{name:'Profile',exact:true}).click();
+  await page.locator('header .account-button').click();
   await expect(page.getByRole('link',{name:'View profile',exact:true})).toHaveAttribute('href','/u/'+getPublicKey(key));
+  await expect(page.getByRole('button',{name:/back up|reveal secret key/i})).toHaveCount(0);
+  await page.goto('/settings');
+  await expect(page.getByRole('heading',{name:'Profile backup'})).toBeVisible();
+  const field = page.getByLabel('Your secret key',{exact:true});
+  await expect(field).toHaveCount(0);
+  await page.getByRole('button',{name:'Reveal secret key'}).click();
+  await expect(field).toBeVisible();
+  expect((await field.inputValue()) === nsecEncode(key)).toBe(true);
+  await page.getByRole('button',{name:'Hide secret key'}).click();
+  await expect(field).toHaveCount(0);
+  await page.getByRole('button',{name:'Reveal secret key'}).click();
+  await page.getByRole('link',{name:'Home feed',exact:true}).click();
+  await page.getByRole('link',{name:'Settings',exact:true}).click();
+  await expect(field).toHaveCount(0);
+});
+
+
+test('a rejected display name can be retried on the same local profile', async ({page}) => {
+  await page.goto('/');
+  await page.getByRole('button',{name:'Create post',exact:true}).first().click();
+  await page.getByLabel('Display name',{exact:true}).fill('/reject-for-test/');
+  await page.getByRole('button',{name:'Create profile',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Publish your name',exact:true})).toBeVisible({timeout:15_000});
+  const initialPubkey = await page.evaluate(() => JSON.parse(localStorage.getItem('nostreddit.account.v1')!).pubkey as string);
+  expect(initialPubkey).toMatch(/^[a-f0-9]{64}$/);
+  await page.getByLabel('Display name',{exact:true}).fill('Retry Reader');
+  await page.getByRole('button',{name:'Retry publishing name',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Create a post',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Close dialog',exact:true}).click();
+  await page.getByRole('button',{name:'Retry Reader',exact:true}).click();
+  await expect(page.getByRole('link',{name:'View profile',exact:true})).toHaveAttribute('href','/u/'+initialPubkey);
 });

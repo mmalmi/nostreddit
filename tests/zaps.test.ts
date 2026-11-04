@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
 import { bech32, hex } from '@scure/base'
 import { finalizeEvent, getPublicKey, verifyEvent } from 'nostr-tools/pure'
-import { inspectZapInvoice, lightningEndpoint, matchesZapReceipt, payWithWallet, receivedZapSats, requestZap } from '../src/lib/zaps'
+import { inspectZapInvoice, lightningEndpoint, matchesZapReceipt, signedZapAuthor, payWithWallet, receivedZapSats, requestZap } from '../src/lib/zaps'
 
 import { providerKey, authorKey, signerKey, target, preimage, encoder, recipient, params, metadata, bolt11 } from './helpers/zapInvoice'
 
@@ -43,6 +43,16 @@ test('signed and guest requests produce bound invoices and only matching payment
     }
     const confirmedReceipt = finalizeEvent(receipt, providerKey)
     assert.ok(matchesZapReceipt(confirmedReceipt, signed))
+    assert.equal(signedZapAuthor(confirmedReceipt), signed.request.pubkey)
+    const forger = finalizeEvent({
+      ...receipt, tags: receipt.tags.map(tag => tag[0] === 'description'
+        ? ['description', JSON.stringify({...signed.request, pubkey:target.pubkey})] : tag)
+    }, providerKey)
+    assert.equal(signedZapAuthor(forger), null)
+    const wrongTarget = finalizeEvent({
+      ...receipt, tags: receipt.tags.map(tag => tag[0] === 'e' ? ['e','0'.repeat(64)] : tag)
+    }, providerKey)
+    assert.equal(signedZapAuthor(wrongTarget), null)
     assert.equal(await receivedZapSats(target, recipient, [
       confirmedReceipt,
       finalizeEvent({ ...receipt, created_at: receipt.created_at + 1 }, providerKey),

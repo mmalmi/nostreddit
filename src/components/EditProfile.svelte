@@ -6,12 +6,14 @@
   let name = profile?.display_name || profile?.name || '',
     about = profile?.about || '',
     picture = profile?.picture || '',
+    banner = profile?.banner || '',
+    website = profile?.website || '',
     lud16 = profile?.lud16 || '',
     busy = false,
     error = '';
   async function send() {
-    if (picture && !safeURL(picture)) {
-      error = 'Enter a full http or https picture URL.';
+    if ([picture,banner,website].some(value => value.trim() && !safeURL(value.trim()))) {
+      error = 'Use a full http or https URL for pictures, banners, and websites.';
       return;
     }
     busy = true;
@@ -22,6 +24,8 @@
         name: name.trim(),
         about: about.trim(),
         picture: picture.trim(),
+        banner: banner.trim(),
+        website: website.trim(),
         lud16: lud16.trim(),
       });
       ondone();
@@ -34,7 +38,7 @@
 </script>
 
 <div class="dialog-content">
-  <div class="eyebrow">ACCOUNT</div>
+  <div class="eyebrow">PROFILE</div>
   <h2>Edit profile</h2>
   <form
     onsubmit={(e) => {
@@ -52,6 +56,9 @@
         bind:value={picture}
         placeholder="https://…"
       /></label
+    ><label
+      >Banner URL<input type="url" bind:value={banner} placeholder="https://…"/></label
+    ><label>Website<input type="url" bind:value={website} placeholder="https://…"/></label
     ><label
       >Lightning address<input
         bind:value={lud16}

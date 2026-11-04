@@ -2,16 +2,17 @@
   import { onMount } from 'svelte'
   import type { NostrEvent } from 'nostr-tools/pure'
   import {
-    lightningEndpoint, matchesZapReceipt, payWithWallet, requestZap, webWallet,
+    lightningEndpoint, payWithWallet, requestZap, webWallet,
     type ZapInvoice, type ZapProfile, type ZapSigner,
   } from './zaps'
 
-  let { event, profile, relays, sign, receipts = [] }: {
+  import { watchZapPayment } from './network'
+
+  let { event, profile, relays, sign }: {
     event: NostrEvent
     profile: ZapProfile
     relays: readonly string[]
     sign?: ZapSigner
-    receipts?: NostrEvent[]
   } = $props()
 
   let sats = $state<number | undefined>(21)
@@ -25,7 +26,12 @@
   let qr = $state('')
   let now = $state(Math.floor(Date.now() / 1000))
   let expired = $derived(!!zap && zap.expiresAt <= now)
-  let confirmed = $derived(!!zap && (paidByWallet || receipts.some(receipt => matchesZapReceipt(receipt, zap!))))
+  let paidByReceipt = $state(false)
+  let confirmed = $derived(!!zap && (paidByWallet || paidByReceipt))
+  $effect(() => {
+    paidByReceipt = false
+    if (zap) return watchZapPayment(event.id, zap, received => { paidByReceipt = received })
+  })
 
   $effect(() => {
     const invoice = zap?.invoice

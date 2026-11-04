@@ -204,6 +204,30 @@ export async function payWithWallet(zap: ZapInvoice, wallet: Wallet) {
   return matchesPreimage(result?.preimage, zap.paymentHash)
 }
 
+// A receipt is emitted by a Lightning provider. Attribute it only to a signed
+// zap request whose recipient and post exactly match the receipt. Payment and
+// provider authorization are still independently verified at presentation time.
+export function signedZapAuthor(receipt: NostrEvent): string | null {
+  if (receipt.kind !== 9735) return null;
+  const tag = (event: NostrEvent, key: string) => {
+    const tags = event.tags.filter(t => t[0] === key);
+    return tags.length === 1 ? tags[0][1] : undefined;
+  };
+  try {
+    const description = tag(receipt,'description');
+    const invoice = tag(receipt,'bolt11');
+    if (!description || description.length > 32000 || !invoice || invoice.length > 20000) return null;
+    const request: NostrEvent = JSON.parse(description);
+    if (request.kind !== 9734 || !verifyEvent(request)) return null;
+    for (const key of ['p','e']) {
+      const id = tag(receipt,key);
+      if (!id || !/^[a-f0-9]{64}$/.test(id) || tag(request,key) !== id) return null;
+    }
+    if (receipt.tags.some(t => t[0] === 'P') && tag(receipt,'P') !== request.pubkey) return null;
+    return verifyEvent(JSON.parse(JSON.stringify(receipt))) ? request.pubkey : null;
+  } catch { return null; }
+}
+
 export function matchesZapReceipt(event: NostrEvent, zap: ZapInvoice) {
   const tag = (key: string) => {
     const tags = event.tags.filter(([name]) => name === key)

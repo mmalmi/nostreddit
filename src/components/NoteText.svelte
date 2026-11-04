@@ -1,14 +1,10 @@
 <script lang="ts">
-  import { safeURL } from '../lib/ui';
+  import { profiles } from '../lib/network';
+  import { noteParts, partText } from '../lib/mentions';
   export let text: string;
+  export let tags: string[][] = [];
   export let full = false;
-  $: segments = text.split(/(https?:\/\/[^\s<>]+)/gi);
+  $: parts = noteParts(text, tags);
 </script>
 
-<div class="note-text" class:clamped={!full}>
-  {#each segments as s}{#if safeURL(s)}<a
-        href={s}
-        target="_blank"
-        rel="noopener noreferrer">{s}</a
-      >{:else}{s}{/if}{/each}
-</div>
+<div class="note-text" class:clamped={!full}>{#each parts as part}{#if part.url}<a href={part.url} target="_blank" rel="noopener noreferrer">{part.text}</a>{:else if part.person}<a href={'/u/'+part.person}>{partText(part,$profiles)}</a>{:else}{part.text}{/if}{/each}</div>

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { account, profiles, signInExtension, createProfile, importAccount, exportKey, signOut, saveProfile } from '../lib/network';
-  import { shortKey } from '../lib/ui';
+  import { account, profiles, signInExtension, createProfile, importAccount, signOut, saveProfile } from '../lib/network';
+  import { displayName } from '../lib/ui';
   import Icon from './Icon.svelte';
   import Mark from './Mark.svelte';
 
@@ -17,13 +17,12 @@
     return nameAt(i) === previous ? nameAt((i + 1) % (first.length * last.length)) : nameAt(i);
   }
 
-  let mode: 'new' | 'existing' | 'backup' = 'new';
-  let name = suggest(), secret = '', error = '', busy = false, reveal = false, pendingName = false;
+  let mode: 'new' | 'existing' | 'retry-name' = 'new';
+  let name = suggest(), secret = '', error = '', busy = false;
   function switchMode(next: typeof mode) {
     mode = next;
     error = '';
     secret = '';
-    reveal = false;
   }
   function changeName(value: string) {
     if (/nsec1[0-9a-z]+/i.test(value)) {
@@ -45,20 +44,15 @@
     busy = true;
     error = '';
     try {
-      if (method === 'new') {
-        await createProfile(name);
-        switchMode('backup');
-      } else {
-        if (method === 'extension') await signInExtension();
-        else await importAccount(secret.trim());
-        secret = '';
-        notify('Signed in');
-        onclose();
-      }
+      if (method === 'new') await createProfile(name);
+      else if (method === 'extension') await signInExtension();
+      else await importAccount(secret.trim());
+      secret = '';
+      notify(method === 'new' ? 'Profile created' : 'Signed in');
+      onclose();
     } catch (e) {
       if (method === 'new' && $account) {
-        switchMode('backup');
-        pendingName = true;
+        switchMode('retry-name');
       }
       error = e instanceof Error ? e.message : 'Could not sign in.';
     } finally { busy = false; }
@@ -66,40 +60,30 @@
   async function retryName() {
     busy = true;
     try {
-      await saveProfile({name:name.trim(), display_name:name.trim()});
-      pendingName = false;
-      error = '';
+      const displayName = name.trim();
+      if (!displayName || /nsec1[0-9a-z]+/i.test(displayName)) throw new Error('Choose a public display name.');
+      await saveProfile({name:displayName, display_name:displayName});
+      notify('Profile name published');
+      onclose();
     } catch (e) { error = e instanceof Error ? e.message : 'Could not publish your name.'; }
     finally { busy = false; }
-  }
-  function backup() {
-    try { secret = exportKey(); reveal = true; }
-    catch (e) { error = String(e); }
   }
 </script>
 
 <div class="dialog-content">
   <Mark size={46}/>
-  {#if mode === 'backup' && $account}
-    <h2>Back up your profile</h2>
-    <p>Your secret key lets you use this profile on another device. Store it somewhere private.</p>
-    {#if pendingName}
-      <p>Your profile is saved here. Its display name hasn’t reached a relay yet.</p>
-      <button class="outline" disabled={busy} onclick={retryName}>Retry publishing name</button>
-    {/if}
-    {#if reveal}
-      <textarea aria-label="Your secret key" readonly value={secret} rows="3"></textarea>
-    {:else}
-      <button class="outline" onclick={backup}><Icon name="eye"/> Reveal secret key</button>
-    {/if}
-    <button class="primary wide" onclick={() => {secret=''; onclose()}}>Continue to Nostreddit</button>
+  {#if mode === 'retry-name' && $account}
+    <h2>Publish your name</h2>
+    <p>Your profile is saved on this device. Its display name hasn’t reached a relay yet.</p>
+    <form onsubmit={(e) => {e.preventDefault(); retryName()}}>
+      <label>Display name<input bind:value={name} required maxlength="60" autocomplete="nickname" /></label>
+      <button class="primary wide" disabled={busy || !name.trim()}>{busy ? 'Publishing…' : 'Retry publishing name'}</button>
+    </form>
+    <button class="text-button" disabled={busy} onclick={onclose}>Continue without publishing</button>
   {:else if $account && !busy}
     <h2>Your profile</h2>
-    <p>{$profiles[$account.pubkey]?.display_name || $profiles[$account.pubkey]?.name || shortKey($account.pubkey)}</p>
+    <p>{displayName($account.pubkey, $profiles[$account.pubkey])}</p>
     <a class="outline wide" href={'/u/' + $account.pubkey} onclick={onclose}><Icon name="user"/> View profile</a>
-    {#if $account.method === 'local'}
-      <button class="outline wide" onclick={() => switchMode('backup')}><Icon name="key"/> Back up secret key</button>
-    {/if}
     <button class="text-button" onclick={() => {signOut(); onclose(); notify('Signed out')}}><Icon name="logout"/> Sign out</button>
   {:else if mode === 'new'}
     <h2>Create a profile</h2>

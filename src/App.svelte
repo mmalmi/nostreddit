@@ -3,12 +3,16 @@
   import * as nip19 from 'nostr-tools/nip19';
   import {
     posts,
+    canSeeAuthor,
+    hiddenPostIds,
     comments,
     profiles,
     account,
     status,
+    notifications,
+    unreadNotificationIds,
+    readPostNotifications,
     likes,
-    receipts,
     follows,
     mutes,
     mute,
@@ -19,7 +23,6 @@
     searchRelays,
     loadProfile,
     observe,
-    publishComment,
     like,
     follow,
     signEvent,
@@ -27,22 +30,26 @@
     type Post,
   } from './lib/network';
   import { checkSearch, searchTarget } from './lib/search';
-  import { observeAuthors, graphInfo, graphStatus } from './lib/graph';
+  import { observeAuthors, observeEventAuthors, graphInfo, graphStatus } from './lib/graph';
   import {
     topics,
     topicInfo,
     validTopic,
-    safeURL,
-    shortKey,
+    displayName,
     readLocal,
     writeLocal,
   } from './lib/ui';
+  import CommunityIntro from './components/CommunityIntro.svelte';
   import Notifications from './components/Notifications.svelte';
   import Mark from './components/Mark.svelte';
   import Icon from './components/Icon.svelte';
   import TopicIcon from './components/TopicIcon.svelte';
   import Card from './components/Card.svelte';
+  import ThreadComments from './components/ThreadComments.svelte';
+  import ProfileHeader from './components/ProfileHeader.svelte';
+  import GraphSettings from './components/GraphSettings.svelte';
   import AccountPanel from './components/AccountPanel.svelte';
+  import ProfileBackup from './components/ProfileBackup.svelte';
   import EditProfile from './components/EditProfile.svelte';
   import Composer from './components/Composer.svelte';
   import ZapPanel from './lib/ZapPanel.svelte';
@@ -97,6 +104,7 @@
     { name: 'New', icon: 'clock' },
     { name: 'Top', icon: 'top' },
   ];
+  let pageVisible = document.visibilityState === 'visible';
   let route = readRoute(),
     search = route.page === 'search' ? route.value : '',
     menu = false,
@@ -110,11 +118,7 @@
     saved = readLocal<Post[]>('saved', []),
     sorting = readLocal<string>('sort', 'Hot');
   let showPreviews = readLocal<boolean>('showPreviews', true);
-  let reply = '',
-    replyParent: Post | undefined,
-    replyBusy = false,
-    replyError = '',
-    limit = 24,
+  let limit = 24,
     showAccountAfter = '';
   let searchInput: HTMLInputElement;
   let activeCleanup: (() => void) | undefined,
@@ -124,16 +128,16 @@
   let directoryFilter = '';
   let remotePosts: Post[] = [];
   let searchRun = 0;
-  let searching = false, searchMessage = '';
+  let searching = false, searched = false, searchMessage = '';
   async function expandSearch() {
     const run = ++searchRun;
-    searching = true;
+    searching = true; searched = false;
     searchMessage = '';
     try {
       const found = await searchRelays(checkSearch(route.value));
       if (run !== searchRun) return;
       remotePosts = found;
-      searchMessage = found.length ? `Found ${found.length} matching discussion${found.length === 1 ? '' : 's'} on relays.` : 'Connected relays returned no matching discussions.';
+      searched = true;
     } catch (error) {
       if (run === searchRun) searchMessage = error instanceof Error ? error.message : 'Relay search failed.';
     } finally {
@@ -143,13 +147,10 @@
   function syncRoute() {
     const next = readRoute();
     if (next.page !== route.page || next.value !== route.value) {
-      searchRun++; searching = false; searchMessage = ''; remotePosts = [];
+      searchRun++; searching = false; searched = false; searchMessage = ''; remotePosts = [];
       route = next;
       menu = false;
       limit = 24;
-      reply = '';
-      replyParent = undefined;
-      replyError = '';
       directoryFilter = '';
       search = next.page === 'search' ? next.value : '';
       if (modal) closeModal();
@@ -274,15 +275,21 @@
     };
   });
   $: if (mounted) subscribeRoute(route.page, route.value);
-  $: thread = [...$posts, ...$comments, ...saved].find(
+  $: observeEventAuthors(saved.map(p => p.pubkey));
+  $: observeEventAuthors(remotePosts.map(p => p.pubkey));
+  $: visibleSaved = saved.filter(p => $canSeeAuthor(p.pubkey));
+  $: visibleSearch = remotePosts.filter(p => $canSeeAuthor(p.pubkey));
+  $: thread = [...$posts, ...$comments, ...visibleSaved].find(
     (p) => p.id === route.value,
   );
+  $: if (mounted && pageVisible && !modal && route.page === 'thread' && thread) {
+    readPostNotifications(thread.id, $notifications);
+  }
   $: profile = $profiles[route.value];
-  $: graphBadge = $graphInfo[route.value];
-  $: profName = profile?.display_name || profile?.name || shortKey(route.value);
+  $: profName = route.page === 'profile' ? ($canSeeAuthor(route.value) ? displayName(route.value,profile) : 'Profile') : '';
   $: topic = topicInfo(route.value);
-  $: source = route.page === 'saved' ? saved : route.page === 'search' && remotePosts.length
-    ? [...new Map([...$posts,...remotePosts].map(post => [post.id,post])).values()] : $posts;
+  $: source = route.page === 'saved' ? visibleSaved : route.page === 'search' && visibleSearch.length
+    ? [...new Map([...$posts,...visibleSearch].map(post => [post.id,post])).values()] : $posts;
   $: candidates = source.filter((p) => {
     if (route.page === 'topic')
       return (
@@ -300,8 +307,7 @@
         p.body,
         p.topic,
         ...p.event.tags.filter(t => t[0] === 't').map(t => t[1]),
-        $profiles[p.pubkey]?.name,
-        $profiles[p.pubkey]?.display_name,
+        displayName(p.pubkey, $profiles[p.pubkey]),
       ]
         .join(' ')
         .toLowerCase();
@@ -351,33 +357,13 @@
         a.p.id.localeCompare(b.p.id),
     );
   $: visible = scored.slice(0, limit).map((x) => x.p);
-  $: if (mounted)
+  $: if (mounted && route.page !== 'thread')
     observeAuthors([
       ...(route.page === 'profile' ? [route.value] : []),
-      ...(thread ? [thread.pubkey] : []),
       ...candidates.slice(0, 240).map((p) => p.pubkey),
     ]);
-  $: replies =
-    thread && route.page === 'thread'
-      ? $comments
-          .filter(
-            (p) =>
-              p.id !== thread.id &&
-              !$graphInfo[p.pubkey]?.muted &&
-              !$mutes.includes(p.pubkey) &&
-              (p.root === thread.id || p.parent === thread.id),
-          )
-          .sort((a, b) => a.created_at - b.created_at)
-      : [];
-  $: ids = (
-    route.page === 'thread'
-      ? thread
-        ? [thread.id, ...replies.slice(0, 32).map((x) => x.id)]
-        : []
-      : ['topics', 'missing', 'notifications', 'settings'].includes(route.page)
-        ? []
-        : visible.slice(0, 48).map((p) => p.id)
-  )
+  $: ids = (['thread','topics','missing','notifications','settings'].includes(route.page)
+    ? [] : visible.slice(0, 48).map((p) => p.id))
     .sort()
     .join(',');
   $: if (mounted) watch(ids);
@@ -476,12 +462,6 @@
       showModal('account');
       return;
     }
-    if (kind === 'reply') {
-      replyParent = p;
-      await tick();
-      document.getElementById('reply-body')?.focus();
-      return;
-    }
     const key = kind + p.id;
     if (busy.has(key)) return;
     busy = new Set([...busy, key]);
@@ -531,25 +511,6 @@
       busy = new Set(busy);
     }
   }
-  async function sendReply() {
-    if (!thread || !reply.trim() || replyBusy) return;
-    if (!$account) {
-      showModal('account');
-      return;
-    }
-    replyBusy = true;
-    replyError = '';
-    try {
-      await publishComment(replyParent || thread, reply.trim());
-      reply = '';
-      replyParent = undefined;
-      notify('Reply published');
-    } catch (e) {
-      replyError = e instanceof Error ? e.message : 'Could not publish reply.';
-    } finally {
-      replyBusy = false;
-    }
-  }
   function changeOrder(name: string) {
     sorting = name;
     writeLocal('sort', name);
@@ -564,6 +525,8 @@
     }
   }
 </script>
+
+<svelte:document onvisibilitychange={() => pageVisible = document.visibilityState === 'visible'} />
 
 <svelte:head><meta name="theme-color" content="#f6f6ef" /></svelte:head>
 <header class="topbar">
@@ -606,7 +569,7 @@
         }}
         ><Icon name="user" size={16} /><span
           >{$account
-            ? $profiles[$account.pubkey]?.display_name || $profiles[$account.pubkey]?.name || 'Profile'
+            ? displayName($account.pubkey, $profiles[$account.pubkey])
             : 'Sign in'}</span
         ></button
       >
@@ -626,7 +589,10 @@
       {#each nav as item}<a
           class="nav-row"
           class:active={route.page === item.page}
-          href={item.path}><Icon name={item.icon} size={18} />{item.title}</a
+          href={item.path}><Icon name={item.icon} size={18} />{item.title}
+          {#if item.page === 'notifications' && $unreadNotificationIds.size}
+            <span class="unread-count" aria-label={$unreadNotificationIds.size + ' unread'}>{$unreadNotificationIds.size}</span>
+          {/if}</a
         >{/each}
     </div>
     <div class="nav-group">
@@ -634,7 +600,7 @@
       <a class="nav-row" class:active={route.page === 'topics'} href="/topics"
         ><Icon name="compass" />Explore all</a
       >
-      {#each [...new Set( [...joined, ...topics.map((t) => t.slug)] )].slice(0, 15) as slug}<a
+      {#each [...new Set( [...joined, ...topics.map((t) => t.slug)] )].slice(0, 15) as slug (slug)}<a
           class="nav-row topic-row"
           class:active={route.page === 'topic' && route.value === slug}
           href={'/r/' + slug}><TopicIcon {slug} small />r/{slug}</a
@@ -651,24 +617,18 @@
     </div>
   </aside>
   <main>
-    {#if ['topic', 'following', 'network', 'saved'].includes(route.page)}
+    {#if route.page === 'topic'}
+      <div class="mobile-community-intro">
+        <CommunityIntro {title} {subtitle} joined={joined.includes(route.value)} onjoin={() => join(route.value)}/>
+      </div>
+    {:else if ['following', 'network', 'saved'].includes(route.page)}
       <section class="hero">
         <div class="hero-content">
           <div class="hero-kicker">
-            <span></span>{route.page === 'topic' ? 'COMMUNITY FEED' : 'PERSONAL FEED'}
+            <span></span>PERSONAL FEED
           </div>
           <h1>{title}</h1>
           <p>{subtitle}</p>
-          {#if route.page === 'topic'}<button
-              class="hero-join"
-              onclick={() => join(route.value)}
-              ><Icon
-                name={joined.includes(route.value) ? 'check' : 'plus'}
-                size={14}
-              />{joined.includes(route.value)
-                ? 'Joined'
-                : 'Join community'}</button
-            >{/if}
         </div>
       </section>
     {:else if ['topics', 'search', 'notifications'].includes(route.page)}
@@ -698,6 +658,10 @@
           writeLocal('showPreviews', showPreviews);
         }} /></label>
       </section>
+      <GraphSettings/>
+      {#if $account}
+        {#key $account.pubkey + ':' + $account.method}<ProfileBackup method={$account.method}/>{/key}
+      {/if}
     {:else if route.page === 'notifications'}
       <Notifications onSignIn={() => showModal('account')} />
     {:else if route.page === 'topics'}
@@ -758,72 +722,21 @@
         {#if thread.root}<a class="back-link" href={'/post/' + thread.root}
             ><Icon name="comment" size={15} />View original discussion</a
           >{/if}
+        {#if thread.parent && thread.parent !== thread.root}
+          <a class="back-link" href={'/post/' + thread.parent}><Icon name="back" size={15}/>Parent comment</a>
+        {/if}
         <Card
           post={thread}
           saved={saved.some((s) => s.id === thread.id)}
           full
           onaction={action}
         />
-        <section class="discussion">
-          <div class="section-title">
-            <h2>Comments</h2>
-            <span class="mono">{replies.length}</span>
-          </div>
-          {#if $account}<form
-              class="reply-form"
-              onsubmit={(e) => {
-                e.preventDefault();
-                sendReply();
-              }}
-            >
-              {#if replyParent}<div class="reply-to">
-                  Replying to {$profiles[replyParent.pubkey]?.name ||
-                    shortKey(replyParent.pubkey)}
-                  <button
-                    aria-label="Cancel reply to comment"
-                    type="button"
-                    onclick={() => (replyParent = undefined)}
-                    ><Icon name="close" size={13} /></button
-                  >
-                </div>{/if}
-              <textarea
-                id="reply-body"
-                aria-label="Your reply"
-                placeholder="Add to the discussion…"
-                bind:value={reply}
-                maxlength="20000"
-                rows="3"></textarea><button
-                class="primary compact"
-                disabled={!reply.trim() || replyBusy}
-                >{replyBusy ? 'Publishing…' : 'Post reply'}</button
-              >
-            </form>{:else}<button
-              class="guest-reply"
-              onclick={() => showModal('account')}
-              ><Icon name="comment" /> Sign in to leave a comment <Icon
-                name="next"
-                size={14}
-              /></button
-            >{/if}
-          {#if replyError}<p class="error" role="alert">{replyError}</p>{/if}
-          {#each replies.slice(0, limit * 2) as p (p.id)}<div
-              class:nested={p.parent && p.parent !== thread.id}
-            >
-              {#if p.parent && p.parent !== thread.id}<a
-                  class="parent-comment"
-                  href={'/post/' + p.parent}>↳ In reply to a comment</a
-                >{/if}<Card
-                post={p}
-                comment
-                saved={saved.some((s) => s.id === p.id)}
-                onaction={action}
-              />
-            </div>{:else}<div class="quiet">No comments loaded yet.</div>{/each}
-          {#if replies.length > limit * 2}<button
-              class="outline wide"
-              onclick={() => (limit += 24)}>More comments</button
-            >{/if}
-        </section>
+        {#key thread.id}
+          <ThreadComments {thread} {saved} onaction={action} onSignIn={() => showModal('account')} {notify}/>
+        {/key}
+      {:else if $hiddenPostIds.has(route.value) || saved.some(p => p.id === route.value && !$canSeeAuthor(p.pubkey))}
+        <div class="empty"><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
+          <p>Visibility depends on the author’s follow distance and mutes.</p><a href="/settings">Graph settings</a></div>
       {:else}<div class="empty">
           <Icon name="comment" size={28} />
           <h2>
@@ -843,56 +756,14 @@
       {#if route.page === 'profile'}<a class="back-link" href="/"
           ><Icon name="back" size={15} />Home feed</a
         >
-        <section class="profile-head">
-          <div class="profile-banner"></div>
-          <div class="profile-inner">
-            <div class="profile-avatar">
-              {#if safeURL(profile?.picture)}<img
-                  src={profile.picture}
-                  alt=""
-                  referrerpolicy="no-referrer"
-                />{:else}<Icon name="user" size={25} />{/if}
-            </div>
-            <div class="profile-actions">
-              {#if $account?.pubkey === route.value}<button
-                  class="outline compact"
-                  onclick={() => showModal('profile')}>Edit profile</button
-                >{:else}<button
-                  class="primary compact"
-                  disabled={busy.has('follow')}
-                  onclick={() => toggleFollow(route.value)}
-                  ><Icon
-                    name={$follows.includes(route.value) ? 'check' : 'plus'}
-                    size={14}
-                  />{$follows.includes(route.value)
-                    ? 'Following'
-                    : 'Follow'}</button
-                >{#if $account}<button
-                    class="outline compact"
-                    disabled={busy.has('mute')}
-                    onclick={() => toggleMute(route.value)}
-                    >{$mutes.includes(route.value) ? 'Unmute' : 'Mute'}</button
-                  >{/if}{/if}
-            </div>
-            <h1>{profName}</h1>
-            <div class="profile-key" title={route.value}>
-              {nip19.npubEncode(route.value)}
-            </div>
-            {#if profile?.about}<p>{profile.about}</p>{/if}
-            {#if graphBadge?.distance != null && $graphStatus === 'ready'}<span
-                class="network-label"
-                ><Icon name="globe" size={13} />{graphBadge.distance === 0
-                  ? 'Graph center'
-                  : graphBadge.distance === 1
-                    ? 'Direct connection'
-                    : graphBadge.distance + ' steps away'}</span
-              >{/if}
-          </div>
-        </section>{/if}
+        <ProfileHeader pubkey={route.value} followBusy={busy.has('follow')} muteBusy={busy.has('mute')}
+          onFollow={() => toggleFollow(route.value)} onMute={() => toggleMute(route.value)}
+          onEdit={() => showModal('profile')}/>
+      {/if}
       {#if route.page === 'search'}
         <div class="relay-search">
           <button class="outline compact" disabled={searching} onclick={expandSearch}><Icon name="search" size={15}/>{searching ? 'Searching…' : 'Search relays'}</button>
-          <small role="status">{searchMessage || 'Send this query to public search relays to find more discussions.'}</small>
+          <small role="status">{searchMessage || (searched ? (visibleSearch.length ? `Found ${visibleSearch.length} matching discussion${visibleSearch.length === 1 ? '' : 's'} on relays.` : 'Connected relays returned no matching discussions within your graph settings.') : 'Send this query to public search relays to find more discussions.')}</small>
         </div>
         {#if profileKey(route.value)}<a
             class="search-profile"
@@ -998,10 +869,7 @@
   </main>
   <aside class="right-rail" aria-label="Community information">
     {#if route.page === 'topic'}
-      <section class="rail-panel about">
-        <h2>About r/{route.value}</h2>
-        <p>Public posts tagged #{route.value} and discussions in matching Nostr communities.</p>
-      </section>
+      <CommunityIntro {title} {subtitle} joined={joined.includes(route.value)} onjoin={() => join(route.value)}/>
     {/if}
     <section class="rail-panel popular">
       <div class="rail-eyebrow"><Icon name="compass" size={14} /> DISCOVER</div>
@@ -1078,7 +946,6 @@
           profile={$profiles[zapPost.pubkey]}
           relays={relayUrls}
           sign={$account ? signEvent : undefined}
-          receipts={$receipts[zapPost.id] ?? []}
         />
       </div>{/if}
   </dialog>

@@ -6,6 +6,7 @@ import { nsecEncode } from 'nostr-tools/nip19';
 import type { NostrEvent } from 'nostr-pubsub';
 import { asPost, postDraft, commentDraft, resolveCommunityThreads } from '../src/lib/posts';
 import { account, exportKey, follow, importAccount, like, likes, mute, posts, publishPost, signOut, unlike, loadNotifications, notifications, signInExtension, signEvent } from '../src/lib/network';
+import { visibilitySettings } from '../src/lib/visibility';
 import type { Request, Response } from '../src/lib/relayTypes';
 
 const secret = generateSecretKey(), pubkey = getPublicKey(secret);
@@ -54,7 +55,7 @@ test('signed writes require acknowledgment and preserve follow tags and private 
   const memory = new Map<string,string>();
   Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{
     setItem:(key:string,value:string) => memory.set(key,value),removeItem:(key:string)=>memory.delete(key)}});
-  Object.defineProperty(globalThis,'document',{configurable:true,value:{visibilityState:'visible'}});
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{visibilityState:'visible', hidden:true}});
   const other = getPublicKey(generateSecretKey()), target = getPublicKey(generateSecretKey());
   const baseTime = Math.floor(Date.now()/1000);
   const previous = new Map<number,NostrEvent>([
@@ -110,10 +111,12 @@ test('signed writes require acknowledgment and preserve follow tags and private 
   const peerNote = (kind:number,pub:string,time:number) => finalizeEvent({kind,tags:[['p',pub]],content:'Hi',created_at:time},peerSecret);
   const recent = peerNote(1,pubkey,baseTime), older = peerNote(7,pubkey,baseTime-10);
   receiver!.onmessage?.({data:{type:'events',events:[older,recent,recent,peerNote(9735,pubkey,baseTime),peerNote(1,target,baseTime),sign({kind:1,tags:[['p',pubkey]],content:'Self'})]}});
+  assert.deepEqual(get(notifications),[], 'default distance cannot admit unknown senders while the graph is loading');
+  visibilitySettings.set({maxDistance:null,hideOvermuted:false});
   assert.deepEqual(get(notifications).map(e=>e.id),[recent.id,older.id]);
   signOut();
   assert.deepEqual(get(notifications),[]);
-  close(); assert.equal(get(account),null); assert.equal(memory.size,0);
+  close(); assert.equal(get(account),null); assert.deepEqual([...memory.keys()],['nostreddit.ui.graphVisibility']);
 
   let release: (()=>void) | undefined;
   const signDelay = new Promise<void>(resolve => release = resolve);

@@ -18,6 +18,7 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@iris/svelte-ui": "file:vendor/iris-svelte-ui-3d26f8c.tgz",
     "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
     "@scure/base": "2.0.0",

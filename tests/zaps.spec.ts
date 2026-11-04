@@ -3,6 +3,9 @@ import { hex } from '@scure/base'
 import { finalizeEvent, verifyEvent } from 'nostr-tools/pure'
 import { WebSocket } from 'ws'
 import { authorKey, bolt11, metadata, preimage, target } from './helpers/zapInvoice'
+import { allowFixtureAuthors } from './helpers/graphPreferences';
+
+test.beforeEach(async ({context}) => { await allowFixtureAuthors(context); });
 
 test('guest can scan an invoice and see wallet-confirmed payment for a post', async ({ page }) => {
   const relay = new WebSocket('ws://127.0.0.1:43164')

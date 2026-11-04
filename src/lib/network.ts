@@ -1,22 +1,26 @@
-import { get, writable } from 'svelte/store';
+import { derived, get, writable, type Writable } from 'svelte/store';
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type EventTemplate } from 'nostr-tools/pure';
 import { decode, nsecEncode } from 'nostr-tools/nip19';
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
-import { observeGraphEvent, setGraphRoot } from './graph';
+import { graphViewer, graphInfo, graphStatus, observeEventAuthors, observeGraphEvent, observeProfile, profileRelations, setGraphPeers, setGraphRoot } from './graph';
 import { asPost, commentDraft, hexKey, postDraft, resolveCommunityThreads, topicSlug, type Post } from './posts';
+import { snapshotRoot } from './graph-model';
+import { authorPolicy, visibilitySettings } from './visibility';
+import { matchesZapReceipt, signedZapAuthor, type ZapInvoice } from './zaps';
 import { relayUrls, type Request, type Response } from './relayTypes';
+import { readLocal, writeLocal } from './ui';
 export { relayUrls, type Post };
 
-export interface Profile {name:string; about:string; picture:string; lud16:string; lud06:string; nip05:string; display_name:string}
+export interface Profile {name:string; about:string; picture:string; banner:string; website:string; lud16:string; lud06:string; nip05:string; display_name:string}
 export interface Account {pubkey:string; method:'local'|'extension'}
 export const account = writable<Account|null>(null);
-export const posts = writable<Post[]>([]), comments = writable<Post[]>([]);
-export const profiles = writable<Record<string,Profile>>({});
-export const likes = writable<Record<string,string[]>>({});
-export const receipts = writable<Record<string,NostrEvent[]>>({});
+const rawPosts = writable<Post[]>([]), rawComments = writable<Post[]>([]);
+const rawProfiles = writable<Record<string,Profile>>({});
+const rawLikes = writable<Record<string,string[]>>({});
+const rawReceipts = writable<Record<string,NostrEvent[]>>({});
 export const follows = writable<string[]>([]), mutes = writable<string[]>([]);
 export const status = writable<'loading'|'live'|'offline'>('loading');
-export const notifications = writable<NostrEvent[]>([]);
+const rawNotifications = writable<NostrEvent[]>([]);
 let notificationOwner = '', pinnedThread = '', pinnedTopic = '', pinnedAuthor = '';
 const roots = new Map<string,Post>(), replies = new Map<string,Post>();
 const metadata = new Map<string,NostrEvent>(), contacts = new Map<string,NostrEvent>();
@@ -26,17 +30,69 @@ const reactionIds = writable(0);
 const reactionTargets = new Map<string,string>();
 const deleted = new Map<string,NostrEvent>();
 const ownReactionTime = new Map<string,number>();
-const communities = writable<NostrEvent[]>([]);
+const rawCommunities = writable<NostrEvent[]>([]);
 const keyStorage = 'nostreddit.account.v1';
 let secret: Uint8Array | undefined;
 const noop = () => {};
 const newest = (a:NostrEvent, b?:NostrEvent) => !b || a.created_at > b.created_at || (a.created_at === b.created_at && a.id < b.id);
 
+// Keep verified source records available to relay routing, replaceable-event merges and deletions.
+// Public readers see a projection that changes immediately with graph settings and viewer identity.
+const viewerLists = derived([account, follows, mutes], ([session]) => {
+  const viewer = session?.pubkey ?? snapshotRoot;
+  const keys = (event?: NostrEvent) => new Set(event?.tags.filter(t => t[0] === 'p' && hexKey.test(t[1])).map(t => t[1]));
+  return { viewer, follows: keys(contacts.get(viewer)), mutes: keys(muteEvents.get(viewer)) };
+});
+export const canSeeAuthor = derived([viewerLists, visibilitySettings, graphViewer, graphInfo, graphStatus],
+  ([lists, options, graphRoot, info, status]) => {
+    const sameViewer = lists.viewer === graphRoot;
+    return authorPolicy(lists, options, sameViewer ? info : {}, sameViewer && status === 'ready');
+  });
+function visibleList<T extends {pubkey:string}>(raw: Writable<T[]>) {
+  return derived([raw, canSeeAuthor], ([items, allowed]) => items.filter(item => allowed(item.pubkey)));
+}
+export const posts = visibleList(rawPosts), comments = visibleList(rawComments);
+export const notifications = visibleList(rawNotifications), communities = visibleList(rawCommunities);
+const readNotificationIds = writable(new Set<string>());
+export const unreadNotificationIds = derived([notifications, readNotificationIds], ([events, read]) =>
+  new Set(events.filter(event => !read.has(event.id)).map(event => event.id)));
+export const profiles = derived([rawProfiles, canSeeAuthor], ([items, allowed]) =>
+  Object.fromEntries(Object.entries(items).filter(([key]) => allowed(key))));
+export const likes = derived([rawLikes, canSeeAuthor], ([items, allowed]) =>
+  Object.fromEntries(Object.entries(items).map(([id, keys]) => [id, keys.filter(allowed)])) as Record<string,string[]>);
+
+const zapAuthors = new WeakMap<NostrEvent, string | null>();
+function zapAuthor(receipt: NostrEvent): string | null {
+  if (zapAuthors.has(receipt)) return zapAuthors.get(receipt)!;
+  const sender = signedZapAuthor(receipt);
+  zapAuthors.set(receipt, sender);
+  return sender;
+}
+export const receipts = derived([rawReceipts, canSeeAuthor], ([items, allowed]) =>
+  Object.fromEntries(Object.entries(items).map(([id, events]) => [id, events.filter(event => {
+    const key = zapAuthor(event);
+    return key !== null && allowed(key);
+  })])) as Record<string,NostrEvent[]>);
+export const hiddenPostIds = derived([rawPosts, rawComments, canSeeAuthor], ([roots, replies, allowed]) =>
+  new Set([...roots, ...replies].filter(post => !allowed(post.pubkey)).map(post => post.id)));
+
+// Paying an invoice is an explicit user action, including guest zaps from an ephemeral key.
+// Confirm it only against the exact signed request and provider; never expose raw receipt records.
+export function watchZapPayment(id: string, zap: ZapInvoice, set: (confirmed:boolean) => void) {
+  let paid = false;
+  return rawReceipts.subscribe(records => {
+    if (paid) return;
+    paid = (records[id] ?? []).some(event => event.pubkey === zap.provider &&
+      event.tags.some(t => t[0] === 'description' && t[1] === zap.description) && matchesZapReceipt(event, zap));
+    set(paid);
+  });
+}
+
 function jsonObject(input:string): Record<string,unknown> {
   try { const value = JSON.parse(input); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
   catch { return {}; }
 }
-const emptyProfile: Profile = {name:'',about:'',picture:'',lud16:'',lud06:'',nip05:'',display_name:''};
+const emptyProfile: Profile = {name:'',about:'',picture:'',banner:'',website:'',lud16:'',lud06:'',nip05:'',display_name:''};
 function readProfile(event:NostrEvent) {
   const raw = jsonObject(event.content), clean = {...emptyProfile};
   for (const key of Object.keys(clean) as (keyof Profile)[]) {
@@ -61,28 +117,36 @@ function trimRecord<T>(record:Record<string,T>, limit:number) {
   for (const key of keys.slice(0,Math.max(0,keys.length-limit))) delete record[key];
 }
 function apply(events:NostrEvent[]) {
+  const authors = new Set<string>();
+  for (const event of events) {
+    if (event.kind === 9735) {
+      const sender = zapAuthor(event);
+      if (sender) authors.add(sender);
+    } else if ([0,1,7,1111,34550].includes(event.kind)) authors.add(event.pubkey);
+  }
+  if (authors.size) observeEventAuthors([...authors]);
   if (notificationOwner && get(account)?.pubkey === notificationOwner) {
     const matches = events.filter(e => [1,7,1111].includes(e.kind) && e.pubkey !== notificationOwner &&
       e.tags.some(t => t[0] === 'p' && t[1] === notificationOwner));
     if (matches.length) {
-      const previous = get(notifications), byId = new Map(previous.map(e => [e.id,e]));
+      const previous = get(rawNotifications), byId = new Map(previous.map(e => [e.id,e]));
       for (const event of matches) byId.set(event.id,event);
-      if (byId.size !== previous.length) notifications.set([...byId.values()].sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id)).slice(0,100));
+      if (byId.size !== previous.length) rawNotifications.set([...byId.values()].sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id)).slice(0,100));
     }
   }
   let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, receiptsDirty = false;
-  const ps = get(profiles), ls = get(likes), rs = get(receipts);
+  const ps = get(rawProfiles), ls = get(rawLikes), rs = get(rawReceipts);
   for (const event of events) {
     if (event.kind === 3 || event.kind === 10000) observeGraphEvent(event);
-    if (event.kind === 3 && newest(event,contacts.get(event.pubkey))) {
+    if (event.kind === 3 && event.pubkey === get(account)?.pubkey && newest(event,contacts.get(event.pubkey))) {
       contacts.set(event.pubkey,event);
-      if (event.pubkey === get(account)?.pubkey) updateFollows(event);
-    } else if (event.kind === 10000 && newest(event,muteEvents.get(event.pubkey))) {
+      updateFollows(event);
+    } else if (event.kind === 10000 && event.pubkey === (get(account)?.pubkey ?? snapshotRoot) && newest(event,muteEvents.get(event.pubkey))) {
       muteEvents.set(event.pubkey,event);
-      if (event.pubkey === get(account)?.pubkey) updateMutes(event);
+      if (event.pubkey === (get(account)?.pubkey ?? snapshotRoot)) updateMutes(event);
     } else if (event.kind === 34550) {
-      const previous = get(communities);
-      if (!previous.some(e => e.id === event.id)) communities.set([event,...previous].slice(0,80));
+      const previous = get(rawCommunities);
+      if (!previous.some(e => e.id === event.id)) rawCommunities.set([event,...previous].slice(0,80));
     } else if (event.kind === 0 && newest(event,metadata.get(event.pubkey))) {
       metadata.set(event.pubkey,event); ps[event.pubkey] = readProfile(event); profilesDirty = true;
     } else if (event.kind === 5) {
@@ -117,7 +181,7 @@ function apply(events:NostrEvent[]) {
           reactionIds.update(count => count+1);
           if (!ls[target]?.includes(event.pubkey)) { ls[target] = [...(ls[target] || []),event.pubkey]; likesDirty = true; }
         }
-      } else if (event.kind === 9735 && !rs[target]?.some(receipt => receipt.id === event.id)) {
+      } else if (event.kind === 9735 && zapAuthor(event) && !rs[target]?.some(receipt => receipt.id === event.id)) {
         rs[target] = [...(rs[target] || []),event].slice(-160); receiptsDirty = true;
       }
     } else if (!roots.has(event.id) && !replies.has(event.id)) {
@@ -129,10 +193,10 @@ function apply(events:NostrEvent[]) {
       else { roots.set(post.id,post); rootsDirty = true; }
     }
   }
-  if (rootsDirty) posts.set(ordered(roots,700));
+  if (rootsDirty) rawPosts.set(ordered(roots,700));
   if (repliesDirty) {
     resolveCommunityThreads(replies);
-    comments.set(ordered(replies,1400));
+    rawComments.set(ordered(replies,1400));
   }
   if (profilesDirty) {
     while (metadata.size > 1500) {
@@ -140,7 +204,7 @@ function apply(events:NostrEvent[]) {
       if (key === get(account)?.pubkey) { const own = metadata.get(key)!; metadata.delete(key); metadata.set(key,own); continue; }
       metadata.delete(key); delete ps[key];
     }
-    profiles.set(ps);
+    rawProfiles.set(ps);
   }
   if (likesDirty || reactionTargets.size > 4000) {
     trimRecord(ls,1200);
@@ -157,9 +221,9 @@ function apply(events:NostrEvent[]) {
       if (old && entries && ![...entries.values()].some(e=>e.pubkey===old.pubkey))
         ls[key] = (ls[key] || []).filter(k=>k !== old.pubkey);
     }
-    likes.set(ls);
+    rawLikes.set(ls);
   }
-  if (receiptsDirty) { trimRecord(rs,600); receipts.set(rs); }
+  if (receiptsDirty) { trimRecord(rs,600); rawReceipts.set(rs); }
 }
 
 type Interest = Extract<Request,{type:'watch'}>;
@@ -224,19 +288,22 @@ export function start() {
   restoreAccount();
   const home = watch([{kinds:[1,1111], '#t':homeTopics, limit:80}]);
   const unsub = account.subscribe(current => {
-    if (notificationOwner && notificationOwner !== current?.pubkey) { notificationOwner = ''; notifications.set([]); }
     setGraphRoot(current?.pubkey ?? null);
     updateFollows(current ? contacts.get(current.pubkey) : undefined);
     updateMutes(current ? muteEvents.get(current.pubkey) : undefined);
   });
-  let ownStop = noop, friendsStop = noop;
+  let ownStop = noop, stopNotifications = noop, friendsStop = noop;
   const own = account.subscribe(current => {
     ownStop();
+    stopNotifications();
+    stopNotifications = current ? loadNotifications(current.pubkey) : noop;
     ownStop = current ? watch([{kinds:[0,3,10000],authors:[current.pubkey],limit:3},{kinds:[1,1111],authors:[current.pubkey],limit:40}], true) : noop;
   });
   const friends = follows.subscribe(keys => {
     friendsStop();
+    setGraphPeers(keys);
     const filters:NostrFilter[] = [];
+    if (keys.length) filters.push({kinds:[3,10000], authors:keys.slice(0,64), limit:128});
     for (let i = 0; i < Math.min(2048, keys.length); i += 256) filters.push({kinds:[1,1111],authors:keys.slice(i,i+256),limit:40});
     friendsStop = watch(filters);
   });
@@ -266,7 +333,7 @@ export function start() {
   return () => {
     document.removeEventListener('visibilitychange',syncVisibility);
     window.removeEventListener('online',reconnect);
-    unsub(); own(); friends(); ownStop(); friendsStop(); home(); shutdown(); active = false;
+    unsub(); own(); friends(); ownStop(); stopNotifications(); friendsStop(); home(); shutdown(); active = false;
   };
 }
 export function loadTopic(topic:string) {
@@ -275,7 +342,7 @@ export function loadTopic(topic:string) {
   pinnedTopic = slug;
   const stop = watch([{kinds:[1,1111],'#t':[slug],limit:90},{kinds:[34550],'#d':[slug],limit:3}], true);
   let last = '', closeAddress = noop;
-  const unsubscribe = communities.subscribe(list => {
+  const unsubscribe = rawCommunities.subscribe(list => {
     const addresses = [...new Set(list.filter(e => e.tags.some(t => t[0] === 'd' && t[1] === slug))
       .map(e => '34550:'+e.pubkey+':'+slug))].sort().slice(0,3);
     if (last === addresses.join()) return;
@@ -288,7 +355,43 @@ export function loadProfile(pubkey:string) {
   if (!hexKey.test(pubkey)) return noop;
   pinnedAuthor = pubkey;
   const stop = watch([{kinds:[0],authors:[pubkey],limit:1},{kinds:[1,1111],authors:[pubkey],limit:80}]);
-  return () => { stop(); if (pinnedAuthor === pubkey) pinnedAuthor = ''; };
+  let scope = '', labels = '', closeLists = noop, closeNames = noop;
+  let peers: string[] = [];
+  const syncLists = () => {
+    const viewer = get(account)?.pubkey || '';
+    const direct = viewer ? get(follows).slice(0,256) : [];
+    const key = [viewer || 'guest', ...direct].join(',');
+    if (scope === key) return;
+    scope = key;
+    peers = direct;
+    observeProfile(pubkey, direct);
+    closeLists();
+    const filters: NostrFilter[] = [{kinds:[3], authors:[pubkey], limit:1}];
+    if (direct.length) filters.push({kinds:[3], authors:direct, '#p':[pubkey], limit:60});
+    closeLists = watch(filters);
+  };
+  const stopViewer = account.subscribe(syncLists), stopPeers = follows.subscribe(syncLists);
+  const syncNames = () => {
+    const social = get(profileRelations);
+    const candidates = social?.subject === pubkey ? social.mutuals : [];
+    observeEventAuthors([pubkey, ...candidates]);
+    const permitted = get(canSeeAuthor);
+    const known = permitted(pubkey) ? candidates.filter(permitted) : [];
+    const key = [scope, ...known].join(',');
+    if (labels === key) return;
+    labels = key;
+    closeNames();
+    const filters: NostrFilter[] = known.length ? [{kinds:[0],authors:known,limit:known.length}] : [];
+    // Check the latest lists for the displayed mutuals, including unfollows absent from reverse-tag queries.
+    const refresh = known.filter(friend => peers.includes(friend)).slice(0,6);
+    if (refresh.length) filters.push({kinds:[3],authors:refresh,limit:refresh.length});
+    closeNames = watch(filters);
+  };
+  const stopLabels = profileRelations.subscribe(syncNames), stopPolicy = canSeeAuthor.subscribe(syncNames);
+  return () => {
+    stop(); stopViewer(); stopPeers(); stopLabels(); stopPolicy(); closeLists(); closeNames();
+    if (pinnedAuthor === pubkey) { pinnedAuthor = ''; observeProfile('', []); }
+  };
 }
 export function loadThread(id:string) {
   if (!hexKey.test(id)) return noop;
@@ -297,18 +400,63 @@ export function loadThread(id:string) {
   let scope = '', closeScope = noop;
   const check = () => {
     const thread = roots.get(id) || replies.get(id);
-    const address = thread?.event.tags.find(t => t[0] === 'A' && t[1]?.startsWith('34550:'))?.[1] || '';
-    if (scope === address) return;
-    scope = address; closeScope();
-    closeScope = address ? watch([{kinds:[1111],'#A':[address],limit:180}]) : noop;
+    if (!thread) return;
+    const address = thread.event.tags.find(t => t[0] === 'A' && t[1]?.startsWith('34550:'))?.[1] || '';
+    // A permalink to a nested NIP-10 comment needs its original root's replies.
+    // Later descendants generally tag the root and immediate parent, not this focus.
+    const root = thread.root !== id && hexKey.test(thread.root) ? thread.root : '';
+    const next = root + '/' + address;
+    if (next === scope) return;
+    scope = next;
+    closeScope();
+    const filters: NostrFilter[] = [];
+    if (root) filters.push({kinds:[1,1111], '#e':[root], limit:180}, {kinds:[1111], '#E':[root], limit:140});
+    if (address) filters.push({kinds:[1111], '#A':[address], limit:180});
+    closeScope = filters.length ? watch(filters, !!root) : noop;
   };
-  const stopRoots = posts.subscribe(check), stopReplies = comments.subscribe(check);
+  const stopRoots = rawPosts.subscribe(check), stopReplies = rawComments.subscribe(check);
   return () => { stop(); stopRoots(); stopReplies(); closeScope(); if (pinnedThread === id) pinnedThread = ''; };
+}
+export function notificationPostId(event:NostrEvent) {
+  return event.kind === 7 ? event.tags.filter(t => t[0] === 'e' && hexKey.test(t[1])).at(-1)?.[1] : event.id;
+}
+function storedReadIds(pubkey:string): string[] {
+  const ids = readLocal<unknown>('readNotifications.'+pubkey, []);
+  return Array.isArray(ids) ? ids.filter(id => typeof id === 'string' && hexKey.test(id)) : [];
+}
+export function readPostNotifications(id:string, events:NostrEvent[]) {
+  if (!notificationOwner || get(account)?.pubkey !== notificationOwner) return;
+  const read = get(readNotificationIds);
+  const matches = events.filter(event => !read.has(event.id) &&
+    (notificationPostId(event) === id || (event.kind !== 7 && asPost(event)?.parent === id)));
+  if (!matches.length) return;
+  const ids = new Set([...storedReadIds(notificationOwner), ...read, ...matches.map(event => event.id)]);
+  // Keep room for older relay pages as well as the 100 events in the inbox.
+  const recent = [...ids].slice(-1000);
+  readNotificationIds.set(new Set(recent));
+  writeLocal('readNotifications.'+notificationOwner, recent);
 }
 export function loadNotifications(pubkey:string) {
   if (!hexKey.test(pubkey) || get(account)?.pubkey !== pubkey) return noop;
-  notificationOwner = pubkey; notifications.set([]);
+  notificationOwner = pubkey; rawNotifications.set([]);
+  const syncRead = () => readNotificationIds.set(new Set(storedReadIds(pubkey)));
+  syncRead();
+  const storageChanged = (event:StorageEvent) => {
+    if (event.key === 'nostreddit.ui.readNotifications.'+pubkey || event.key === null) syncRead();
+  };
+  globalThis.addEventListener?.('storage',storageChanged);
   const stop = watch([{kinds:[1,7,1111],'#p':[pubkey],limit:100}],true);
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true; stop();
+    globalThis.removeEventListener?.('storage',storageChanged);
+    if (notificationOwner === pubkey) { notificationOwner = ''; rawNotifications.set([]); readNotificationIds.set(new Set()); }
+  };
+  const stopAccount = account.subscribe(current => { if (current?.pubkey !== pubkey) close(); });
+  return () => { stopAccount(); close(); };
+}
+export function observeNotificationAuthors() {
   let authorKey = '', stopAuthors = noop, timer:ReturnType<typeof setTimeout>|undefined;
   const stopNames = notifications.subscribe(events => {
     clearTimeout(timer);
@@ -319,14 +467,7 @@ export function loadNotifications(pubkey:string) {
       stopAuthors = authors.length ? watch([{kinds:[0],authors,limit:authors.length}]) : noop;
     },150);
   });
-  let closed = false;
-  function close() {
-    if (closed) return;
-    closed = true; stop(); stopNames(); clearTimeout(timer); stopAuthors();
-    if (notificationOwner === pubkey) { notificationOwner = ''; notifications.set([]); }
-  }
-  const stopAccount = account.subscribe(current => { if (current?.pubkey !== pubkey) close(); });
-  return () => { stopAccount(); close(); };
+  return () => { stopNames(); clearTimeout(timer); stopAuthors(); };
 }
 export function observe(ids:string[]) {
   const visibleIds = [...new Set(ids)].filter(id => hexKey.test(id)).slice(0,60);
@@ -441,7 +582,7 @@ export async function publishComment(parent:Post, body:string) {
 export async function like(post:Post) {
   const me = get(account);
   if (!me) throw new Error('Sign in to like a post.');
-  if (get(likes)[post.id]?.includes(me.pubkey)) return;
+  if (get(rawLikes)[post.id]?.includes(me.pubkey)) return;
   const key = me.pubkey+':'+post.id;
   const created_at = Math.max(Math.floor(Date.now()/1000), (ownReactionTime.get(key) ?? 0)+1);
   const event = await publish({kind:7, created_at,tags:[['e',post.id,'',post.pubkey],['p',post.pubkey],['k',String(post.event.kind)]],content:'+'});

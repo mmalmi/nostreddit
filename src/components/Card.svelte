@@ -7,7 +7,8 @@
     account,
     type Post,
   } from '../lib/network';
-  import { shortKey, age, safeURL } from '../lib/ui';
+  import { displayName, age, safeURL } from '../lib/ui';
+  import { noteParts, partText } from '../lib/mentions';
   import ZapCount from '../lib/ZapCount.svelte';
   import NoteText from './NoteText.svelte';
   import Icon from './Icon.svelte';
@@ -19,7 +20,7 @@
   export let comment = false;
   export let onaction: (action: string, post: Post) => void;
   $: author = $profiles[post.pubkey];
-  $: name = author?.display_name || author?.name || shortKey(post.pubkey);
+  $: name = displayName(post.pubkey, author);
   $: likers = $likes[post.id] ?? [];
   $: liked = Boolean($account && likers.includes($account.pubkey));
   $: replyCount = $comments.filter(
@@ -40,7 +41,7 @@
     rawHeading.endsWith('…') &&
     body.startsWith(rawHeading.slice(0, -1));
   $: chosenHeading = autoShortened && full ? body.split('\n')[0] : rawHeading;
-  $: heading = comment
+  $: heading = comment || (full && post.parent)
     ? ''
     : link && chosenHeading === link
       ? photo
@@ -53,7 +54,9 @@
       ? body.split('\n').slice(1).join('\n').trim()
       : body;
   $: cleanBody = link ? remainder.replace(link, '').trim() : remainder;
-  $: visibleBody = full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
+  $: visibleBody = full && post.parent ? post.body : full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
+  $: headingParts = noteParts(heading, post.event.tags);
+  $: renderedHeading = headingParts.map(part => partText(part,$profiles)).join('');
   $: picture = safeURL(author?.picture);
 </script>
 
@@ -92,9 +95,9 @@
       /></a
     >{/if}
   {#if heading}<h2>
-      {#if full}{heading}{:else}<a href={'/post/' + post.id}>{heading}</a>{/if}
+      {#if full}{renderedHeading}{:else}<a href={'/post/' + post.id}>{renderedHeading}</a>{/if}
     </h2>{/if}
-  {#if visibleBody}<NoteText text={visibleBody} full={full || comment} />{/if}
+  {#if visibleBody}<NoteText text={visibleBody} tags={post.event.tags} full={full || comment} />{/if}
   {#if photo && full}<a
       class="detail-photo"
       href={photo}

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@iris/svelte-ui':
+        specifier: file:vendor/iris-svelte-ui-3d26f8c.tgz
+        version: file:vendor/iris-svelte-ui-3d26f8c.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))
       '@noble/curves':
         specifier: 2.0.1
         version: 2.0.1
@@ -588,6 +591,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@iris/svelte-ui@file:vendor/iris-svelte-ui-3d26f8c.tgz':
+    resolution: {integrity: sha512-pmwjeuzSlGbrBlO5QByjNDFvC0L8OgOTZI2XbyUUxU3mJW7v5pNUFPNFSqT2o5VC6gtqATNk5khYu9Iacwk3qw==, tarball: file:vendor/iris-svelte-ui-3d26f8c.tgz}
+    version: 0.1.2
+    peerDependencies:
+      svelte: ^5.0.0
+
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -995,6 +1004,10 @@ packages:
 
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
+
+  minidenticons@4.2.1:
+    resolution: {integrity: sha512-oWfFivA0lOx/V/bO/YIJbthB26lV8JXYvhnv9zM2hNd3fzsHTXQ6c6bWZPcvhD3nnOB+lQk/D9lF43BXixrN8g==}
+    engines: {node: '>=15.14.0'}
 
   miniflare@4.20260317.1:
     resolution: {integrity: sha512-A3csI1HXEIfqe3oscgpoRMHdYlkReQKPH/g5JE53vFSjoM6YIAOGAzyDNeYffwd9oQkPWDj9xER8+vpxei8klA==}
@@ -1588,6 +1601,11 @@ snapshots:
   '@img/sharp-win32-x64@0.34.5':
     optional: true
 
+  '@iris/svelte-ui@file:vendor/iris-svelte-ui-3d26f8c.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))':
+    dependencies:
+      minidenticons: 4.2.1
+      svelte: 5.57.1(@typescript-eslint/types@8.71.0)
+
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
@@ -1937,6 +1955,8 @@ snapshots:
   magic-string@0.30.21:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  minidenticons@4.2.1: {}
 
   miniflare@4.20260317.1:
     dependencies:
