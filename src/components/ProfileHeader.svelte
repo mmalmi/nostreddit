@@ -14,6 +14,7 @@
   import SocialContext from './SocialContext.svelte';
 
   export let pubkey: string;
+  export let active = true;
   export let followBusy: boolean;
   export let muteBusy: boolean;
   export let onFollow: () => void;
@@ -30,7 +31,7 @@
   $: website = safeURL(profile?.website);
   $: social = $profileRelations?.subject === pubkey && $profileRelations?.viewer === ($account?.pubkey || snapshotRoot)
     ? $profileRelations : null;
-  $: observeEventAuthors([pubkey, ...(social?.mutuals ?? [])]);
+  $: if (active) observeEventAuthors([pubkey, ...(social?.mutuals ?? [])]);
   $: allowed = $canSeeAuthor(pubkey);
   $: allowedPeople = social?.mutuals.filter($canSeeAuthor) ?? [];
   $: people = allowedPeople.slice(0, expandedFor === pubkey ? 12 : 3);
