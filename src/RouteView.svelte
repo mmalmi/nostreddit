@@ -46,32 +46,30 @@
     writeLocal,
   } from './lib/ui';
   import TopicIntro from './components/TopicIntro.svelte';
-  import Notifications from './components/Notifications.svelte';
   import Mark from './components/Mark.svelte';
   import Icon from './components/Icon.svelte';
   import TopicIcon from './components/TopicIcon.svelte';
   import Card from './components/Card.svelte';
-  import ThreadComments from './components/ThreadComments.svelte';
-  import ProfileHeader from './components/ProfileHeader.svelte';
-  import Outbox from './components/Outbox.svelte';
   import { topicPath, topicSlug } from './lib/hashtags';
   import { matchesTopic, mentionsTopic, postTopics } from './lib/posts';
-  import ProfileConnections from './components/ProfileConnections.svelte';
   import { isEventId, postIdFromPath, postUrl } from './lib/post-url';
   import { profileUrl, profileKeyFromPath, type Relationship } from './lib/profile-url';
-  import GraphSettings from './components/GraphSettings.svelte';
-  import AppearanceSettings from './components/AppearanceSettings.svelte';
-  import ImageProxySettings from './components/ImageProxySettings.svelte';
-  import HotSettings from './components/HotSettings.svelte';
   import { hotPreferences } from './lib/hot-preferences';
   import { rankHot, hotQuery, hotCandidates } from './lib/hot';
   import { createHotSession } from './lib/hot-session';
-  import AccountPanel from './components/AccountPanel.svelte';
-  import ProfileBackup from './components/ProfileBackup.svelte';
-  import EditProfile from './components/EditProfile.svelte';
-  import Composer from './components/Composer.svelte';
   import FeedComposer from './components/FeedComposer.svelte';
-  import ZapPanel from './lib/ZapPanel.svelte';
+  let initialFeedReady = false;
+  let initialFeedStarted = 0;
+  let initialFeedTimer: ReturnType<typeof setTimeout> | undefined;
+  // Coalesce the first relay bursts before presenting cards, rather than moving
+  // already painted cards each time another part of the initial batch arrives.
+  function prepareInitialFeed(enabled: boolean, rows: Post[]) {
+    if (initialFeedReady || !enabled || !rows.length) return;
+    initialFeedStarted ||= performance.now();
+    clearTimeout(initialFeedTimer);
+    initialFeedTimer = setTimeout(() => { initialFeedReady = true; },
+      Math.max(0, Math.min(120, 480 - (performance.now() - initialFeedStarted))));
+  }
   export let active = true;
   export let navigate: (path: string) => void;
   type Route = { page: string; value: string; connections?: Relationship; fromTopic?: string };
@@ -322,7 +320,7 @@
       assistance.reset();
       activeCleanup?.();
       observedCleanup?.();
-      clearTimeout(alertTimer);
+      clearTimeout(alertTimer); clearTimeout(initialFeedTimer);
       document.removeEventListener('click', intercept);
       document.removeEventListener('keydown', keypress);
     };
@@ -402,7 +400,11 @@
     ...ranked.filter(p=>!heldIds.has(p.id)),
   ] : ranked;
   $: hotChanged = hotActive && heldHot && ranked.slice(0,limit).some((p,i)=>ordered[i]?.id !== p.id);
-  $: visible = ordered.slice(0,limit);
+  $: coalesceInitialFeed = hotActive && ['home', 'topic'].includes(route.page);
+  $: if (mounted && active) prepareInitialFeed(coalesceInitialFeed, ranked);
+  $: if (!active) clearTimeout(initialFeedTimer);
+  $: preparingFeed = coalesceInitialFeed && !initialFeedReady && ranked.length > 0;
+  $: visible = preparingFeed ? [] : ordered.slice(0,limit);
   function holdHotOrder() {
     if (!active) return;
     if(hotActive && !heldHot && window.scrollY > 160) heldHot=ranked.map(p=>p.id);
@@ -569,6 +571,11 @@
   }
 </script>
 
+{#snippet componentError()}
+  <p class="state" role="alert">Could not load this page.</p>
+  <button class="outline compact" onclick={() => location.reload()}>Reload page</button>
+{/snippet}
+
 <svelte:window onscroll={holdHotOrder}/>
 <svelte:document onvisibilitychange={() => documentVisible = document.visibilityState === 'visible'} />
 
@@ -692,39 +699,31 @@
     {/if}
     {#if route.connections}
       {#key route.value + route.connections}
+              {#await import('./components/ProfileConnections.svelte')}
+        <p class="state" role="status">Loading…</p>
+      {:then {default: ProfileConnections}}
         <ProfileConnections pubkey={route.value} direction={route.connections}/>
+      {:catch}
+        {@render componentError()}
+      {/await}
       {/key}
     {:else if route.page === 'settings'}
-      <div class="page-head"><h1>Settings</h1><p>Preferences are saved in this browser.</p></div>
-      <AppearanceSettings/>
-      <section class="preferences" aria-labelledby="feed-preferences">
-        <h2 id="feed-preferences">Feed preferences</h2>
-        <label><span>Feed order</span>
-          <select value={sorting} onchange={(event) => changeOrder(event.currentTarget.value)}>
-            {#each orders as order}<option value={order.name}>{order.name}</option>{/each}
-          </select>
-        </label>
-        <label><span>Show media previews in feeds</span><input type="checkbox" checked={showPreviews} onchange={(event) => {
-          showPreviews = event.currentTarget.checked;
-          writeLocal('showPreviews', showPreviews);
-        }} /></label>
-      </section>
-      <HotSettings/>
-      <ImageProxySettings/>
-      <GraphSettings/>
-      {#if $account}<Outbox/>{/if}
-      {#if $account}
-        {#key $account.pubkey + ':' + $account.method}<ProfileBackup method={$account.method}/>{/key}
-      {/if}
-      <section class="preferences source-section" aria-labelledby="source-links">
-        <h2 id="source-links">Source</h2>
-        <div class="source-links">
-          <a href="https://github.com/mmalmi/nostreddit" target="_blank" rel="noopener noreferrer">GitHub <Icon name="external" size={14}/></a>
-          <a href="https://git.iris.to/#/npub1xdhnr9mrv47kkrn95k6cwecearydeh8e895990n3acntwvmgk2dsdeeycm/nostreddit" target="_blank" rel="noopener noreferrer">git.iris.to <Icon name="external" size={14}/></a>
-        </div>
-      </section>
+            {#await import('./components/SettingsPage.svelte')}
+        <p class="state" role="status">Loading…</p>
+      {:then {default: SettingsPage}}
+        <SettingsPage {sorting} {showPreviews} onOrderChange={changeOrder}
+        onPreviewsChange={(value) => { showPreviews = value; writeLocal('showPreviews', value); }} />
+      {:catch}
+        {@render componentError()}
+      {/await}
     {:else if route.page === 'notifications'}
-      <Notifications {active} onSignIn={() => showModal('account')} />
+            {#await import('./components/Notifications.svelte')}
+        <p class="state" role="status">Loading…</p>
+      {:then {default: Notifications}}
+        <Notifications {active} onSignIn={() => showModal('account')} />
+      {:catch}
+        {@render componentError()}
+      {/await}
     {:else if route.page === 'topics'}
       <label class="directory-input"
         ><Icon name="search" /><input
@@ -777,7 +776,13 @@
           onaction={action}
         />
         {#key thread.id}
-          <ThreadComments routeActive={active} {thread} {saved} onaction={action} onSignIn={() => showModal('account')} {notify}/>
+                {#await import('./components/ThreadComments.svelte')}
+        <p class="state" role="status">Loading…</p>
+      {:then {default: ThreadComments}}
+        <ThreadComments routeActive={active} {thread} {saved} onaction={action} onSignIn={() => showModal('account')} {notify}/>
+      {:catch}
+        {@render componentError()}
+      {/await}
         {/key}
       {:else if $hiddenPostIds.has(route.value) || saved.some(p => p.id === route.value && !$canSeeAuthor(p.pubkey))}
         <div class="empty"><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
@@ -801,9 +806,15 @@
       {#if route.page === 'profile'}<a class="back-link" href="/"
           ><Icon name="back" size={15} />Home feed</a
         >
+              {#await import('./components/ProfileHeader.svelte')}
+        <div class="profile-loading" role="status"><p class="state">Loading profile…</p></div>
+      {:then {default: ProfileHeader}}
         <ProfileHeader {active} pubkey={route.value} followBusy={busy.has('follow')} muteBusy={busy.has('mute')}
           onFollow={() => toggleFollow(route.value)} onMute={() => toggleMute(route.value)}
           onEdit={() => showModal('profile')}/>
+      {:catch}
+        {@render componentError()}
+      {/await}
       {/if}
       {#if route.page === 'search'}
         <div class="search-assist">
@@ -917,7 +928,7 @@
               </h2>
               <p>You can still browse all public discussions.</p>
               <a href="/">Open home feed</a>
-            {:else if $status === 'loading' || (route.page === 'network' && $graphStatus === 'loading')}<h2
+            {:else if preparingFeed || $status === 'loading' || (route.page === 'network' && $graphStatus === 'loading')}<h2
               >
                 Tuning in…
               </h2>
@@ -1014,8 +1025,17 @@
     <button class="modal-close" aria-label="Close dialog" onclick={closeModal}
       ><Icon name="close" size={18} /></button
     >
-    {#if modal === 'account'}<AccountPanel onclose={accountDone} {notify} />
-    {:else if modal === 'compose' && $account}<Composer
+    {#if modal === 'account'}      {#await import('./components/AccountPanel.svelte')}
+        <p class="state" role="status">Loading…</p>
+      {:then {default: AccountPanel}}
+        <AccountPanel onclose={accountDone} {notify} />
+      {:catch}
+        {@render componentError()}
+      {/await}
+    {:else if modal === 'compose' && $account}      {#await import('./components/Composer.svelte')}
+        <p class="state" role="status">Loading…</p>
+      {:then {default: Composer}}
+        <Composer
         initialTopic={route.page === 'topic' ? route.value : ''}
         initialMode={composeMode}
         owner={$account.pubkey}
@@ -1026,22 +1046,37 @@
           notify('Post saved');
         }}
       />
-    {:else if modal === 'profile' && $account}<EditProfile
+      {:catch}
+        {@render componentError()}
+      {/await}
+    {:else if modal === 'profile' && $account}      {#await import('./components/EditProfile.svelte')}
+        <p class="state" role="status">Loading…</p>
+      {:then {default: EditProfile}}
+        <EditProfile
         profile={$profiles[$account.pubkey]}
         ondone={() => {
           closeModal();
           notify('Profile updated');
         }}
       />
+      {:catch}
+        {@render componentError()}
+      {/await}
     {:else if modal === 'zap' && zapPost}<div
         class="dialog-content zap-content"
       >
+              {#await import('./lib/ZapPanel.svelte')}
+        <p class="state" role="status">Loading…</p>
+      {:then {default: ZapPanel}}
         <ZapPanel
           event={zapPost.event}
           profile={$profiles[zapPost.pubkey]}
           relays={relayUrls}
           sign={$account ? signEvent : undefined}
         />
+      {:catch}
+        {@render componentError()}
+      {/await}
       </div>{/if}
   </dialog>
 {/if}
@@ -1053,6 +1088,10 @@
   </div>{/if}
 
 <style>
+  /* Match the header's reserved desktop/mobile layout while its code loads. */
+  .profile-loading{min-height:452.75px;box-sizing:border-box;border:1px solid var(--line);border-radius:13px;background:var(--paper);padding:20px}
+  @media(max-width:520px){.profile-loading{min-height:436.75px}}
+
   .hot-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 12px;font-size:12px;color:var(--muted)}
   .hot-status{color:var(--muted)}
   .hot-controls button{font-size:12px;color:var(--accent)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { profileUrl } from '../lib/profile-url';
   import { account, profiles, signInExtension, createProfile, importAccount, signOut, saveProfile } from '../lib/network';
   import { displayName } from '../lib/ui';
@@ -18,6 +19,10 @@
     return nameAt(i) === previous ? nameAt((i + 1) % (first.length * last.length)) : nameAt(i);
   }
 
+  let nameInput: HTMLInputElement | undefined;
+  onMount(() => {
+    if (!$account && nameInput?.closest('dialog')?.open) { nameInput.focus(); nameInput.select(); }
+  });
   let mode: 'new' | 'existing' | 'retry-name' = 'new';
   let name = suggest(), secret = '', error = '', busy = false;
   function switchMode(next: typeof mode) {
@@ -89,7 +94,7 @@
   {:else if mode === 'new'}
     <h2>Create a profile</h2>
     <form onsubmit={(e) => {e.preventDefault(); submit('new')}}>
-      <label>Display name<input name="display-name" value={name} onpaste={pasteName} oninput={(e) => changeName(e.currentTarget.value)} required maxlength="60" autocomplete="nickname" /></label>
+      <label>Display name<input bind:this={nameInput} name="display-name" value={name} onpaste={pasteName} oninput={(e) => changeName(e.currentTarget.value)} required maxlength="60" autocomplete="nickname" /></label>
       <button type="button" class="name-suggestion" disabled={busy} onclick={() => name = suggest(name)}>Suggest another name</button>
       <button class="primary wide" disabled={busy || !name.trim()}>{busy ? 'Creating…' : 'Create profile'}</button>
     </form>
