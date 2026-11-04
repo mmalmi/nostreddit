@@ -4,6 +4,7 @@ import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type Event
 import { nsecEncode, npubEncode } from 'nostr-tools/nip19';
 import { v2 as nip44 } from 'nostr-tools/nip44';
 import { WebSocket } from 'ws';
+import { postIdFromPath } from '../src/lib/post-url';
 import { allowFixtureAuthors } from './helpers/graphPreferences';
 
 const relayUrl = 'ws://127.0.0.1:43164';
@@ -89,7 +90,9 @@ test('offline posts, replies and reaction changes survive reload and reach the r
   await page.getByRole('button',{name:'Publish post',exact:true}).click();
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
   const permalink = page.url();
-  const id = new URL(permalink).pathname.split('/').at(-1)!;
+  const identifier = new URL(permalink).pathname.split('/').at(-1)!;
+  expect(identifier).toMatch(/^note1[023456789acdefghjklmnpqrstuvwxyz]{58}$/);
+  const id = postIdFromPath(identifier)!;
   expect(id).toMatch(/^[0-9a-f]{64}$/);
   await page.getByLabel('Your reply',{exact:true}).fill(reply);
   await page.getByRole('button',{name:'Post reply',exact:true}).click();

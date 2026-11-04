@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
-  import { cachedPhoto, rememberPhoto } from '../lib/photo-cache';
+  import { tick } from 'svelte';
+  import { proxyImage, proxyPoster } from '../lib/image-load';
+  import { imageProxySettings, type ImageProxySettings } from '../lib/image-proxy';
   import type { MediaItem } from '../lib/media';
   import Icon from './Icon.svelte';
 
@@ -9,27 +10,19 @@
   let openedUrl = '', failedUrl = '', enlargedUrl = '';
   let player: HTMLVideoElement | HTMLAudioElement | undefined;
   $: expanded = openedUrl === item.url;
-  $: failed = failedUrl === item.url;
+  let failedSettings:ImageProxySettings | undefined;
+  $: failed = failedUrl === item.url && failedSettings === $imageProxySettings;
+  $: transferWidth = Math.min(2048, item.width || Math.min(650, window.innerWidth));
+  function unavailable() {failedUrl=item.url; failedSettings=$imageProxySettings;}
   $: provider = item.kind === 'youtube' || item.kind === 'vimeo';
   $: video = item.kind === 'video' || provider;
   $: label = item.kind === 'youtube' ? 'YouTube' : item.kind === 'vimeo' ? 'Vimeo' : item.kind;
   $: host = new URL(item.url).hostname;
 
-  let localImage='', disposed=false;
-  onDestroy(()=>{disposed=true; if(localImage) URL.revokeObjectURL(localImage);});
-  async function imageUnavailable() {
-    if (localImage) {failedUrl=item.url;return;}
-    const url=item.url;
-    const blob=await cachedPhoto(url).catch(()=>undefined);
-    if (disposed || url!==item.url) return;
-    if (blob) localImage=URL.createObjectURL(blob);
-    else failedUrl=url;
-  }
   function enlarge(e: MouseEvent) {
     if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || typeof HTMLDialogElement === 'undefined' || !HTMLDialogElement.prototype.showModal) return;
     e.preventDefault();
     enlargedUrl = item.url;
-    void rememberPhoto(item.url).catch(()=>{});
   }
   function showImageDialog(node: HTMLDialogElement) { node.showModal(); }
   async function loadPlayer() {
@@ -67,8 +60,8 @@
   {:else if item.kind === 'image' && (!item.clickToLoad || expanded)}
     <a class="image-link" href={item.url} target="_blank" rel="noopener noreferrer" onclick={enlarge}
       aria-label={'Expand image: ' + (item.alt || host)}>
-      <img src={localImage || item.url} alt={item.alt || 'Photo from ' + host} width={item.width} height={item.height}
-        loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror={imageUnavailable}/>
+      <img use:proxyImage={{url:item.url,width:transferWidth,offline:true,unavailable}} alt={item.alt || 'Photo from ' + host} width={item.width} height={item.height}
+        loading="lazy" decoding="async" referrerpolicy="no-referrer"/>
       <span class="expand-icon" aria-hidden="true">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6m0-6-7 7M10 20H4v-6m0 6 7-7"/></svg>
       </span>
@@ -79,14 +72,16 @@
           <a href={item.url} target="_blank" rel="noopener noreferrer">Open original <Icon name="external" size={14}/></a>
           <form method="dialog"><button aria-label="Close image"><Icon name="close" size={20}/></button></form>
         </div>
-        <img src={localImage || item.url} alt={item.alt || 'Photo from ' + host} referrerpolicy="no-referrer"/>
+        <img use:proxyImage={{url:item.url,offline:true,remember:true}} alt={item.alt || 'Photo from ' + host} referrerpolicy="no-referrer"/>
       </dialog>
     {/if}
   {:else}
     {#if (compact || provider || item.clickToLoad) && !expanded}
       <button type="button" class="load" class:video onclick={loadPlayer}>
         {#if video}
-          {#if item.poster}<img class="poster" src={item.poster} alt="" loading="lazy" referrerpolicy="no-referrer" />{/if}
+          {#if item.poster || (item.kind === 'video' && $imageProxySettings.enabled)}
+            <img class="poster" use:proxyImage={{url:item.poster || item.url,width:transferWidth,videoThumbnail:!item.poster}} alt="" loading="lazy" referrerpolicy="no-referrer" />
+          {/if}
           <span class="play-icon" aria-hidden="true">▶</span>
         {/if}
         <span class="load-label">{provider ? 'Load ' + label + ' player' : item.kind === 'image' ? 'Show image' : 'Play ' + label}</span>
@@ -98,11 +93,11 @@
         referrerpolicy="strict-origin-when-cross-origin"></iframe>
     {:else if item.kind === 'video'}
       <!-- svelte-ignore a11y_media_has_caption (Only the author's media URL is available.) -->
-      <video controls playsinline preload="none" src={item.url} poster={item.poster} bind:this={player} use:pauseWhenHidden
-        aria-label={item.alt || 'Video from ' + host} onerror={() => failedUrl = item.url}></video>
+      <video controls playsinline preload="none" src={item.url} use:proxyPoster={{url:item.poster || item.url,width:transferWidth,videoThumbnail:!item.poster}} bind:this={player} use:pauseWhenHidden
+        aria-label={item.alt || 'Video from ' + host} onerror={unavailable}></video>
     {:else if item.kind === 'audio'}
       <audio controls preload="none" src={item.url} bind:this={player} use:pauseWhenHidden
-        aria-label={item.alt || 'Audio from ' + host} onerror={() => failedUrl = item.url}></audio>
+        aria-label={item.alt || 'Audio from ' + host} onerror={unavailable}></audio>
     {/if}
     <a class="source" href={item.url} target="_blank" rel="noopener noreferrer" aria-label={'Open original on ' + host}>
       {host}<Icon name="external" size={12}/>

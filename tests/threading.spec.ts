@@ -1,3 +1,4 @@
+import { postUrl } from '../src/lib/post-url';
 import { once } from 'node:events';
 import { expect, test, type Page } from '@playwright/test';
 import { finalizeEvent, generateSecretKey, type Event } from 'nostr-tools/pure';
@@ -100,8 +101,8 @@ test('an inline reply stays with its immediate parent on a cold comment permalin
     await allowFixtureAuthors(guest);
     const reader = await guest.newPage();
     await reader.goto(new URL('/post/' + tracks.id, page.url()).href);
-    await expect(reader.getByRole('link', {name:'View original discussion'})).toHaveAttribute('href', '/post/' + root.id);
-    await expect(reader.getByRole('link', {name:'Parent comment'})).toHaveAttribute('href', '/post/' + sand.id);
+    await expect(reader.getByRole('link', {name:'View original discussion'})).toHaveAttribute('href', postUrl(root.id));
+    await expect(reader.getByRole('link', {name:'Parent comment'})).toHaveAttribute('href', postUrl(sand.id));
     await expect(row(reader, heron.id)).toHaveAttribute('data-depth', '0');
     await expect(row(reader, photo.id)).toHaveAttribute('data-depth', '1');
     await expect(row(reader, newId!)).toHaveAttribute('data-depth', '1');

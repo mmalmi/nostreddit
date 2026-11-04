@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isEventId, postUrl } from '../lib/post-url';
   import { onMount, tick } from 'svelte';
   import { account, comments, likes, mutes, observe, profiles, publishComment, type Post, type Profile } from '../lib/network';
   import { graphInfo, observeAuthors } from '../lib/graph';
@@ -108,7 +109,7 @@
   {#if $account}{@render composer(thread, false)}{:else}
     <button class="guest-reply" onclick={onSignIn}><Icon name="comment"/> Sign in to leave a comment <Icon name="next" size={14}/></button>
   {/if}
-  {#if lastPublished && !visible.some(row => row.post.id === lastPublished)}<a class="parent-context" href={'/post/'+lastPublished}>View your reply</a>{/if}
+  {#if lastPublished && !visible.some(row => row.post.id === lastPublished)}<a class="parent-context" href={postUrl(lastPublished)}>View your reply</a>{/if}
   <ol class="thread-list">
     {#each visible as row (row.post.id)}
       {@const p = row.post}
@@ -125,9 +126,9 @@
                 <strong>{author(p.pubkey, $profiles[p.pubkey])}</strong><span>{row.descendants ? row.descendants + (row.descendants === 1 ? ' reply' : ' replies') : 'Collapsed'}</span>
               </button>
             {:else}
-              {#if row.missingParent && p.parent && p.parent !== p.id}<a class="parent-context" href={'/post/' + p.parent}>View parent comment</a>{/if}
+              {#if row.missingParent && isEventId(p.parent) && p.parent !== p.id}<a class="parent-context" href={postUrl(p.parent)}>View parent comment</a>{/if}
               <Card post={p} comment saved={saved.some(s => s.id === p.id)} onaction={handle}/>
-              {#if row.depth >= 5 && row.descendants}<a class="parent-context" href={'/post/'+p.id}>Continue this thread →</a>{/if}
+              {#if row.depth >= 5 && row.descendants}<a class="parent-context" href={postUrl(p.id)}>Continue this thread →</a>{/if}
               {#if active === p.id && $account}{@render composer(p, true)}{/if}
             {/if}
           </div>

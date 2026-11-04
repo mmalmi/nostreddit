@@ -1,3 +1,4 @@
+import { postUrl } from '../src/lib/post-url';
 import { once } from 'node:events';
 import { expect, test } from '@playwright/test';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure';
@@ -27,7 +28,7 @@ test('a Mostro feed card and its thread retain Mostro context, explicit Bitcoin 
   await expect(page.locator('article .community-link').filter({hasText:'r/bitcoin'})).toHaveCount(0);
   await page.screenshot({path:info.outputPath('topic.png')});
   await card.getByRole('link',{name:mixed.content}).click();
-  await expect(page).toHaveURL(new RegExp('/post/'+mixed.id+'\\?r=mostro$'));
+  await expect(page).toHaveURL(url => url.pathname + url.search === postUrl(mixed.id,'mostro'));
   await expect(page.locator('a.back-link').first()).toHaveAttribute('href','/r/mostro');
   await expect(page.locator('article .community-link').first()).toHaveText('r/mostro');
 });

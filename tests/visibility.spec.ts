@@ -1,3 +1,4 @@
+import { postUrl } from '../src/lib/post-url';
 import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
@@ -70,14 +71,14 @@ test('guests can widen and restore the same graph limit across home, topic, save
   await expect(page.getByLabel('Maximum follow distance')).toHaveValue('5');
   await expect(page.getByLabel('Hide overmuted profiles')).toBeChecked();
   await page.getByRole('link',{name:'Home feed',exact:true}).click();
-  await expect(page.locator('article h2 a[href="/post/'+oneHop.id+'"]')).toBeVisible();
-  const twoHopLink = page.locator('article h2 a[href="/post/'+twoHops.id+'"]');
+  await expect(page.locator('article h2 a[href="'+postUrl(oneHop.id)+'"]')).toBeVisible();
+  const twoHopLink = page.locator('article h2 a[href="'+postUrl(twoHops.id)+'"]');
   await expect(twoHopLink).toBeVisible();
   await expect(page.getByRole('heading',{name:outsideTitle,exact:true})).toHaveCount(0);
 
   await setDistance(page,'1');
   await page.getByRole('link',{name:'Home feed',exact:true}).click();
-  await expect(page.locator('article h2 a[href="/post/'+oneHop.id+'"]')).toBeVisible();
+  await expect(page.locator('article h2 a[href="'+postUrl(oneHop.id)+'"]')).toBeVisible();
   await expect(twoHopLink).toHaveCount(0);
   await expectFiltered(page,'/post/'+outsidePost.id,outsideTitle);
   await expectFiltered(page,'/u/'+outsiderId,outsiderName);

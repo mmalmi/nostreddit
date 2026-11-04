@@ -1,3 +1,4 @@
+import { postUrl } from '../src/lib/post-url';
 import { once } from 'node:events';
 import { expect, test } from '@playwright/test';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools/pure';
@@ -16,7 +17,7 @@ test('photos expand, native video stays idle, and a provider is contacted only o
     tags: [['subject','From the pier'], ['t','media-fixture'], ['imeta','url '+photo,'alt Harbor at sunset','dim 600x360'],
       ['imeta','url '+video,'m video/mp4','alt Boats on the water']],
   }, generateSecretKey());
-  const relay = new WebSocket('ws://127.0.0.1:43164');
+  const relay = new WebSocket(process.env.NOSTREDDIT_TEST_RELAY_URL || 'ws://127.0.0.1:43164');
   try {
     await once(relay,'open');
     const ack = once(relay,'message');
@@ -28,6 +29,9 @@ test('photos expand, native video stays idle, and a provider is contacted only o
   let providerRequests = 0;
   await page.route(photo, route => route.fulfill({contentType:'image/png',headers:{'Access-Control-Allow-Origin':'*'},
     body:previewPng}));
+  await page.route('https://imgproxy.iris.to/**', route => route.fulfill({contentType:'image/png',
+    headers:{'Access-Control-Allow-Origin':'*'},body:previewPng}));
+  await page.route('https://vidproxy.iris.to/**', route => route.fulfill({contentType:'image/png',body:previewPng}));
   await page.route(video, route => route.abort());
   await page.route('https://www.youtube-nocookie.com/**', route => {
     providerRequests++;
@@ -41,7 +45,7 @@ test('photos expand, native video stays idle, and a provider is contacted only o
   expect(bounds!.width).toBeGreaterThan(200);
   expect(bounds!.height).toBeGreaterThan(120);
   await page.getByRole('link',{name:'From the pier',exact:true}).click();
-  await expect(page).toHaveURL(new RegExp('/post/'+note.id+'\\?r=media-fixture$'));
+  await expect(page).toHaveURL(url => url.pathname + url.search === postUrl(note.id,'media-fixture'));
   const expand = page.getByRole('link',{name:'Expand image: Harbor at sunset'});
   await expect(expand).toBeVisible();
   await expand.click();
@@ -64,6 +68,7 @@ test('photos expand, native video stays idle, and a provider is contacted only o
   await expect.poll(()=>providerRequests).toBeGreaterThan(0);
   await expect.poll(()=>page.evaluate(async url=>Boolean(await (await caches.open('nostreddit-opened-photos-v1')).match(url)),photo)).toBe(true);
   await page.route(photo,route=>route.abort());
+  await page.route('https://imgproxy.iris.to/**',route=>route.abort());
   await page.reload();
   await expect(page.locator('.image-link img').first()).toHaveAttribute('src',/^blob:/);
   await expand.click();

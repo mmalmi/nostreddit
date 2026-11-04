@@ -1,21 +1,24 @@
+import { postIdFromPath, postUrl } from './post-url';
 import { profileUrl } from './profile-url';
 import { decode } from 'nostr-tools/nip19';
-import { topicSlug } from './posts';
+import { topicSlug, topicPath } from './hashtags';
 
 export function searchTarget(input: string): string {
   const value = input.trim();
   if (/^(?:r\/|#)/i.test(value)) {
     const topic = topicSlug(value.replace(/^(?:r\/|#)/i, ''));
-    if (topic) return '/r/' + topic;
+    if (topic) return topicPath(topic);
   }
   const identifier = value.replace(/^nostr:/i, '');
-  if (!/^(npub|nprofile|note|nevent)1/i.test(identifier)) return '';
+  if (/^(?:note|nevent)1/i.test(identifier)) {
+    const id = postIdFromPath(identifier);
+    return id ? postUrl(id) : '';
+  }
+  if (!/^(?:npub|nprofile)1/i.test(identifier)) return '';
   try {
     const pointer = decode(identifier);
     if (pointer.type === 'npub') return profileUrl(pointer.data);
     if (pointer.type === 'nprofile') return profileUrl(pointer.data.pubkey);
-    if (pointer.type === 'note') return '/post/' + pointer.data;
-    if (pointer.type === 'nevent') return '/post/' + pointer.data.id;
   } catch { /* Treat an incomplete identifier as a local text search. */ }
   return '';
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isEventId, postUrl } from '../lib/post-url';
   import { profileUrl } from '../lib/profile-url';
   import {
     profiles,
@@ -13,8 +14,10 @@
   import { displayName, age, safeURL } from '../lib/ui';
   import { collectMedia } from '../lib/media';
   import { findTreeEmbeds, hasTreeCapability } from '../lib/tree-embeds';
+  import { topicPath } from '../lib/hashtags';
   import { matchesTopic } from '../lib/posts';
   import MediaEmbed from './MediaEmbed.svelte';
+  import { proxyImage } from '../lib/image-load';
   import TreeEmbed from './TreeEmbed.svelte';
   import { noteParts, partText } from '../lib/mentions';
   import ZapCount from '../lib/ZapCount.svelte';
@@ -37,7 +40,7 @@
     (c) => (comment ? c.parent : c.root) === post.id,
   ).length;
   $: topic = contextTopic && matchesTopic(post,contextTopic) ? contextTopic : post.topic;
-  $: permalink = '/post/'+post.id+(contextTopic && topic===contextTopic ? '?r='+encodeURIComponent(topic) : '');
+  $: permalink = postUrl(post.id, contextTopic && topic===contextTopic ? topic : undefined);
   $: body = post.body || '';
   $: link = hasTreeCapability(post.url) ? '' : safeURL(post.url);
   $: media = collectMedia(post.event.content,post.event.tags,link,post.event.kind);
@@ -64,9 +67,11 @@
     strippedHeading === link && link ? new URL(link).hostname :
     strippedHeading || (trees.length ? trees[0].name : media.length ? (media[0].kind==='image' ? 'Photo' : media[0].kind==='audio' ? 'Audio' : 'Video')+' in r/'+topic : chosenHeading);
   $: remainder = (titleFromBody || (!comment && autoShortened)) ? body.split('\n').slice(1).join('\n').trim() : body;
-  $: cleanBody = renderEmbeds ? stripAttachments(remainder,[...attachments,...(link ? [link] : [])]) : remainder;
+  $: excerpt = post.parent && !full && !comment && remainder.startsWith(chosenHeading) ? remainder.slice(chosenHeading.length).trim() : remainder;
+  $: cleanBody = renderEmbeds ? stripAttachments(excerpt,[...attachments,...(link ? [link] : [])]) : excerpt;
   $: visibleBody = full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
   $: headingParts = noteParts(heading, post.event.tags);
+  $: taggedHeading = headingParts.some(part=>part.topic);
   $: renderedHeading = headingParts.map(part => partText(part,$profiles)).join('');
   $: picture = safeURL(author?.picture);
 </script>
@@ -75,12 +80,12 @@
   <div class="byline">
     {#if !comment}<a
         class="community-link"
-        href={'/r/' + encodeURIComponent(topic)}
+        href={topicPath(topic)}
         ><TopicIcon slug={topic} small />r/{topic}</a
       ><span class="sep">·</span>{/if}
     <a class="author" href={profileUrl(post.pubkey)}
       >{#if comment && picture}<img
-          src={picture}
+          use:proxyImage={{url:picture,width:18,square:true}}
           alt=""
           loading="lazy"
           referrerpolicy="no-referrer"
@@ -91,10 +96,15 @@
         >{age(post.created_at)}</time
       ></a
     >
+    {#if isEventId(post.parent) && !full && !comment}<a class="stamp" href={postUrl(post.parent)}>Reply to discussion</a>{/if}
     {#if queued}<small class="queued" title="Saved on this device, waiting to sync">Queued</small>{/if}
   </div>
   {#if heading}<h2>
-      {#if full}{renderedHeading}{:else}<a href={permalink}>{renderedHeading}</a>{/if}
+      {#if taggedHeading}
+        {#each headingParts as part}
+          {#if part.topic}<a class="hashtag" href={topicPath(part.topic)}>{part.text}</a>{:else if full}{partText(part,$profiles)}{:else}<a href={permalink}>{partText(part,$profiles)}</a>{/if}
+        {/each}
+      {:else if full}{renderedHeading}{:else}<a href={permalink}>{renderedHeading}</a>{/if}
     </h2>{/if}
   {#if visibleBody}<NoteText text={visibleBody} tags={post.event.tags} full={full || comment} />{/if}
   {#if renderEmbeds && (media.length || trees.length)}
@@ -163,6 +173,7 @@
 </article>
 
 <style>
+  .hashtag {color:var(--green)}
   .queued {font-size:.7rem;color:var(--muted)}
   .media-gallery {display:grid;gap:8px;margin:9px 0;min-width:0}
   .media-gallery.photos {grid-template-columns:repeat(2,minmax(0,1fr))}

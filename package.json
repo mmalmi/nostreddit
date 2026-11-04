@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "build": "node scripts/verify-inputs.mjs && vite build && node scripts/offline-shell.mjs",
+    "build": "node scripts/verify-inputs.mjs && vite build",
     "preview": "vite preview",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
@@ -41,6 +41,12 @@
     "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vite": "7.3.7",
+    "vite-plugin-pwa": "1.3.0",
+    "workbox-build": "7.4.1",
+    "workbox-precaching": "7.4.1",
+    "workbox-routing": "7.4.1",
+    "workbox-strategies": "7.4.1",
+    "workbox-window": "7.4.1",
     "wrangler": "4.76.0",
     "ws": "8.22.0"
   }

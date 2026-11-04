@@ -1,5 +1,7 @@
 import type { NostrEvent } from 'nostr-pubsub';
 
+import { contentTopics, topicSlug, topicTags } from './hashtags';
+export { topicSlug } from './hashtags';
 import { hasTreeCapability, parseTreeAttachment } from './tree-embeds';
 
 export const discussionKinds = [1,20,21,22,1111];
@@ -8,10 +10,6 @@ export interface Post {
   title: string; body: string; topic: string; url: string; root: string; parent: string;
 }
 export const hexKey = /^[a-f0-9]{64}$/;
-export function topicSlug(value: string): string {
-  const slug = value.trim().replace(/^#/, '').toLowerCase();
-  return /^[a-z0-9][a-z0-9_-]{0,47}$/.test(slug) ? slug : '';
-}
 export function httpUrl(value = ''): string {
   try { const url = new URL(value); return /^https?:$/.test(url.protocol) && !url.username && !url.password && !hasTreeCapability(value) ? url.href : ''; }
   catch { return ''; }
@@ -56,10 +54,21 @@ export function asPost(event: NostrEvent): Post | undefined {
   return {event, id:event.id, pubkey:event.pubkey, created_at:event.created_at, title, body, topic, url, root, parent};
 }
 
+const inlineTopics = new WeakMap<Post,Set<string>>();
+export function mentionsTopic(post:Post, topic:string) {
+  let tags=inlineTopics.get(post);
+  if (!tags) {
+    const subject=post.event.tags.find(t=>t[0]==='subject' || t[0]==='title')?.[1] || '';
+    tags=contentTopics(subject+'\n'+post.event.content);
+    inlineTopics.set(post,tags);
+  }
+  return tags.has(topic);
+}
+
 export function matchesTopic(post:Post, topic:string):boolean {
   const explicit = communityOf(post.event);
   if (explicit) return topicSlug(explicit.slice(71)) === topic;
-  return post.topic === topic || post.event.tags.some(t => t[0]==='t' && topicSlug(t[1] || '')===topic);
+  return post.topic === topic || post.event.tags.some(t => t[0]==='t' && topicSlug(t[1] || '')===topic) || mentionsTopic(post,topic);
 }
 
 export function postDraft(input: {topic:string; title:string; body:string; url?:string}) {
@@ -70,7 +79,7 @@ export function postDraft(input: {topic:string; title:string; body:string; url?:
   if (body.length > 20000) throw new Error('Keep the post under 20,000 characters.');
   const link = postLink(rawUrl);
   if (rawUrl && !link) throw new Error('Enter a web or Hashtree link.');
-  const tags = [['t',topic], ['subject',title]];
+  const tags = [...topicTags(topic,title+'\n'+body), ['subject',title]];
   if (link) tags.push(['r',link]);
   // Title, body and link must be readable even in clients that ignore subject/r tags.
   return {kind:1, tags, content:[title, body, link && !body.includes(rawUrl) ? link : ''].filter(Boolean).join('\n\n')};
@@ -79,21 +88,23 @@ export function postDraft(input: {topic:string; title:string; body:string; url?:
 export function commentDraft(parent: Post, text: string) {
   const content = text.trim();
   if (!content || content.length > 20000) throw new Error('Write a reply of up to 20,000 characters.');
-  const topic = ['t', parent.topic], author = ['p',parent.pubkey];
+  const topics = topicTags(parent.topic,content), author = ['p',parent.pubkey];
   if ([20,21,22].includes(parent.event.kind)) {
     const kind = String(parent.event.kind);
-    return {kind:1111,tags:[['E',parent.id,'',parent.pubkey],['K',kind],['P',parent.pubkey],['e',parent.id,'',parent.pubkey],['k',kind],author,topic],content};
+    return {kind:1111,tags:[['E',parent.id,'',parent.pubkey],['K',kind],['P',parent.pubkey],['e',parent.id,'',parent.pubkey],['k',kind],author,...topics],content};
   }
   if (parent.event.kind === 1111) {
     const scope = parent.event.tags.filter(t => ['A','K','P','E','I'].includes(t[0]));
-    return {kind:1111, tags:[...scope, ['k','1111'], ['e',parent.id,'',parent.pubkey],author,topic], content};
+    return {kind:1111, tags:[...scope, ['k','1111'], ['e',parent.id,'',parent.pubkey],author,...topics], content};
   }
   const root = parent.root || parent.id;
   const rootKey = parent.root ? parent.event.tags.find(t => t[0] === 'e' && t[1] === root)?.[4] || '' : parent.pubkey;
   const tags = [['e',root,'','root',rootKey]];
   if (parent.id !== root) tags.push(['e',parent.id,'','reply',parent.pubkey]);
   const keys = new Set([parent.pubkey,...parent.event.tags.filter(t => t[0] === 'p' && hexKey.test(t[1])).map(t => t[1])]);
-  tags.push(...[...keys].slice(0,100).map(key => ['p',key]), topic);
+  tags.push(...[...keys].slice(0,100).map(key => ['p',key]), ...topics);
+  const community=communityOf(parent.event);
+  if (community) tags.push(['a',community]);
   return {kind:1,tags,content};
 }
 

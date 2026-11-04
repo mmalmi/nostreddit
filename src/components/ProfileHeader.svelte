@@ -1,6 +1,7 @@
 <script lang="ts">
   import { profileUrl } from '../lib/profile-url';
-  import Avatar from '@iris/svelte-ui/Avatar.svelte';
+  import ProxyAvatar from './ProxyAvatar.svelte';
+  import { proxyImage } from '../lib/image-load';
   import Name from '@iris/svelte-ui/Name.svelte';
   import CopyButton from '@iris/svelte-ui/CopyButton.svelte';
   import { npubEncode } from 'nostr-tools/nip19';
@@ -50,11 +51,11 @@
     </div>
   {:else}
   <div class="cover">
-    {#if banner}{#key banner}<img src={banner} alt="" referrerpolicy="no-referrer" onerror={(event) => event.currentTarget.setAttribute('hidden','')}/>{/key}{/if}
+    {#if banner}{#key banner}<img use:proxyImage={{url:banner,width:655}} alt="" referrerpolicy="no-referrer"/>{/key}{/if}
   </div>
   <div class="bio">
     <div class="identity-row">
-      <div class="avatar"><Avatar {pubkey} {profile} name={displayName(pubkey,profile)} picture={safeURL(profile?.picture)} size={68} imgProxy={false}/></div>
+      <div class="avatar"><ProxyAvatar {pubkey} {profile} size={68}/></div>
       <div class="actions">
         {#if mine}<button class="outline compact" onclick={onEdit}>Edit profile</button>
         {:else}
@@ -88,7 +89,7 @@
     {#if social && people.length}
       <div class="connections">
         <div class="faces" aria-hidden="true">
-          {#each people.slice(0,3) as key (key)}<span><Avatar pubkey={key} profile={$profiles[key]} name={displayName(key,$profiles[key])} picture={safeURL($profiles[key]?.picture)} size={22} imgProxy={false}/></span>{/each}
+          {#each people.slice(0,3) as key (key)}<span><ProxyAvatar pubkey={key} profile={$profiles[key]} size={22}/></span>{/each}
         </div>
         <div>
           <span>Followed by </span>{#each people as key, index (key)}{#if index}, {/if}<a href={profileUrl(key)}><Name pubkey={key} profile={$profiles[key]} name={displayName(key,$profiles[key])}/></a>{/each}

@@ -10,11 +10,11 @@ export async function cachedPhoto(url:string) {
   return response ? await response.blob() : undefined;
 }
 
-export async function rememberPhoto(url:string) {
+export async function rememberPhoto(url:string, displayedUrl:string) {
   if (typeof caches==='undefined' || navigator.onLine===false) return;
   const cache=await caches.open(name);
   if (await cache.match(url)) return;
-  const response=await fetch(url,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(7000)});
+  const response=await fetch(displayedUrl,{credentials:'omit',referrerPolicy:'no-referrer',signal:AbortSignal.timeout(7000)});
   const type=response.headers.get('Content-Type')?.split(';')[0] || '';
   if (!response.ok || !response.body || !supported.test(type) || Number(response.headers.get('Content-Length'))>limit ||
       /(?:no-store|private)/i.test(response.headers.get('Cache-Control') || '')) {

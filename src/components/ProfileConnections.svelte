@@ -1,9 +1,9 @@
 <script lang="ts">
-  import Avatar from '@iris/svelte-ui/Avatar.svelte';
+  import ProxyAvatar from './ProxyAvatar.svelte';
   import { account, canSeeAuthor, follows, profiles, relationshipPage } from '../lib/network';
   import { graphInfo, graphStatus } from '../lib/graph';
   import { profileUrl, type Relationship } from '../lib/profile-url';
-  import { displayName, safeURL } from '../lib/ui';
+  import { displayName } from '../lib/ui';
   import Icon from './Icon.svelte';
 
   export let pubkey: string;
@@ -33,7 +33,7 @@
         {@const person = $profiles[key]}
         {@const name = displayName(key, person)}
         <li><a class="person" href={profileUrl(key)}>
-          <Avatar pubkey={key} profile={person} {name} picture={safeURL(person?.picture)} size={38} imgProxy={false}/>
+          <ProxyAvatar pubkey={key} profile={person} size={38}/>
           <span class="details"><strong>{name}</strong>{#if person?.about}<small>{person.about}</small>{/if}</span>
           {#if $account && $follows.includes(key)}<span class="followed">You follow</span>{/if}<Icon name="next" size={14}/>
         </a></li>

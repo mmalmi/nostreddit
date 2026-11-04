@@ -53,11 +53,14 @@
   import ThreadComments from './components/ThreadComments.svelte';
   import ProfileHeader from './components/ProfileHeader.svelte';
   import Outbox from './components/Outbox.svelte';
-  import { matchesTopic } from './lib/posts';
+  import { topicPath, topicSlug } from './lib/hashtags';
+  import { matchesTopic, mentionsTopic } from './lib/posts';
   import ProfileConnections from './components/ProfileConnections.svelte';
+  import { isEventId, postIdFromPath, postUrl } from './lib/post-url';
   import { profileUrl, profileKeyFromPath, type Relationship } from './lib/profile-url';
   import GraphSettings from './components/GraphSettings.svelte';
   import AppearanceSettings from './components/AppearanceSettings.svelte';
+  import ImageProxySettings from './components/ImageProxySettings.svelte';
   import { watchAppearance } from './lib/appearance';
   import AccountPanel from './components/AccountPanel.svelte';
   import ProfileBackup from './components/ProfileBackup.svelte';
@@ -70,11 +73,19 @@
       .replace(/^\/+|\/+$/g, '')
       .split('/');
     if (!base) return { page: 'home', value: '' };
-    if (base === 'r' && validTopic(value.toLowerCase()))
-      return { page: 'topic', value: value.toLowerCase() };
-    if (base === 'post' && /^[a-f0-9]{64}$/.test(value)) {
-      const from = new URLSearchParams(location.search).get('r') || '';
-      return {page:'thread', value, fromTopic:validTopic(from) ? from : undefined};
+    if (base==='r' && !section) {
+      let slug='';
+      try {slug=topicSlug(decodeURIComponent(value));} catch { /* Invalid escaped topic. */ }
+      if(slug) return {page:'topic',value:slug};
+    }
+    if (base === 'post' && section === undefined) {
+      const id = postIdFromPath(value);
+      if (id) {
+        const canonical = postUrl(id);
+        if (location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.search + location.hash);
+        const from = topicSlug(new URLSearchParams(location.search).get('r') || '');
+        return {page:'thread', value:id, fromTopic:from || undefined};
+      }
     }
     if (base === 'u' && !extra && (!section || section === 'followers' || section === 'following')) {
       const key = profileKeyFromPath(value);
@@ -323,7 +334,8 @@
   $: profile = $profiles[route.value];
   $: profName = route.page === 'profile' ? ($canSeeAuthor(route.value) ? displayName(route.value,profile) : 'Profile') : '';
   $: topic = topicInfo(route.value);
-  $: source = route.page === 'saved' ? visibleSaved : $posts;
+  $: source = route.page === 'saved' ? visibleSaved : route.page === 'topic'
+    ? [...$posts,...$comments.filter(reply=>mentionsTopic(reply,route.value))] : $posts;
   $: plan = route.page === 'search' && route.value ? planPostSearch(route.value) : undefined;
   $: lexical = new Map(plan ? source.map(p => [p.id, keywordScore(plan!, p, displayName(p.pubkey, $profiles[p.pubkey]))] as const) : []);
   $: assistance.update(plan && related && pageVisible && allowModel(plan) ? plan : undefined,
@@ -463,7 +475,7 @@
     }
     if (kind === 'share') {
       const topic = route.page === 'topic' ? route.value : route.fromTopic;
-      const path = '/post/' + p.id + (topic && matchesTopic(p,topic) ? '?r='+encodeURIComponent(topic) : '');
+      const path = postUrl(p.id, topic && matchesTopic(p,topic) ? topic : undefined);
       try {
         await navigator.clipboard.writeText(location.origin + path);
         notify('Post link copied');
@@ -685,6 +697,7 @@
           writeLocal('showPreviews', showPreviews);
         }} /></label>
       </section>
+      <ImageProxySettings/>
       <GraphSettings/>
       {#if $account}<Outbox/>{/if}
       {#if $account}
@@ -741,17 +754,17 @@
           >{/if}
       </section>
     {:else if route.page === 'thread'}
-      <a class="back-link" href={threadTopic ? '/r/' + threadTopic : '/'}
+      <a class="back-link" href={threadTopic ? topicPath(threadTopic) : '/'}
         ><Icon name="back" size={15} />{thread
           ? 'r/' + threadTopic
           : 'Home feed'}</a
       >
       {#if thread}
-        {#if thread.root}<a class="back-link" href={'/post/' + thread.root}
+        {#if isEventId(thread.root)}<a class="back-link" href={postUrl(thread.root)}
             ><Icon name="comment" size={15} />View original discussion</a
           >{/if}
-        {#if thread.parent && thread.parent !== thread.root}
-          <a class="back-link" href={'/post/' + thread.parent}><Icon name="back" size={15}/>Parent comment</a>
+        {#if isEventId(thread.parent) && thread.parent !== thread.root}
+          <a class="back-link" href={postUrl(thread.parent)}><Icon name="back" size={15}/>Parent comment</a>
         {/if}
         <Card
           post={thread}
@@ -972,7 +985,7 @@
         owner={$account.pubkey}
         onpublish={(p) => {
           closeModal();
-          go('/post/' + p.id);
+          go(postUrl(p.id));
           notify('Post saved');
         }}
       />

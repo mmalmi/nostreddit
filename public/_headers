@@ -11,3 +11,5 @@
   Cache-Control: public, max-age=300
 /sw.js
   Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache

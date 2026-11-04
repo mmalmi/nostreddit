@@ -33,7 +33,7 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
   await page.getByLabel(/Body/).fill('I saw a flock just before the storm.');
   await page.getByRole('button',{name:'Publish post'}).click();
   await expect(page.getByRole('heading',{name:'Where do shorebirds shelter?'})).toBeVisible();
-  await expect(page).toHaveURL(/\/post\/[a-f0-9]{64}$/);
+  await expect(page).toHaveURL(/\/post\/note1[023456789acdefghjklmnpqrstuvwxyz]{58}$/);
   const publishedUrl = page.url();
   await page.getByLabel('Your reply').fill('Under the pier this morning.');
   await page.getByRole('button',{name:'Post reply',exact:true}).click();
@@ -120,7 +120,6 @@ test('extension sign-in, notifications and profile updates work for the active i
 });
 
 test('a guest can expand a local search to relays and open a Nostr event identifier', async ({ page }) => {
-  const { noteEncode } = await import('nostr-tools/nip19');
   await page.goto('/');
   await expect(page.getByRole('link',{name:'Notes from the coast',exact:true})).toBeVisible();
   const search = page.getByRole('textbox',{name:'Search Nostreddit'});
@@ -131,10 +130,11 @@ test('a guest can expand a local search to relays and open a Nostr event identif
   await page.getByRole('button',{name:'Search relays',exact:true}).click();
   await expect(result).toBeVisible({timeout:15_000});
   const href = await result.getAttribute('href');
-  const id = href!.split('/').at(-1)!;
-  await search.fill('nostr:'+noteEncode(id));
+  const note = href!.split('/').at(-1)!;
+  expect(note).toMatch(/^note1/);
+  await search.fill('nostr:'+note);
   await search.press('Enter');
-  await expect(page).toHaveURL(new RegExp('/post/'+id+'$'));
+  await expect(page).toHaveURL(url => url.pathname === href);
   await expect(page.getByRole('heading',{name:'An ephemeris on the archive shelf',exact:true})).toBeVisible();
   await search.fill('r/observatory');
   await search.press('Enter');

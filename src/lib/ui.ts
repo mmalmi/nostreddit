@@ -1,5 +1,7 @@
 import { getProfileDisplayName, getProfileNameCandidates, type IrisProfile } from '@iris/svelte-ui/profile';
 
+import { topicSlug } from './hashtags';
+
 const publicIdentifier = /^(?:nostr:)?(?:(?:npub|nprofile|nsec)1[0-9a-z]+|(?:0x)?[a-f0-9]{64})$/i;
 export function displayName(pubkey: string, profile?: IrisProfile | null): string {
   const published = getProfileNameCandidates(profile).find(value => !publicIdentifier.test(value));
@@ -62,7 +64,7 @@ export function topicInfo(slug: string) {
   );
 }
 export function validTopic(slug: string) {
-  return /^[a-z0-9][a-z0-9_-]{0,47}$/.test(slug);
+  return !!slug && topicSlug(slug)===slug;
 }
 export function safeURL(value: string | undefined) {
   try {

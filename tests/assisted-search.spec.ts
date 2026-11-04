@@ -75,7 +75,7 @@ test('a mobile reader explicitly expands a search to relays and returns to the r
   await expect(link).toBeVisible({timeout:15_000});
   await expect(page.locator('.relay-search small')).toContainText(/Found \d+ matching/);
   await link.click();
-  await expect(page).toHaveURL(/\/post\/[0-9a-f]{64}/);
+  await expect(page).toHaveURL(/\/post\/note1[023456789acdefghjklmnpqrstuvwxyz]{58}$/);
   await page.goBack();
   await expect(page.getByLabel('Search Nostreddit')).toHaveValue('seaside walks');
   await ranked(page);
@@ -119,9 +119,8 @@ test('the home shell skips model downloads and a previous search works after off
   await submit(page,query); await ranked(page);
   await expect(page.locator('article h2').first()).toHaveText(notes[0][0]);
   await expect.poll(() => page.evaluate(async () => {
-    const name = (await caches.keys()).find(key=>key.startsWith('nostreddit-shell-'));
-    if (!name) return false;
-    const keys = await (await caches.open(name)).keys();
+    const stores = await Promise.all((await caches.keys()).map(name=>caches.open(name)));
+    const keys = (await Promise.all(stores.map(store=>store.keys()))).flat();
     return keys.some(k => k.url.endsWith('.onnx')) && keys.some(k => k.url.endsWith('.wasm'));
   })).toBe(true);
   await expect.poll(() => page.evaluate(() => new Promise<boolean>((resolve) => {

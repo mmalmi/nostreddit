@@ -3,11 +3,10 @@
   import { publishPost, type Post } from '../lib/network';
   import {
     topics,
-    validTopic,
-
     readLocal,
     writeLocal,
   } from '../lib/ui';
+  import { topicSlug } from '../lib/hashtags';
   import { postLink } from '../lib/posts';
   import Icon from './Icon.svelte';
   export let initialTopic: string;
@@ -35,8 +34,8 @@
   });
   $: if (ready) writeLocal('draft.' + owner, { title, body, url, topic });
   async function send() {
-    const slug = topic.trim().toLowerCase().replace(/^r\//, '');
-    if (!validTopic(slug)) {
+    const slug = topicSlug(topic.trim().replace(/^r\//i, ''));
+    if (!slug) {
       error =
         'Use a community name with letters, numbers, underscores, or hyphens.';
       return;

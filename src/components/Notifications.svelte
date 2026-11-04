@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isEventId, postUrl } from '../lib/post-url';
   import { profileUrl } from '../lib/profile-url';
   import { account, profiles, notifications, observeNotificationAuthors, notificationPostId, unreadNotificationIds } from '../lib/network';
   import { displayName, age } from '../lib/ui';
@@ -37,7 +38,7 @@
         <div><div><a class="activity-author" href={profileUrl(event.pubkey)}>{displayName(event.pubkey,$profiles[event.pubkey])}</a> {item.title}</div>
           {#if $unreadNotificationIds.has(event.id)}<span class="unread">Unread</span>{/if}
           {#if event.kind !== 7}<p>{event.content.slice(0,180)}</p>{/if}
-          {#if id && /^[a-f0-9]{64}$/.test(id)}<a class="activity-link" href={'/post/' + id}>Open discussion ↗</a>{/if}
+          {#if id && isEventId(id)}<a class="activity-link" href={postUrl(id)}>Open discussion ↗</a>{/if}
         </div><time datetime={new Date(event.created_at*1000).toISOString()}>{age(event.created_at)}</time>
       </article>
     {/each}
