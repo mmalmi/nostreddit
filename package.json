@@ -1,0 +1,43 @@
+{
+  "name": "nostreddit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "build": "node scripts/verify-inputs.mjs && vite build && node scripts/offline-shell.mjs",
+    "preview": "vite preview",
+    "test": "tsx --test tests/*.test.ts",
+    "test:browser": "playwright test",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1",
+    "@scure/base": "2.0.0",
+    "nostr-pubsub": "https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.24/nostr-pubsub-0.5.24.tgz",
+    "nostr-social-graph": "https://github.com/mmalmi/nostr-social-graph/releases/download/v2.0.3/nostr-social-graph-2.0.3.tgz",
+    "nostr-tools": "2.25.2",
+    "qrcode": "1.5.4",
+    "svelte": "5.57.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
+    "@types/node": "24.19.0",
+    "@types/qrcode": "1.5.6",
+    "@types/ws": "8.18.2",
+    "svelte-check": "4.7.6",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "wrangler": "4.76.0",
+    "ws": "8.22.0"
+  }
+}

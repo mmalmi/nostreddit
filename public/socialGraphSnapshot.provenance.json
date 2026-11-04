@@ -1,0 +1,39 @@
+{
+  "format": "iris-social/public-social-graph-snapshot@1",
+  "root": "4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0",
+  "source": {
+    "sha256": "da775fc4a0a827740b0746716d8734c6b33b6448fd157b89ee94cc8f2f79fb0e",
+    "bytes": 7902582,
+    "censusReportSha256": "79f2656f0b6076b0774138b15ae5ce7adadaeb272d2c6f75eb48a8d3d62e1cd9",
+    "censusFormat": "iris-social/social-graph-crawl-census@2",
+    "reachableUsers": 102162,
+    "eligibleUsers": 101267,
+    "overmutedUsers": 895,
+    "maxDistance": 4,
+    "overmuteThreshold": 1
+  },
+  "projection": {
+    "maxNodes": null,
+    "maxEdges": 300000,
+    "maxDistance": 4,
+    "maxEdgesPerNode": 1000
+  },
+  "snapshot": {
+    "sha256": "085ba69fa37725c98c5c8e214bccf2cb4d748c542df5396830e122604c00577e",
+    "bytes": 1941939,
+    "users": 34912,
+    "follows": 295568,
+    "mutes": 4432,
+    "sizeByDistance": {
+      "0": 1,
+      "1": 406,
+      "2": 21191,
+      "3": 13314
+    }
+  },
+  "frontier": {
+    "sha256": "59fe1f6d6382b715aa4f980923ffefb902fee301fedf0c7520ae95c305d5c4fa",
+    "bytes": 12992,
+    "authors": 406
+  }
+}

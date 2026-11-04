@@ -1,0 +1,133 @@
+import { MemoryEventStore, NostrRuntime, type NostrEvent, type RuntimeSubscription } from 'nostr-pubsub';
+import { relayUrls, testRelays, type Request, type Response } from './relayTypes';
+
+const runtime = new NostrRuntime({
+  relays: relayUrls, store: new MemoryEventStore(2300), batchWindowMs: 50,
+  historyTimeoutMs: 6500, publishTimeoutMs: 8500, maxSubscriptions: 80,
+});
+const reply = (data: Response) => self.postMessage(data);
+const watches = new Map<number, RuntimeSubscription>();
+const queue = new Map<string, NostrEvent>();
+let connectionState: 'live' | 'offline' | undefined;
+function setConnection(connected:boolean) {
+  const value = connected ? 'live' : 'offline';
+  if (value !== connectionState) { connectionState = value; reply({type:'status',value}); }
+}
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+let cacheTimer: ReturnType<typeof setTimeout> | undefined;
+const cacheKey = testRelays ? relayUrls.join(',') : 'public';
+const database = new Promise<IDBDatabase>((resolve, reject) => {
+  const request = indexedDB.open('nostreddit-feed-v1', 1);
+  request.onupgradeneeded = () => request.result.createObjectStore('snapshots');
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+}).catch(() => null);
+
+function emit(event: NostrEvent) {
+  if (event.content.length > 64000 || event.tags.length > ([3,10000].includes(event.kind) ? 20000 : 5000) ||
+      !Number.isSafeInteger(event.created_at) || event.created_at < 0 || event.created_at > Date.now()/1000+600) return;
+  queue.set(event.id, event);
+  if (flushTimer === undefined) flushTimer = setTimeout(() => {
+    reply({type: 'events', events: [...queue.values()]});
+    queue.clear();
+    flushTimer = undefined;
+  }, 55);
+}
+
+async function saveSnapshot() {
+  const db = await database;
+  if (!db) return;
+  const events = await runtime.store.query([
+    { kinds: [1, 1111], limit: 200 }, { kinds: [0], limit: 170 },
+    { kinds: [5, 7, 9735], limit: 200 }, { kinds: [3, 10000,34550], limit: 40 },
+  ]);
+  // Bound disk use even when individual profiles or contact lists are enormous.
+  let bytes = 0;
+  const snapshot = events.filter(event => {
+    const size = JSON.stringify(event).length;
+    if (size > 120000 || bytes + size > 850000) return false;
+    bytes += size;
+    return true;
+  });
+  await new Promise<void>((resolve,reject) => {
+    const tx = db.transaction('snapshots','readwrite');
+    tx.objectStore('snapshots').put(snapshot,cacheKey);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+function scheduleSnapshot() {
+  if (cacheTimer !== undefined) return;
+  cacheTimer = setTimeout(() => {
+    cacheTimer = undefined;
+    void saveSnapshot().catch(() => {});
+  }, 1200);
+}
+
+async function admitSnapshot(raw: unknown) {
+  if (!Array.isArray(raw)) return;
+  for (const event of raw.slice(0, 620)) {
+    try {
+      if (event && typeof event.content === 'string' && event.content.length < 64000 &&
+          await runtime.ingest(event, 'snapshot')) emit(event);
+    } catch { /* Discard invalid or malformed signed events individually. */ }
+  }
+}
+async function restore() {
+  const db = await database;
+  if (!db) return;
+  const events = await new Promise<unknown>((resolve, reject) => {
+    const request = db.transaction('snapshots').objectStore('snapshots').get(cacheKey);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  await admitSnapshot(events);
+}
+void restore().catch(() => {});
+if (!testRelays) void fetch(new URL('starter-feed.json', self.location.origin), {signal: AbortSignal.timeout(6500)})
+  .then(response => response.ok ? response.json() : []).then(admitSnapshot).catch(() => {});
+
+self.onmessage = async (message: MessageEvent<Request>) => {
+  const req = message.data;
+  try {
+    if (req.type === 'close') { watches.get(req.id)?.close(); watches.delete(req.id); return; }
+    if (req.type === 'watch') {
+      const sub = runtime.subscribe(req.filters, {
+        onEvent(event, info) {
+          emit(event);
+          if (!info.cached && /^wss?:/.test(info.source)) {
+            scheduleSnapshot(); setConnection(true);
+          }
+        },
+        onEose() {
+          setConnection(runtime.getRelayStats().some(r => r.connected));
+          if (!req.live) { sub.close(); watches.delete(req.id); }
+        },
+      }, {deadline: Date.now() + 6500});
+      watches.set(req.id, sub);
+      return;
+    }
+    if (req.type === 'publish') {
+      const published = await runtime.publish(req.event, { requireAck: true });
+      if (!published.remoteAccepted) throw new Error('No relay accepted this action. Check your connection and try again.');
+      emit(req.event);
+      await saveSnapshot().catch(() => {});
+      reply({type: 'result', id: req.id, events: [req.event]});
+      return;
+    }
+    const result = await runtime.query([{ kinds: [req.kind], authors: [req.pubkey], limit: 1 }], {
+      cache: 'network-only', deadline: Date.now() + 5500,
+    });
+    if (!result.sources.some(source => source.complete))
+      throw new Error('Could not read your existing profile or follows. Try again when a relay is reachable.');
+    if (result.events.some(e => e.created_at > Date.now()/1000 + 600))
+      throw new Error('Your existing list has a future timestamp. Check your device clock before editing it.');
+    reply({type: 'result', id: req.id, events: result.events});
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Relay request failed.';
+    if (req.type === 'latest' || req.type === 'publish')
+      reply({type: 'result', id: req.id, events: [], error: message});
+  }
+};

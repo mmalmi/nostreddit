@@ -1,0 +1,43 @@
+<script lang="ts">
+  export let size = 36;
+</script>
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 46 46"
+  fill="none"
+  aria-hidden="true"
+>
+  <rect x="1" y="1" width="44" height="44" rx="14" fill="#163f31" />
+  <path
+    d="M6.4 24C8.4 16.2 15.4 9.5 23 9.5c7.5 0 15 6.4 17 14.5-6 4.5-27.3 4.6-33.6 0z"
+    fill="#ffb54e"
+    stroke="#102f24"
+    stroke-width="1.7"
+  />
+  <path
+    d="M8 24c8 2.6 22 2.6 30 0M12 23.8l6.1 2.6m14.4-2.6-5.4 2.6"
+    stroke="#35543b"
+    stroke-width="1.4"
+    stroke-linecap="round"
+  />
+  <path
+    d="M19 26.1h8c.3 2 1.9 5.3 3.8 7.6-2.8 4.7-12.8 4.7-15.5 0 1.7-2.4 3.3-5.6 3.7-7.6z"
+    fill="#f8eed8"
+    stroke="#102f24"
+    stroke-width="1.5"
+  />
+  <path
+    d="M20.7 30.8v1m4.7-1v1"
+    stroke="#163f31"
+    stroke-linecap="round"
+    stroke-width="1.8"
+  />
+  <path
+    d="M15 18.4c1.1-1.6 3-3.2 4.7-3.8"
+    stroke="#fff1c7"
+    stroke-linecap="round"
+    stroke-width="2.4"
+  />
+</svg>
