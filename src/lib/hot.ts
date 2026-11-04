@@ -8,6 +8,7 @@ export interface HotOptions {
   now?:number; follows?:ReadonlySet<string>; joined?:readonly string[]; saved?:readonly Post[];
   distance?:(key:string)=>number|null|undefined; signals?:readonly HotSignal[];
   knownBy?:(key:string)=>number;
+  influence?:(key:string)=>number|undefined;
   ai?:ReadonlyMap<string,number>; topic?:string; seen?:ReadonlySet<string>;
 }
 const HOUR=3600;
@@ -24,7 +25,7 @@ function fingerprint(post:Post) {
 }
 
 /** Only graph-permitted inputs belong here. Count each reacting profile once;
- * replies and payment amounts do not add recommendation weight. */
+ * replies have half weight and payment amounts do not add influence. */
 export function hotScores(posts:readonly Post[], options:HotOptions={}) {
   const {now=Date.now()/1000,follows=new Set<string>(),signals=[],distance=()=>null}=options;
   const targets=new Map(posts.map(post=>[post.id,post]));
@@ -37,19 +38,19 @@ export function hotScores(posts:readonly Post[], options:HotOptions={}) {
       // thousands of unrelated profiles two hops away. Weight indirect support
       // by how many direct contacts independently follow the actor.
       const known=Math.max(0,options.knownBy?.(key) ?? 0);
-      trust.set(key,follows.has(key)||steps===1 ? 1.4 : steps===2 ? .06+.74*Math.min(1,known/20) : steps===3 ? .08 : .05);
+      const influence=options.influence?.(key);
+      trust.set(key,follows.has(key)||steps===1 ? 1.4
+        :typeof influence==='number'&&Number.isFinite(influence) ? 1.4*Math.min(1,Math.max(0,influence))
+        : steps===2 ? .06+.74*Math.min(1,known/20) : steps===3 ? .08 : .05);
     }
     return trust.get(key)!;
   };
   for(const signal of signals) {
-    // Replies can be criticism, copied text, or automated conversation.
-    // Display their counts, but never treat them as positive votes for Hot.
-    if(signal.kind==='reply')continue;
     const post=targets.get(signal.target);
     if(!post || signal.actor===post.pubkey || !Number.isFinite(signal.at) || signal.at>now+600 || signal.at<post.created_at-600) continue;
     const crowd=actors.get(post.id)||new Map<string,number>();
     const age=Math.max(0,now-signal.at)/HOUR;
-    const strength=weight(signal.actor)*Math.pow(.5,age/24);
+    const strength=(signal.kind==='reply'?.5:1)*weight(signal.actor)*Math.pow(.5,age/24);
     crowd.set(signal.actor,Math.max(crowd.get(signal.actor)||0,strength));
     actors.set(post.id,crowd);
   }

@@ -26,12 +26,16 @@ test('repeated likes, replies, self-replies and zap amounts cannot manufacture a
   const score=hotScores([a],{now,signals})[0].score;
   assert.equal(hotScores([a],{now,signals:[...signals,{target:a.id,actor:key(9),at:now,kind:'zap'}]})[0].score,score);
 });
-test('reply campaigns are not endorsements and broad independent familiarity matters for indirect votes',()=>{
+test('unique replies have half weight and weakly connected campaigns cannot overwhelm a direct follow',()=>{
   const campaign=post(1),endorsed=post(2);
   const replies:HotSignal[]=Array.from({length:300},(_,n)=>({target:campaign.id,actor:key(2000+n),at:now,kind:'reply'}));
   const directLike:HotSignal={target:endorsed.id,actor:key(8),at:now,kind:'like'};
-  assert.equal(rankHot([campaign,endorsed],{now,signals:[...replies,directLike],follows:new Set([key(8)])})[0],endorsed);
-  assert.equal(hotScores([campaign],{now,signals:replies})[0].engagement,0);
+  assert.equal(rankHot([campaign,endorsed],{now,signals:[...replies,directLike],follows:new Set([key(8)]),influence:()=>.001})[0],endorsed);
+  const reply={target:campaign.id,actor:key(9),at:now,kind:'reply' as const};
+  const options={now,follows:new Set([key(9)])};
+  assert.equal(hotScores([campaign],{...options,signals:[reply]})[0].engagement,.7);
+  assert.equal(hotScores([campaign],{...options,signals:Array(100).fill(reply)})[0].engagement,.7);
+  assert.equal(hotScores([campaign],{...options,signals:[reply,{...reply,kind:'like'},{...reply,kind:'zap'}]})[0].engagement,1.4);
   const signals=likes(campaign,15);
   const narrow=hotScores([campaign],{now,signals,distance:()=>2,knownBy:()=>1})[0].engagement;
   const broad=hotScores([campaign],{now,signals,distance:()=>2,knownBy:()=>20})[0].engagement;

@@ -38,7 +38,7 @@
   import { allowModel, keywordScore, noExpansion, relevance, semanticFloor } from './lib/discovery/discussions';
   import type { SearchCursors } from './lib/discovery/relay-search';
   import { checkSearch, searchTarget } from './lib/search';
-  import { observeAuthors, observeEventAuthors, graphInfo, graphStatus } from './lib/graph';
+  import { observeAuthors, observeEventAuthors, graphInfo, graphStatus, setGraphRanking } from './lib/graph';
   import {
     topics,
     validTopic,
@@ -384,9 +384,11 @@
     (route.page !== 'network' || ($graphInfo[p.pubkey]?.distance ?? 99) <= 2));
   $: hotActive = activeOrder === 'Hot' && ['home','topic','following','network','saved','profile','search'].includes(route.page) && !route.connections;
   $: hotScope = hotActive ? `${route.page}:${route.value}:${$account?.pubkey || 'guest'}:${hotRefresh}` : '';
+  $: if(mounted)setGraphRanking(hotActive && $hotPreferences.connectionStrength);
   $: hotOptions = {now:Date.now()/1000,signals:$hotSignals,follows:new Set($follows),joined,saved:visibleSaved,
     topic:route.page === 'topic' ? route.value : '', seen:new Set(seenHot),
-    distance:(key:string)=>$graphInfo[key]?.distance, knownBy:(key:string)=>$graphInfo[key]?.followedByFriends ?? 0};
+    distance:(key:string)=>$graphInfo[key]?.distance, knownBy:(key:string)=>$graphInfo[key]?.followedByFriends ?? 0,
+    influence:$hotPreferences.connectionStrength ? (key:string)=>$graphInfo[key]?.influence : undefined};
   $: baseHot = hotActive ? rankHot(allowedCandidates,hotOptions) : [];
   $: discoveryActors = $follows.length ? $follows : Object.keys($graphInfo).filter(key=>$graphInfo[key].distance===1);
   $: if(mounted) hotObserver.update(allowedCandidates.map(p=>p.id),pageVisible ? hotScope : '',discoveryActors);

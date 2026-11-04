@@ -1,8 +1,8 @@
 import { writable } from 'svelte/store';
 import { readLocal, writeLocal } from './ui';
-export interface HotPreferences { ai:boolean; interests:string }
+export interface HotPreferences { ai:boolean; interests:string; connectionStrength:boolean }
 function clean(raw:Partial<HotPreferences>|null):HotPreferences {
-  return {ai:raw?.ai===true,interests:typeof raw?.interests==='string'?raw.interests.slice(0,300):''};
+  return {ai:raw?.ai===true,interests:typeof raw?.interests==='string'?raw.interests.slice(0,300):'',connectionStrength:raw?.connectionStrength!==false};
 }
 export const hotPreferences=writable(clean(readLocal('hot',{})));
 export function setHotPreferences(value:HotPreferences) {

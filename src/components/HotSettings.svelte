@@ -3,7 +3,10 @@
 </script>
 <section class="preferences hot-settings" aria-labelledby="hot-settings">
   <h2 id="hot-settings">Hot feed</h2>
-  <p>Fresh posts and a mix of authors. Likes and zaps count once per profile, with more weight for people you follow. Replies don’t count as votes.</p>
+  <p>Fresh posts and a mix of authors. Each profile counts once across likes, zaps, and replies. Replies have half the weight of a like.</p>
+  <label><span>Weight reactions by connection strength</span><input type="checkbox" checked={$hotPreferences.connectionStrength}
+    onchange={e=>setHotPreferences({...$hotPreferences,connectionStrength:e.currentTarget.checked})}/></label>
+  <small>People you follow count most. Others share influence through their connections. Turning this off uses follow distance instead.</small>
   <label><span>Personalize Hot with AI</span><input type="checkbox" checked={$hotPreferences.ai}
     onchange={e=>setHotPreferences({...$hotPreferences,ai:e.currentTarget.checked})}/></label>
   <label class="interests"><span>Your interests</span><textarea rows="2" maxlength="300"

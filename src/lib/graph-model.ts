@@ -3,7 +3,7 @@ import type { SocialGraph } from 'nostr-social-graph';
 
 export const snapshotRoot = '4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0';
 export const snapshotHash = '085ba69fa37725c98c5c8e214bccf2cb4d748c542df5396830e122604c00577e';
-export type GraphBadge = { distance: number | null; muted: boolean; overmuted: boolean; followedByFriends?:number };
+export type GraphBadge = { distance: number | null; muted: boolean; overmuted: boolean; followedByFriends?:number; influence?:number };
 export type RelationshipKind = 'following' | 'followers';
 export type ProfileList = {
   author: string; id: string; at: number; followsSubject: boolean; followsViewer: boolean; following: number; followKeys?: string[];
@@ -14,6 +14,7 @@ export type ProfileRelations = {
 };
 export type PendingEdges = {follows:Record<string,boolean>; mutes:Record<string,boolean>};
 export type GraphRequest = {
+  ranking:boolean;
   edges:PendingEdges;
   root: string; authors: string[]; events: NostrEvent[]; version: number; profile: string; lists: ProfileList[]; directory: RelationshipKind | null;
 };

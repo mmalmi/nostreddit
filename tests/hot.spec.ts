@@ -29,7 +29,15 @@ async function publish(events:Event[]) {
 test.beforeAll(async()=>{
   await publish([...quiet,active,...aiPosts,...Array.from({length:9},()=>record(generateSecretKey(),'+',[['e',active.id],['p',active.pubkey]],7,at-60))]);
 });
-test.beforeEach(async({context})=>{await allowFixtureAuthors(context);});
+test.beforeEach(async({context})=>{
+  await allowFixtureAuthors(context);
+  // These baseline discovery fixtures use deliberately unconnected keys.
+  // Connection-strength behavior has its own signed graph fixture.
+  await context.addInitScript(()=>{
+    const prefs=JSON.parse(localStorage.getItem('nostreddit.ui.hot')||'{}');
+    localStorage.setItem('nostreddit.ui.hot',JSON.stringify({...prefs,connectionStrength:false}));
+  });
+});
 
 test('Hot finds activity below the viewport on the homepage and in a community, without loading AI',async({page,context},info)=>{
   const modelRequests:string[]=[];

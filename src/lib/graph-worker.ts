@@ -1,4 +1,5 @@
 import { SocialGraph } from 'nostr-social-graph';
+import { createGraphRanker } from './graph-ranking';
 import { badgesFor, discoveryRoot, profileRelationsFor, snapshotRoot, snapshotHash, type GraphRequest, type GraphReply } from './graph-model';
 
 async function load() {
@@ -12,6 +13,8 @@ async function load() {
 
 // Main sends one request at a time. Full graph traversals occur only on root or edge changes.
 let loaded: Promise<SocialGraph> | undefined;
+const ranker=createGraphRanker();
+let graphRevision=0;
 // Keep unsigned local edges separate from the verified graph. Undo the previous
 // overlay before applying an authoritative list or switching the active profile.
 let overlayOwner='', overlayKey='', undo:Record<string,boolean>={};
@@ -45,7 +48,11 @@ self.onmessage = async ({ data }: MessageEvent<GraphRequest>) => {
     const effective = discoveryRoot(graph,data.root);
     if (graph.getRoot() !== effective) await graph.setRoot(effective);
     else if (changed) await graph.recalculateFollowDistances(5000, 100000, () => {});
-    self.postMessage({version:data.version, discoveryRoot:effective, badges:badgesFor(graph,data.authors,data.root,data.edges.mutes),
+    if(changed)graphRevision++;
+    await ranker.update(graph,data.root,data.edges.mutes,graphRevision,data.ranking);
+    const badges=badgesFor(graph,data.authors,data.root,data.edges.mutes);
+    for(const [author,badge] of Object.entries(badges))badge.influence=ranker.weight(author);
+    self.postMessage({version:data.version, discoveryRoot:effective, badges,
       profile:profileRelationsFor(graph,data.profile,data.lists,data.root,data.directory)} satisfies GraphReply);
   } catch {
     self.postMessage({ version: data.version, error: true } satisfies GraphReply);

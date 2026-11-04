@@ -25,6 +25,7 @@ let profilePeers = new Set<string>(), graphPeers = new Set<string>();
 let profileVersion = 0, profileDirty = false, version = 0;
 let cached: Record<string, GraphBadge> = {};
 let busy = false, scheduled = false, failed = false;
+let ranking=false;
 let worker: Worker | undefined;
 let sentProfileVersion = -1;
 
@@ -74,7 +75,7 @@ function schedule() {
       sentProfileVersion = profile ? profileVersion : -1;
       profileDirty = false;
       busy = true;
-      worker.postMessage({root, edges, authors, events, version, profile, directory:selectedDirectory, lists:profile ? [...profileLists.values()] : []} satisfies GraphRequest);
+      worker.postMessage({root, ranking, edges, authors, events, version, profile, directory:selectedDirectory, lists:profile ? [...profileLists.values()] : []} satisfies GraphRequest);
     } catch { unavailable(); }
   }, 24);
 }
@@ -109,6 +110,11 @@ export function observeEventAuthors(keys: readonly string[]) {
 }
 
 export function observeAuthors(keys: readonly string[]) { observeEventAuthors(keys.slice(0,batchSize)); }
+
+export function setGraphRanking(enabled:boolean) {
+  if(ranking===enabled)return;
+  ranking=enabled;invalidate();
+}
 
 export function setGraphRoot(pubkey: string | null) {
   const next = pubkey && hex.test(pubkey) ? pubkey : snapshotRoot;
