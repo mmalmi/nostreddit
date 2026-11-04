@@ -716,7 +716,7 @@
       {#if $account}
         {#key $account.pubkey + ':' + $account.method}<ProfileBackup method={$account.method}/>{/key}
       {/if}
-      <section class="preferences" aria-labelledby="source-links">
+      <section class="preferences source-section" aria-labelledby="source-links">
         <h2 id="source-links">Source</h2>
         <div class="source-links">
           <a href="https://github.com/mmalmi/nostreddit" target="_blank" rel="noopener noreferrer">GitHub <Icon name="external" size={14}/></a>

@@ -1332,6 +1332,7 @@ main > .feed-heading:first-child { margin-top: 0; }
 .preferences label {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-top:1px solid var(--line)}
 .preferences select {font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
 .preferences input {width:18px;height:18px;accent-color:var(--green)}
+.source-section {margin-top:14px}
 .source-links {display:flex;flex-wrap:wrap;gap:20px}
 .source-links a {display:inline-flex;align-items:center;gap:5px;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 .sync-link {display:block;color:var(--green);font-size:12px;padding:4px 12px}
