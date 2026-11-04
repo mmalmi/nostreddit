@@ -35,7 +35,8 @@
   } from './lib/network';
   import { createSearchSession } from './lib/discovery/session';
   import { planPostSearch } from './lib/discovery/query';
-  import { allowModel, keywordScore, relevance, semanticFloor } from './lib/discovery/discussions';
+  import { allowModel, keywordScore, noExpansion, relevance, semanticFloor } from './lib/discovery/discussions';
+  import type { SearchCursors } from './lib/discovery/relay-search';
   import { checkSearch, searchTarget } from './lib/search';
   import { observeAuthors, observeEventAuthors, graphInfo, graphStatus } from './lib/graph';
   import {
@@ -177,18 +178,24 @@
   let searchOrder = 'Best match';
   let remoteIds = new Set<string>();
   let searchRun = 0;
+  let searchCursors: SearchCursors | undefined;
+  let searchExpansion = noExpansion;
   let searching = false, searched = false, searchMessage = '';
-  async function expandSearch() {
+  $: canSearchMore = searchCursors?.some(cursor => cursor !== null) ?? true;
+  async function expandSearch(more = false) {
+    if (searching) return;
     const run = ++searchRun;
-    searching = true; searched = false;
+    searching = true;
     searchMessage = '';
     try {
       const query = checkSearch(route.value);
-      const expansion = await assistance.relayExpansion(query);
+      const expansion = more ? searchExpansion : await assistance.relayExpansion(query);
       if (run !== searchRun) return;
-      const found = await searchRelays(query, expansion);
+      const found = await searchRelays(query, expansion, more ? searchCursors : undefined);
       if (run !== searchRun) return;
-      remoteIds = found;
+      remoteIds = found.ids;
+      searchCursors = found.cursors;
+      searchExpansion = expansion;
       searched = true;
     } catch (error) {
       if (run === searchRun) searchMessage = error instanceof Error ? error.message : 'Relay search failed.';
@@ -200,6 +207,7 @@
     const next = readRoute();
     if (next.page !== route.page || next.value !== route.value || next.connections !== route.connections || next.fromTopic !== route.fromTopic) {
       searchRun++; searching = false; searched = false; searchMessage = ''; remoteIds = new Set(); clearRelaySearch();
+      searchCursors = undefined; searchExpansion = noExpansion;
       searchOrder = 'Best match';
       route = next;
       heldHot = undefined;
@@ -834,8 +842,8 @@
             $assistance.status === 'unavailable' ? 'On-device model unavailable. Showing keyword matches.' : 'Keyword matches'}</small>
         </div>
         <div class="relay-search">
-          <button class="outline compact" disabled={searching || route.value.length < 2} onclick={expandSearch}><Icon name="search" size={15}/>{searching ? 'Searching…' : 'Search relays'}</button>
-          <small role="status">{searchMessage || (searched ? (relayMatchCount ? `Found ${relayMatchCount} matching discussion${relayMatchCount === 1 ? '' : 's'} on relays.` : 'Connected relays returned no matching discussions within your graph settings.') : 'Send search terms to public relays for more results.')}</small>
+          <button class="outline compact" disabled={searching || route.value.length < 2} onclick={() => expandSearch()}><Icon name="search" size={15}/>{searching ? 'Searching…' : searched ? 'Search again' : 'Search relays'}</button>
+          <small role="status">{searchMessage || (searched ? (relayMatchCount ? `Found ${relayMatchCount} matching discussion${relayMatchCount === 1 ? '' : 's'} on relays.` : canSearchMore ? 'No matches in this batch. Load more to search older discussions.' : 'Connected relays returned no matching discussions within your graph settings.') : 'Showing loaded discussions. Search public relays for more.')}</small>
         </div>
         {#if profileKey(route.value)}<a
             class="search-profile"
@@ -962,7 +970,18 @@
           class="load-more outline"
           onclick={() => (limit += 24)}
           >Load more discussions <Icon name="down" size={15} /></button
-        >{/if}
+        >{:else if route.page === 'search' && route.value.length >= 2}
+        <div class="search-more">
+          {#if canSearchMore}
+            <button class="load-more outline" disabled={searching} onclick={() => expandSearch(searched)}>
+              {searching ? 'Searching…' : searched ? 'Load more results' : 'Search more discussions'}
+              <Icon name="down" size={15}/>
+            </button>
+            <small>{searched ? 'Search older discussions on public relays.' : 'Search public relays beyond the discussions already loaded.'}</small>
+          {:else}<p class="quiet" role="status">No more results returned by connected relays.</p>{/if}
+          {#if searchMessage}<p class="quiet" role="status">{searchMessage}</p>{/if}
+        </div>
+        {/if}
     {/if}
   </main>
   <aside class="right-rail" aria-label="Community information">

@@ -10,6 +10,7 @@ import { matchesZapReceipt, signedZapAuthor, type ZapInvoice } from './zaps';
 import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './write-sync';
 import { cacheOwnEvents, type Change } from './local-writes';
 import { noExpansion, type Expansion } from './discovery/discussions';
+import type { SearchCursors } from './discovery/relay-search';
 import { relayUrls, type ContactQuery, type Request, type Response } from './relayTypes';
 import { readLocal, writeLocal } from './ui';
 import type { HotSignal } from './hot';
@@ -278,7 +279,8 @@ function apply(events:NostrEvent[]) {
 
 type Interest = Extract<Request,{type:'watch'}>;
 const interests = new Map<number,Interest>();
-const waiting = new Map<number,{resolve:(events:NostrEvent[])=>void; reject:(reason:Error)=>void}>();
+type Result = Extract<Response,{type:'result'}>;
+const waiting = new Map<number,{resolve:(result:Result)=>void; reject:(reason:Error)=>void}>();
 let seq = 0, worker: Worker|undefined, active = false, watching = false;
 function shutdown() {
   worker?.terminate(); worker = undefined; watching = false;
@@ -297,7 +299,7 @@ function connect() {
     else {
       const pending = waiting.get(data.id); waiting.delete(data.id);
       if (data.error) pending?.reject(new Error(data.error));
-      else pending?.resolve(data.events);
+      else pending?.resolve(data);
       if (!visible() && !waiting.size) shutdown();
     }
   };
@@ -317,14 +319,17 @@ function watch(filters:NostrFilter[], live = false) {
   interests.set(id,interest);
   return () => { interests.delete(id); worker?.postMessage({type:'close',id} satisfies Request); };
 }
-function request(payload: ContactQuery|{type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}|{type:'search';query:string;expansion:Expansion}) {
-  return new Promise<NostrEvent[]>((resolve,reject) => {
+type RequestPayload = ContactQuery|{type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}|
+  {type:'search';query:string;expansion:Expansion;cursors?:SearchCursors};
+function requestResult(payload: RequestPayload) {
+  return new Promise<Result>((resolve,reject) => {
     const id = ++seq;
     let owner:Worker;
     try { owner = connect(); } catch { reject(new Error('Nostr connections are unavailable in this browser.')); return; }
     waiting.set(id,{resolve,reject}); owner.postMessage({...payload,id});
   });
 }
+function request(payload: RequestPayload) { return requestResult(payload).then(result => result.events); }
 
 const localSync = new WriteSync({
   current:()=>get(account)?.pubkey ?? '',
@@ -336,14 +341,15 @@ const localSync = new WriteSync({
 });
 export function retrySync() { return localSync.retry(); }
 export function clearRelaySearch() { relaySearchVersion++; relaySearchIds.clear(); }
-export async function searchRelays(query: string, expansion = noExpansion) {
+export async function searchRelays(query: string, expansion = noExpansion, cursors?: SearchCursors) {
   const version = ++relaySearchVersion;
-  const events = await request({type:'search',query,expansion});
-  if (version !== relaySearchVersion) return new Set<string>();
-  relaySearchIds.clear();
+  const {events, cursors: next = []} = await requestResult({type:'search',query,expansion,cursors});
+  if (version !== relaySearchVersion) return {ids:new Set<string>(),cursors:[]};
+  if (!cursors) relaySearchIds.clear();
   for (const event of events) relaySearchIds.add(event.id);
+  while (relaySearchIds.size > 700) relaySearchIds.delete(relaySearchIds.values().next().value!);
   apply(events);
-  return new Set(relaySearchIds);
+  return {ids:new Set(relaySearchIds),cursors:next};
 }
 
 export const homeTopics = ['nostr','bitcoin','technology','art','photography','music','science','gaming','books','asknostr','memes','general'];

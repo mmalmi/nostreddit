@@ -1,4 +1,5 @@
 import type { Expansion } from './discovery/discussions';
+import type { SearchCursors } from './discovery/relay-search';
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
 
 const override = import.meta.env?.VITE_NOSTR_RELAYS?.trim();
@@ -12,9 +13,9 @@ export type Request =
   | { type: 'close'; id: number }
   | { type: 'publish'; id: number; event: NostrEvent }
   | (ContactQuery & {id:number})
-  | { type: 'search'; id: number; query: string; expansion: Expansion }
+  | { type: 'search'; id: number; query: string; expansion: Expansion; cursors?: SearchCursors }
   | { type: 'latest'; id: number; kind: number; pubkey: string };
 export type Response =
   | { type: 'events'; events: NostrEvent[] }
   | { type: 'status'; value: 'live' | 'offline' }
-  | { type: 'result'; id: number; events: NostrEvent[]; error?: string };
+  | { type: 'result'; id: number; events: NostrEvent[]; cursors?: SearchCursors; error?: string };

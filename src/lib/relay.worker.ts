@@ -2,7 +2,8 @@ import { MemoryEventStore, NostrRuntime, type NostrEvent, type RuntimeSubscripti
 import { discussionKinds } from './posts';
 import { focusedThread, VisitedThreads } from './visited-threads';
 import { queryDirectory } from './contactDirectory';
-import { matchesRetrieval, relayFilters } from './discovery/discussions';
+import { relayFilters } from './discovery/discussions';
+import { readSearchPage } from './discovery/relay-search';
 import { planPostSearch } from './discovery/query';
 import { checkSearch } from './search';
 import { relayUrls, searchRelayUrls, testRelays, type Request, type Response } from './relayTypes';
@@ -144,15 +145,12 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     if (req.type === 'search') {
       const query = checkSearch(req.query);
       const filters = relayFilters(planPostSearch(query), req.expansion);
-      if (!filters.length) { reply({type:'result', id:req.id, events:[]}); return; }
-      const result = await runtime.query(filters, {
-        cache: 'network-only', relays: searchRelayUrls, deadline: Date.now() + 6500, limit: 50,
-      });
-      if (!result.events.length && !result.sources.some(source => source.complete)) {
-        throw new Error('No search relay responded. Your local results are still available.');
-      }
-      const events = result.events.filter(event => matchesRetrieval(event, filters));
-      reply({type:'result', id:req.id, events});
+      if (!filters.length) { reply({type:'result', id:req.id, events:[], cursors:[]}); return; }
+      const page = await readSearchPage(filters, req.cursors ?? [], filter => runtime.query([filter], {
+        cache: 'network-only', relays: filter.search ? searchRelayUrls : relayUrls,
+        deadline: Date.now() + 6500, limit: filter.limit,
+      }));
+      reply({type:'result', id:req.id, ...page});
       return;
     }
     const result = await runtime.query([{ kinds: [req.kind], authors: [req.pubkey], limit: 1 }], {

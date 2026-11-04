@@ -79,7 +79,8 @@ export function relayFilters(plan: SearchPlan, expansion: Expansion): NostrFilte
   const queries = [...new Set([plan.relayQuery, ...plan.anchors.slice(0, 2), ...expansion.terms.slice(0, 2)])]
     .filter(safe);
   const filters: NostrFilter[] = queries.map(search => ({...base, search}));
-  const tags = [...new Set([...plan.hashtags.slice(0, 4), ...expansion.tags.slice(0, 3)])].filter(safe);
+  const topic = /^[\p{L}\p{M}\p{N}_-]+$/u.test(plan.relayQuery) ? [plan.relayQuery.toLowerCase()] : [];
+  const tags = [...new Set([...plan.hashtags.slice(0, 4), ...topic, ...expansion.tags.slice(0, 3)])].filter(safe);
   if (tags.length) filters.push({...base, '#t': tags});
   return filters;
 }

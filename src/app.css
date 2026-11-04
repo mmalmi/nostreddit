@@ -1351,6 +1351,8 @@ main > .feed-heading:first-child { margin-top: 0; }
 
 .relay-search {display:flex;align-items:center;flex-wrap:wrap;gap:.7rem;margin:0 0 1rem}
 .relay-search small {color:var(--muted)}
+.search-more {text-align:center;margin-top:18px}
+.search-more small {display:block;color:var(--muted);margin-top:8px}
 
 .preferences {background:var(--paper);border:1px solid var(--line);padding:20px;border-radius:12px}
 .preferences h2 {font:700 21px/1.25 var(--serif);margin-bottom:10px}
