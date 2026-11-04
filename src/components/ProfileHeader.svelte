@@ -10,6 +10,8 @@
   import { snapshotRoot } from '../lib/graph-model';
   import { safeURL, displayName } from '../lib/ui';
   import Icon from './Icon.svelte';
+  import SocialBadge from './SocialBadge.svelte';
+  import SocialContext from './SocialContext.svelte';
 
   export let pubkey: string;
   export let followBusy: boolean;
@@ -26,7 +28,6 @@
   $: npub = npubEncode(pubkey);
   $: banner = safeURL(profile?.banner);
   $: website = safeURL(profile?.website);
-  $: distance = $graphInfo[pubkey]?.distance;
   $: social = $profileRelations?.subject === pubkey && $profileRelations?.viewer === ($account?.pubkey || snapshotRoot)
     ? $profileRelations : null;
   $: observeEventAuthors([pubkey, ...(social?.mutuals ?? [])]);
@@ -64,7 +65,7 @@
         {/if}
       </div>
     </div>
-    <h1><Name {pubkey} {profile} name={displayName(pubkey,profile)}/></h1>
+    <h1 aria-label={displayName(pubkey,profile)}><Name {pubkey} {profile} name={displayName(pubkey,profile)}/><SocialBadge {pubkey} size={19}/></h1>
     <div class="identifiers">
       {#if profile?.nip05}<span title="Nostr address listed by this profile">{profile.nip05}</span>{/if}
       <CopyButton class="profile-copy" text={npub} label="Copy public key" ariaLabel="Copy public key" title="Copy public key" promptLabel="Public key"/>
@@ -84,8 +85,8 @@
         {#if social?.followers != null}<strong>{social.followers.toLocaleString()}</strong>{/if} Followers
       </a>
       {#if !mine && $account && social?.followsViewer}<span class="badge">Follows you</span>{/if}
-      {#if distance != null}<span class="badge"><Icon name="globe" size={13}/>{distance === 0 ? 'Graph center' : distance === 1 ? 'Direct connection' : distance + ' steps away'}</span>{/if}
     </div>
+    <SocialContext {pubkey}/>
     {#if social && people.length}
       <div class="connections">
         <div class="faces" aria-hidden="true">
@@ -116,7 +117,7 @@
   .avatar {background:var(--paper);border:3px solid var(--paper);border-radius:50%;flex:none;overflow:hidden}
   .actions,.links,.links a,.links span,.identifiers,.stats,.badge,.connections,.faces {display:flex;align-items:center}
   .actions {gap:6px;flex-wrap:wrap;justify-content:flex-end}
-  h1 {font:700 29px/1.25 var(--serif);letter-spacing:-.8px;margin:9px 0 2px;display:flex;min-width:0}
+  h1 {font:700 29px/1.25 var(--serif);letter-spacing:-.8px;margin:9px 0 2px;display:flex;align-items:center;gap:7px;min-width:0}
   .identifiers,.links,.stats {flex-wrap:wrap;gap:6px 12px;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
   .identifiers :global(.profile-copy) {display:inline-flex;align-items:center;gap:4px;color:var(--green);font-size:12px}
   .about {margin-top:10px;white-space:pre-line;overflow-wrap:anywhere;font-size:14px;line-height:1.55}

@@ -24,6 +24,7 @@
   import NoteText from './NoteText.svelte';
   import Icon from './Icon.svelte';
   import TopicIcon from './TopicIcon.svelte';
+  import SocialBadge from './SocialBadge.svelte';
   export let post: Post;
   export let saved = false;
   export let showPreviews = true;
@@ -83,13 +84,13 @@
         href={topicPath(topic)}
         ><TopicIcon slug={topic} small />r/{topic}</a
       ><span class="sep">·</span>{/if}
-    <a class="author" href={profileUrl(post.pubkey)}
+    <a class="author" href={profileUrl(post.pubkey)} aria-label={name}
       >{#if comment && picture}<img
           use:proxyImage={{url:picture,width:18,square:true}}
           alt=""
           loading="lazy"
           referrerpolicy="no-referrer"
-        />{/if}{name}</a
+        />{/if}{name} <SocialBadge pubkey={post.pubkey}/></a
     ><span class="sep">·</span>
     <a class="stamp" href={permalink}
       ><time datetime={new Date(post.created_at * 1000).toISOString()}

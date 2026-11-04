@@ -3,7 +3,7 @@
 </script>
 <section class="preferences hot-settings" aria-labelledby="hot-settings">
   <h2 id="hot-settings">Hot feed</h2>
-  <p>Fresh conversations, people in your network, and a mix of authors. Likes, replies, and zaps count once per person.</p>
+  <p>Fresh posts and a mix of authors. Likes and zaps count once per profile, with more weight for people you follow. Replies don’t count as votes.</p>
   <label><span>Personalize Hot with AI</span><input type="checkbox" checked={$hotPreferences.ai}
     onchange={e=>setHotPreferences({...$hotPreferences,ai:e.currentTarget.checked})}/></label>
   <label class="interests"><span>Your interests</span><textarea rows="2" maxlength="300"

@@ -45,7 +45,7 @@ self.onmessage = async ({ data }: MessageEvent<GraphRequest>) => {
     const effective = discoveryRoot(graph,data.root);
     if (graph.getRoot() !== effective) await graph.setRoot(effective);
     else if (changed) await graph.recalculateFollowDistances(5000, 100000, () => {});
-    self.postMessage({version:data.version, badges:badgesFor(graph,data.authors,data.root,data.edges.mutes),
+    self.postMessage({version:data.version, discoveryRoot:effective, badges:badgesFor(graph,data.authors,data.root,data.edges.mutes),
       profile:profileRelationsFor(graph,data.profile,data.lists,data.root,data.directory)} satisfies GraphReply);
   } catch {
     self.postMessage({ version: data.version, error: true } satisfies GraphReply);

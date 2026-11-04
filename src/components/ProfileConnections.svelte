@@ -5,6 +5,7 @@
   import { profileUrl, type Relationship } from '../lib/profile-url';
   import { displayName } from '../lib/ui';
   import Icon from './Icon.svelte';
+  import SocialBadge from './SocialBadge.svelte';
 
   export let pubkey: string;
   export let direction: Relationship;
@@ -32,9 +33,9 @@
       {#each $page.keys as key (key)}
         {@const person = $profiles[key]}
         {@const name = displayName(key, person)}
-        <li><a class="person" href={profileUrl(key)}>
+        <li><a class="person" href={profileUrl(key)} aria-label={name}>
           <ProxyAvatar pubkey={key} profile={person} size={38}/>
-          <span class="details"><strong>{name}</strong>{#if person?.about}<small>{person.about}</small>{/if}</span>
+          <span class="details"><strong><span class="person-name">{name}</span><SocialBadge pubkey={key}/></strong>{#if person?.about}<small>{person.about}</small>{/if}</span>
           {#if $account && $follows.includes(key)}<span class="followed">You follow</span>{/if}<Icon name="next" size={14}/>
         </a></li>
       {/each}
@@ -64,6 +65,7 @@
   .person:hover strong,.state a {color:var(--green);text-decoration:underline}
   .details {flex:1;min-width:0}.details strong,.details small {display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .details small,.followed {color:var(--muted);font-size:12px}
+  .details strong{display:flex;align-items:center;gap:5px}.person-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
   .followed {font-size:11px}.state {margin:18px 0}
   .paging {display:flex;gap:12px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px}
   @media (max-width:520px){.connections{padding:15px}.person{gap:7px}}

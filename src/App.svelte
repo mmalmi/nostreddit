@@ -40,7 +40,6 @@
   import { observeAuthors, observeEventAuthors, graphInfo, graphStatus } from './lib/graph';
   import {
     topics,
-    topicInfo,
     validTopic,
     displayName,
     readLocal,
@@ -72,6 +71,7 @@
   import ProfileBackup from './components/ProfileBackup.svelte';
   import EditProfile from './components/EditProfile.svelte';
   import Composer from './components/Composer.svelte';
+  import CreateCommunity from './components/CreateCommunity.svelte';
   import ZapPanel from './lib/ZapPanel.svelte';
   type Route = { page: string; value: string; connections?: Relationship; fromTopic?: string };
   function readRoute(): Route {
@@ -349,7 +349,6 @@
   $: threadTopic = thread && route.fromTopic && matchesTopic(thread,route.fromTopic) ? route.fromTopic : thread?.topic;
   $: profile = $profiles[route.value];
   $: profName = route.page === 'profile' ? ($canSeeAuthor(route.value) ? displayName(route.value,profile) : 'Profile') : '';
-  $: topic = topicInfo(route.value);
   $: source = route.page === 'saved' ? visibleSaved : route.page === 'topic'
     ? [...$posts,...$comments.filter(reply=>mentionsTopic(reply,route.value))] : $posts;
   $: plan = route.page === 'search' && route.value ? planPostSearch(route.value) : undefined;
@@ -379,7 +378,7 @@
   $: hotScope = hotActive ? `${route.page}:${route.value}:${$account?.pubkey || 'guest'}:${hotRefresh}` : '';
   $: hotOptions = {now:Date.now()/1000,signals:$hotSignals,follows:new Set($follows),joined,saved:visibleSaved,
     topic:route.page === 'topic' ? route.value : '', seen:new Set(seenHot),
-    distance:(key:string)=>$graphInfo[key]?.distance};
+    distance:(key:string)=>$graphInfo[key]?.distance, knownBy:(key:string)=>$graphInfo[key]?.followedByFriends ?? 0};
   $: baseHot = hotActive ? rankHot(allowedCandidates,hotOptions) : [];
   $: discoveryActors = $follows.length ? $follows : Object.keys($graphInfo).filter(key=>$graphInfo[key].distance===1);
   $: if(mounted) hotObserver.update(allowedCandidates.map(p=>p.id),pageVisible ? hotScope : '',discoveryActors);
@@ -451,9 +450,7 @@
                         ? 'Discussion'
                         : 'Page not found';
   $: subtitle =
-    route.page === 'topic'
-        ? topic.desc
-        : route.page === 'following'
+    route.page === 'following'
           ? 'Conversations from people you follow.'
           : route.page === 'network'
             ? 'People within two steps of your social graph.'
@@ -642,6 +639,7 @@
     </div>
     <div class="nav-group">
       <div class="side-label">COMMUNITIES</div>
+      <button class="nav-row" onclick={() => showModal('community')}><Icon name="plus" size={18}/>Create community</button>
       <a class="nav-row" class:active={route.page === 'topics'} href="/topics"
         ><Icon name="compass" />Explore all</a
       >
@@ -665,7 +663,7 @@
   <main>
     {#if route.page === 'topic'}
       <div class="mobile-community-intro">
-        <CommunityIntro {title} {subtitle} joined={joined.includes(route.value)} onjoin={() => join(route.value)}/>
+        <CommunityIntro {title} joined={joined.includes(route.value)} onjoin={() => join(route.value)}/>
       </div>
     {:else if ['following', 'network', 'saved'].includes(route.page)}
       <section class="hero">
@@ -718,9 +716,17 @@
       {#if $account}
         {#key $account.pubkey + ':' + $account.method}<ProfileBackup method={$account.method}/>{/key}
       {/if}
+      <section class="preferences" aria-labelledby="source-links">
+        <h2 id="source-links">Source</h2>
+        <div class="source-links">
+          <a href="https://github.com/mmalmi/nostreddit" target="_blank" rel="noopener noreferrer">GitHub <Icon name="external" size={14}/></a>
+          <a href="https://git.iris.to/#/npub1xdhnr9mrv47kkrn95k6cwecearydeh8e895990n3acntwvmgk2dsdeeycm/nostreddit" target="_blank" rel="noopener noreferrer">git.iris.to <Icon name="external" size={14}/></a>
+        </div>
+      </section>
     {:else if route.page === 'notifications'}
       <Notifications onSignIn={() => showModal('account')} />
     {:else if route.page === 'topics'}
+      <button class="outline compact community-create" onclick={() => showModal('community')}><Icon name="plus" size={15}/>Create community</button>
       <label class="directory-input"
         ><Icon name="search" /><input
           bind:value={directoryFilter}
@@ -739,7 +745,7 @@
             <a href={'/r/' + slug}
               ><TopicIcon {slug} />
               <div>
-                <strong>r/{slug}</strong><small>{topicInfo(slug).desc}</small>
+                <strong>r/{slug}</strong>
               </div></a
             ><button
               class="outline compact"
@@ -951,7 +957,7 @@
   </main>
   <aside class="right-rail" aria-label="Community information">
     {#if route.page === 'topic'}
-      <CommunityIntro {title} {subtitle} joined={joined.includes(route.value)} onjoin={() => join(route.value)}/>
+      <CommunityIntro {title} joined={joined.includes(route.value)} onjoin={() => join(route.value)}/>
     {/if}
     <section class="rail-panel popular">
       <div class="rail-eyebrow"><Icon name="compass" size={14} /> DISCOVER</div>
@@ -960,7 +966,7 @@
           class="rail-topic"
           href={'/r/' + item.slug}
           ><TopicIcon slug={item.slug} />
-          <div><strong>r/{item.slug}</strong><small>{item.desc}</small></div>
+          <div><strong>r/{item.slug}</strong></div>
           <Icon name="next" size={12} /></a
         >{/each}
       <a class="all-topics" href="/topics"
@@ -978,7 +984,7 @@
     class="modal"
     aria-label={modal === 'account'
       ? 'Nostr profile'
-      : modal === 'compose'
+      : modal === 'community' ? 'Create community' : modal === 'compose'
         ? 'Create post'
         : modal === 'zap'
           ? 'Zap post'
@@ -1004,6 +1010,11 @@
       ><Icon name="close" size={18} /></button
     >
     {#if modal === 'account'}<AccountPanel onclose={accountDone} {notify} />
+    {:else if modal === 'community'}<CreateCommunity oncreate={slug=>{
+        closeModal();
+        if(!joined.includes(slug)){joined=[...joined,slug];writeLocal('joined',joined);}
+        go(topicPath(slug));compose();
+      }}/>
     {:else if modal === 'compose' && $account}<Composer
         initialTopic={route.page === 'topic' ? route.value : ''}
         owner={$account.pubkey}
@@ -1043,4 +1054,5 @@
   .hot-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 12px;font-size:12px;color:var(--muted)}
   .hot-status{color:var(--muted)}
   .hot-controls button{font-size:12px;color:var(--accent)}
+  .community-create{margin-bottom:14px}
 </style>

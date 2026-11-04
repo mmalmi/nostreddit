@@ -6,7 +6,8 @@ test('the community summary and join control follow the available sidebar space'
   const main = page.getByRole('main');
   const title = {name:'r/bitcoin',exact:true} as const;
   await expect(sidebar.getByRole('heading',title)).toBeVisible();
-  await expect(sidebar.locator('.about').getByText('Bitcoin and Lightning',{exact:true})).toBeVisible();
+  await expect(sidebar.locator('.about p')).toHaveCount(0);
+  await expect(sidebar).not.toContainText('Bitcoin and Lightning');
   await expect(main.getByRole('heading',title)).toHaveCount(0);
   await sidebar.getByRole('button',{name:'Join community'}).click();
   await expect(sidebar.getByRole('button',{name:'Joined'})).toHaveAttribute('aria-pressed','true');
@@ -14,7 +15,8 @@ test('the community summary and join control follow the available sidebar space'
 
   await page.setViewportSize({width:390,height:844});
   await expect(main.getByRole('heading',title)).toBeVisible();
-  await expect(main.getByText('Bitcoin and Lightning',{exact:true})).toBeVisible();
+  await expect(main).not.toContainText('Bitcoin and Lightning');
+  await expect(main).not.toContainText('A public Nostr topic');
   await main.getByRole('button',{name:'Joined'}).click();
   await expect(main.getByRole('button',{name:'Join community'})).toHaveAttribute('aria-pressed','false');
   await expect(sidebar).toBeHidden();

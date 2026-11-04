@@ -7,6 +7,7 @@ export interface HotSignal { target:string; actor:string; at:number; kind:'like'
 export interface HotOptions {
   now?:number; follows?:ReadonlySet<string>; joined?:readonly string[]; saved?:readonly Post[];
   distance?:(key:string)=>number|null|undefined; signals?:readonly HotSignal[];
+  knownBy?:(key:string)=>number;
   ai?:ReadonlyMap<string,number>; topic?:string; seen?:ReadonlySet<string>;
 }
 const HOUR=3600;
@@ -22,8 +23,8 @@ function fingerprint(post:Post) {
   return value;
 }
 
-/** Only graph-permitted inputs belong here. One person cannot manufacture a
- * crowd by replying repeatedly, liking twice, or issuing expensive zaps. */
+/** Only graph-permitted inputs belong here. Count each reacting profile once;
+ * replies and payment amounts do not add recommendation weight. */
 export function hotScores(posts:readonly Post[], options:HotOptions={}) {
   const {now=Date.now()/1000,follows=new Set<string>(),signals=[],distance=()=>null}=options;
   const targets=new Map(posts.map(post=>[post.id,post]));
@@ -32,16 +33,23 @@ export function hotScores(posts:readonly Post[], options:HotOptions={}) {
   const weight=(key:string)=>{
     if(!trust.has(key)) {
       const steps=distance(key);
-      trust.set(key,follows.has(key)||steps===1 ? 1.4 : steps===2 ? 1.1 : steps===3 ? .85 : .6);
+      // Visibility is not endorsement. A single large follow list can put
+      // thousands of unrelated profiles two hops away. Weight indirect support
+      // by how many direct contacts independently follow the actor.
+      const known=Math.max(0,options.knownBy?.(key) ?? 0);
+      trust.set(key,follows.has(key)||steps===1 ? 1.4 : steps===2 ? .06+.74*Math.min(1,known/20) : steps===3 ? .08 : .05);
     }
     return trust.get(key)!;
   };
   for(const signal of signals) {
+    // Replies can be criticism, copied text, or automated conversation.
+    // Display their counts, but never treat them as positive votes for Hot.
+    if(signal.kind==='reply')continue;
     const post=targets.get(signal.target);
     if(!post || signal.actor===post.pubkey || !Number.isFinite(signal.at) || signal.at>now+600 || signal.at<post.created_at-600) continue;
     const crowd=actors.get(post.id)||new Map<string,number>();
     const age=Math.max(0,now-signal.at)/HOUR;
-    const strength=(signal.kind==='reply'?1.35:1)*weight(signal.actor)*Math.pow(.5,age/24);
+    const strength=weight(signal.actor)*Math.pow(.5,age/24);
     crowd.set(signal.actor,Math.max(crowd.get(signal.actor)||0,strength));
     actors.set(post.id,crowd);
   }

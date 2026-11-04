@@ -125,17 +125,19 @@ test('a signed-in reader discovers a post liked by a follow while graph settings
 });
 
 test('incoming activity does not shuffle the feed while reading; refresh applies the new order',async({page})=>{
-  await page.goto('/r/hot-lab');
-  await expect(page.locator('article h2').first()).toHaveText(active.content);
+  const rows=Array.from({length:16},(_,i)=>record(generateSecretKey(),'Reading order '+i,[['t','reading-order'],['subject','Reading order '+i]],1,at-3600-i));
+  await publish(rows);
+  await page.goto('/r/reading-order');
+  await expect(page.locator('article h2').first()).toHaveText(rows[0].content);
   await page.evaluate(()=>window.scrollTo(0,850));
   await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBeGreaterThan(160);
-  await publish(Array.from({length:18},(_,i)=>record(generateSecretKey(),'A new perspective '+i,
-    [['e',quiet[0].id,'','root',quiet[0].pubkey],['p',quiet[0].pubkey],['t','hot-lab']])));
+  const newer=record(generateSecretKey(),'A newly arriving discussion',[['t','reading-order'],['subject','A newly arriving discussion']]);
+  await publish([newer]);
   const refresh=page.getByRole('button',{name:'Show updated posts',exact:true});
   await expect(refresh).toBeAttached();
-  await expect(page.locator('article h2').first()).toHaveText(active.content);
+  await expect(page.locator('article h2').first()).toHaveText(rows[0].content);
   await refresh.click();
-  await expect(page.locator('article h2').first()).toHaveText(quiet[0].content);
+  await expect(page.locator('article h2').first()).toHaveText(newer.content);
   await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBe(0);
 });
 

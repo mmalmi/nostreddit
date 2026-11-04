@@ -4,6 +4,7 @@ import { summarizeProfileList, snapshotRoot, type RelationshipKind, type Profile
 
 export const graphInfo = writable<Record<string, GraphBadge>>({});
 export const graphViewer = writable(snapshotRoot);
+export const graphDiscoveryRoot = writable(snapshotRoot);
 export const graphStatus = writable<'loading' | 'ready' | 'unavailable'>('loading');
 export const profileRelations = writable<ProfileRelations | null>(null);
 
@@ -50,6 +51,7 @@ function schedule() {
           busy = false;
           if ('error' in data) return unavailable();
           if (data.version === version) {
+            graphDiscoveryRoot.set(data.discoveryRoot);
             const accepted = Object.entries(data.badges).filter(([key]) => interested.has(key));
             if (accepted.length) {
               cached = {...cached, ...Object.fromEntries(accepted)};

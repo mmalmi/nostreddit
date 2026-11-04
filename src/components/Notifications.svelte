@@ -5,6 +5,7 @@
   import { displayName, age } from '../lib/ui';
   import type { NostrEvent } from 'nostr-pubsub';
   import Icon from './Icon.svelte';
+  import SocialBadge from './SocialBadge.svelte';
 
   let { onSignIn }: { onSignIn: () => void } = $props();
   $effect(() => {
@@ -35,7 +36,7 @@
       {@const id = notificationPostId(event)}
       <article class="activity">
         <span class="activity-icon"><Icon name={item.icon} size={18}/></span>
-        <div><div><a class="activity-author" href={profileUrl(event.pubkey)}>{displayName(event.pubkey,$profiles[event.pubkey])}</a> {item.title}</div>
+        <div><div><a class="activity-author" href={profileUrl(event.pubkey)} aria-label={displayName(event.pubkey,$profiles[event.pubkey])}>{displayName(event.pubkey,$profiles[event.pubkey])} <SocialBadge pubkey={event.pubkey}/></a> {item.title}</div>
           {#if $unreadNotificationIds.has(event.id)}<span class="unread">Unread</span>{/if}
           {#if event.kind !== 7}<p>{event.content.slice(0,180)}</p>{/if}
           {#if id && isEventId(id)}<a class="activity-link" href={postUrl(id)}>Open discussion ↗</a>{/if}

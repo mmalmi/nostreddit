@@ -8,61 +8,14 @@ export function displayName(pubkey: string, profile?: IrisProfile | null): strin
   return getProfileDisplayName(undefined, pubkey.toLowerCase(), published);
 }
 
-export const topics = [
-  {
-    slug: 'nostr',
-    name: 'Nostr',
-    icon: 'nostr',
-    color: 'violet',
-    desc: 'Clients, relays, and the open network',
-  },
-  {
-    slug: 'bitcoin',
-    name: 'Bitcoin',
-    icon: 'bitcoin',
-    color: 'gold',
-    desc: 'Bitcoin and Lightning',
-  },
-  {
-    slug: 'photography',
-    name: 'Photography',
-    icon: 'camera',
-    color: 'sky',
-    desc: 'Life through a lens',
-  },
-  {
-    slug: 'art',
-    name: 'Art',
-    icon: 'art',
-    color: 'coral',
-    desc: 'Sketches, studies, and finished work',
-  },
-  {
-    slug: 'music',
-    name: 'Music',
-    icon: 'music',
-    color: 'rose',
-    desc: 'Listening, playing, and sharing',
-  },
-  {
-    slug: 'technology',
-    name: 'Technology',
-    icon: 'tech',
-    color: 'moss',
-    desc: 'Tools, experiments, and ideas',
-  },
-];
+// Navigation suggestions are topic names, not community-owned metadata.
 export function topicInfo(slug: string) {
-  return (
-    topics.find((item) => item.slug === slug) ?? {
-      slug,
-      name: slug,
-      icon: 'hash',
-      color: 'moss',
-      desc: 'A public Nostr topic',
-    }
-  );
+  const colors = ['violet','gold','sky','coral','rose','moss'];
+  let hash = 0;
+  for (const letter of slug) hash = (hash * 31 + letter.codePointAt(0)!) >>> 0;
+  return {slug, name:slug, icon:'hash', color:colors[hash % colors.length]};
 }
+export const topics = ['nostr','bitcoin','photography','art','music','technology'].map(topicInfo);
 export function validTopic(slug: string) {
   return !!slug && topicSlug(slug)===slug;
 }

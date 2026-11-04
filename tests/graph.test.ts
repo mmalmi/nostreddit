@@ -12,8 +12,8 @@ test('graph badges respect account roots, mutes and bounded read-only lookups', 
   await graph.recalculateFollowDistances();
   const unused = 'a'.repeat(64);
   assert.deepEqual(badgesFor(graph, [friend, neighbor, stranger, unused]), {
-    [friend]: { distance: 1, muted: false, overmuted: false }, [neighbor]: { distance: 2, muted: false, overmuted: false },
-    [stranger]: { distance: null, muted: true, overmuted: true }, [unused]: { distance: null, muted: false, overmuted: false }
+    [friend]: { distance: 1, muted: false, overmuted: false, followedByFriends: 0 }, [neighbor]: { distance: 2, muted: false, overmuted: false, followedByFriends: 1 },
+    [stranger]: { distance: null, muted: true, overmuted: true, followedByFriends: 0 }, [unused]: { distance: null, muted: false, overmuted: false, followedByFriends: 0 }
   });
   assert.equal(graph.getInternalData().ids.has(unused), false);
   await graph.setRoot(friend);

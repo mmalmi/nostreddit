@@ -3,7 +3,7 @@ import type { SocialGraph } from 'nostr-social-graph';
 
 export const snapshotRoot = '4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0';
 export const snapshotHash = '085ba69fa37725c98c5c8e214bccf2cb4d748c542df5396830e122604c00577e';
-export type GraphBadge = { distance: number | null; muted: boolean; overmuted: boolean };
+export type GraphBadge = { distance: number | null; muted: boolean; overmuted: boolean; followedByFriends?:number };
 export type RelationshipKind = 'following' | 'followers';
 export type ProfileList = {
   author: string; id: string; at: number; followsSubject: boolean; followsViewer: boolean; following: number; followKeys?: string[];
@@ -17,7 +17,7 @@ export type GraphRequest = {
   edges:PendingEdges;
   root: string; authors: string[]; events: NostrEvent[]; version: number; profile: string; lists: ProfileList[]; directory: RelationshipKind | null;
 };
-export type GraphReply = { version: number; badges: Record<string, GraphBadge>; profile: ProfileRelations | null } | { version: number; error: true };
+export type GraphReply = { version: number; discoveryRoot:string; badges: Record<string, GraphBadge>; profile: ProfileRelations | null } | { version: number; error: true };
 
 // Like Iris Social, compare the opinions at the nearest distance with any
 // followers or muters. More mutes than follows at that distance hides the author.
@@ -44,7 +44,7 @@ export function badgesFor(graph: SocialGraph, authors: readonly string[], viewer
     const known = ids.has(author);
     const distance = author === viewer ? 0 : known ? graph.getFollowDistance(author) : 1000;
     const unmuting = pendingMutes[author] === false && muted.has(author);
-    return [author, {distance:distance < 1000 ? distance : null, muted:pendingMutes[author] ?? muted.has(author),
+    return [author, {distance:distance < 1000 ? distance : null, followedByFriends:known ? graph.followedByFriendsCount(author) : 0, muted:pendingMutes[author] ?? muted.has(author),
       overmuted:author !== viewer && known && moreMutedThanFollowed(graph,author,unmuting ? graph.getFollowDistance(viewer) : undefined)}];
   }));
 }
