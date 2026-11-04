@@ -1,4 +1,9 @@
 import { MemoryEventStore, NostrRuntime, type NostrEvent, type RuntimeSubscription } from 'nostr-pubsub';
+import { discussionKinds } from './posts';
+import { focusedThread, VisitedThreads } from './visited-threads';
+import { queryDirectory } from './contactDirectory';
+import { matchesRetrieval, relayFilters } from './discovery/discussions';
+import { planPostSearch } from './discovery/query';
 import { checkSearch } from './search';
 import { relayUrls, searchRelayUrls, testRelays, type Request, type Response } from './relayTypes';
 
@@ -17,6 +22,8 @@ function setConnection(connected:boolean) {
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let cacheTimer: ReturnType<typeof setTimeout> | undefined;
 const cacheKey = testRelays ? relayUrls.join(',') : 'public';
+const visited = new VisitedThreads(cacheKey);
+let delivery = Promise.resolve();
 const database = new Promise<IDBDatabase>((resolve, reject) => {
   const request = indexedDB.open('nostreddit-feed-v1', 1);
   request.onupgradeneeded = () => request.result.createObjectStore('snapshots');
@@ -29,9 +36,15 @@ function emit(event: NostrEvent) {
       !Number.isSafeInteger(event.created_at) || event.created_at < 0 || event.created_at > Date.now()/1000+600) return;
   queue.set(event.id, event);
   if (flushTimer === undefined) flushTimer = setTimeout(() => {
-    reply({type: 'events', events: [...queue.values()]});
+    const events = [...queue.values()];
     queue.clear();
     flushTimer = undefined;
+    // Commit visited discussions before presenting this batch. A page reload can
+    // terminate the worker as soon as the reader sees a reply.
+    delivery = delivery.then(async () => {
+      await visited.saveBatch(events).catch(() => {});
+      reply({type: 'events', events});
+    });
   }, 55);
 }
 
@@ -39,7 +52,7 @@ async function saveSnapshot() {
   const db = await database;
   if (!db) return;
   const events = await runtime.store.query([
-    { kinds: [1, 1111], limit: 200 }, { kinds: [0], limit: 170 },
+    { kinds: discussionKinds, limit: 200 }, { kinds: [0], limit: 170 },
     { kinds: [5, 7, 9735], limit: 200 }, { kinds: [3, 10000,34550], limit: 40 },
   ]);
   // Bound disk use even when individual profiles or contact lists are enormous.
@@ -93,8 +106,10 @@ if (!testRelays) void fetch(new URL('starter-feed.json', self.location.origin), 
 self.onmessage = async (message: MessageEvent<Request>) => {
   const req = message.data;
   try {
-    if (req.type === 'close') { watches.get(req.id)?.close(); watches.delete(req.id); return; }
+    if (req.type === 'close') { visited.close(req.id); watches.get(req.id)?.close(); watches.delete(req.id); return; }
     if (req.type === 'watch') {
+      const focus = req.live ? focusedThread(req.filters) : undefined;
+      if (focus) void visited.open(req.id, focus, admitSnapshot).catch(() => {});
       const sub = runtime.subscribe(req.filters, {
         onEvent(event, info) {
           emit(event);
@@ -112,26 +127,31 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     }
     if (req.type === 'publish') {
       const published = await runtime.publish(req.event, { requireAck: true });
-      if (!published.remoteAccepted) throw new Error('No relay accepted this action. Check your connection and try again.');
+      if (!published.remoteAccepted) {
+        const rejection=published.sources.find(source=>source.error && /blocked:|invalid:|restricted:|rejected|denied/i.test(source.error));
+        throw new Error(rejection ? 'Relay rejected this change: '+rejection.error : 'No relay has acknowledged this change yet.');
+      }
       emit(req.event);
       await saveSnapshot().catch(() => {});
       reply({type: 'result', id: req.id, events: [req.event]});
       return;
     }
+    if (req.type === 'contacts') {
+      const events = await queryDirectory(runtime, cacheKey, req);
+      reply({type:'result',id:req.id,events});
+      return;
+    }
     if (req.type === 'search') {
       const query = checkSearch(req.query);
-      const result = await runtime.query([{kinds: [1,1111], search: query, limit: 50}], {
+      const filters = relayFilters(planPostSearch(query), req.expansion);
+      if (!filters.length) { reply({type:'result', id:req.id, events:[]}); return; }
+      const result = await runtime.query(filters, {
         cache: 'network-only', relays: searchRelayUrls, deadline: Date.now() + 6500, limit: 50,
       });
       if (!result.events.length && !result.sources.some(source => source.complete)) {
         throw new Error('No search relay responded. Your local results are still available.');
       }
-      // Some relays ignore search. Only surface matches to the submitted terms.
-      const terms = query.toLowerCase().split(/\s+/);
-      const events = result.events.filter(event => {
-        const text = [event.content, ...event.tags.filter(t => ['t','subject','title'].includes(t[0])).map(t => t[1])].join(' ').toLowerCase();
-        return terms.every(term => text.includes(term));
-      });
+      const events = result.events.filter(event => matchesRetrieval(event, filters));
       reply({type:'result', id:req.id, events});
       return;
     }
@@ -145,7 +165,7 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     reply({type: 'result', id: req.id, events: result.events});
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Relay request failed.';
-    if (req.type === 'latest' || req.type === 'publish' || req.type === 'search')
+    if (req.type === 'latest' || req.type === 'publish' || req.type === 'search' || req.type === 'contacts')
       reply({type: 'result', id: req.id, events: [], error: message});
   }
 };

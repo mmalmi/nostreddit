@@ -18,6 +18,8 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@hashtree/core": "file:vendor/hashtree-core-0.4.0.tgz",
+    "@huggingface/tokenizers": "0.2.0",
     "@iris/svelte-ui": "file:vendor/iris-svelte-ui-3d26f8c.tgz",
     "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
@@ -25,6 +27,7 @@
     "nostr-pubsub": "https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.24/nostr-pubsub-0.5.24.tgz",
     "nostr-social-graph": "https://github.com/mmalmi/nostr-social-graph/releases/download/v2.0.3/nostr-social-graph-2.0.3.tgz",
     "nostr-tools": "2.25.2",
+    "onnxruntime-web": "1.24.3",
     "qrcode": "1.5.4",
     "svelte": "5.57.1"
   },

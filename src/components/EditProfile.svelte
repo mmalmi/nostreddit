@@ -11,6 +11,7 @@
     lud16 = profile?.lud16 || '',
     busy = false,
     error = '';
+  const initial = {name, display_name:name, about, picture, banner, website, lud16};
   async function send() {
     if ([picture,banner,website].some(value => value.trim() && !safeURL(value.trim()))) {
       error = 'Use a full http or https URL for pictures, banners, and websites.';
@@ -19,15 +20,8 @@
     busy = true;
     error = '';
     try {
-      await saveProfile({
-        display_name: name.trim(),
-        name: name.trim(),
-        about: about.trim(),
-        picture: picture.trim(),
-        banner: banner.trim(),
-        website: website.trim(),
-        lud16: lud16.trim(),
-      });
+      const next = {name:name.trim(),display_name:name.trim(),about:about.trim(),picture:picture.trim(),banner:banner.trim(),website:website.trim(),lud16:lud16.trim()};
+      await saveProfile(Object.fromEntries(Object.entries(next).filter(([key,value]) => value !== initial[key as keyof typeof initial])));
       ondone();
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not save profile.';

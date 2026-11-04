@@ -1,5 +1,8 @@
 import type { NostrEvent } from 'nostr-pubsub';
 
+import { hasTreeCapability, parseTreeAttachment } from './tree-embeds';
+
+export const discussionKinds = [1,20,21,22,1111];
 export interface Post {
   id: string; pubkey: string; created_at: number; event: NostrEvent;
   title: string; body: string; topic: string; url: string; root: string; parent: string;
@@ -10,14 +13,21 @@ export function topicSlug(value: string): string {
   return /^[a-z0-9][a-z0-9_-]{0,47}$/.test(slug) ? slug : '';
 }
 export function httpUrl(value = ''): string {
-  try { const url = new URL(value); return /^https?:$/.test(url.protocol) ? url.href : ''; }
+  try { const url = new URL(value); return /^https?:$/.test(url.protocol) && !url.username && !url.password && !hasTreeCapability(value) ? url.href : ''; }
   catch { return ''; }
 }
+export function postLink(value: string) {
+  return parseTreeAttachment(value)?.url || httpUrl(value);
+}
+function communityOf(event:NostrEvent) {
+  const addressed = (tag:string[]) => /^34550:[a-f0-9]{64}:/.test(tag[1]);
+  return (event.tags.find(t=>t[0]==='A' && addressed(t)) || event.tags.find(t=>t[0]==='a' && addressed(t)))?.[1];
+}
 export function asPost(event: NostrEvent): Post | undefined {
-  if (![1,1111].includes(event.kind) || !Number.isSafeInteger(event.created_at) ||
+  if (!discussionKinds.includes(event.kind) || !Number.isSafeInteger(event.created_at) ||
       event.created_at < 0 || event.created_at > Date.now()/1000 + 600) return;
   const tag = (name: string) => event.tags.find(t => t[0] === name)?.[1] || '';
-  const community = event.tags.find(t => ['A', 'a'].includes(t[0]) && /^34550:[a-f0-9]{64}:/.test(t[1]))?.[1];
+  const community = communityOf(event);
   const hashtag = event.tags.filter(t => t[0] === 't').map(t => topicSlug(t[1] || '')).find(Boolean);
   const topic = topicSlug(community?.slice(71) || '') || hashtag || 'general';
   let root = '', parent = '';
@@ -26,7 +36,7 @@ export function asPost(event: NostrEvent): Post | undefined {
     const markedRoot = refs.find(t => t[3] === 'root')?.[1], markedParent = refs.find(t => t[3] === 'reply')?.[1];
     root = markedRoot || markedParent || refs[0]?.[1] || '';
     parent = markedParent || markedRoot || refs.at(-1)?.[1] || '';
-  } else {
+  } else if (event.kind === 1111) {
     root = tag('E'); parent = tag('e') || root;
     // A comment directly scoped to a community is a top-level discussion.
     if (!parent && !community) return;
@@ -34,15 +44,22 @@ export function asPost(event: NostrEvent): Post | undefined {
   }
   const content = event.content.trim();
   const subject = (tag('subject') || tag('title')).trim();
-  if (!content && !subject) return;
+  const mediaOnly = [20,21,22].includes(event.kind) && event.tags.some(t=>t[0]==='imeta' && t.some(v=>v.startsWith('url ')));
+  if (!content && !subject && !mediaOnly) return;
   const firstLine = content.split('\n', 1)[0].trim();
-  const title = subject || (firstLine.length > 160 ? firstLine.slice(0, 157) + '…' : firstLine);
-  const url = httpUrl(tag('r')) || httpUrl(content.match(/https?:\/\/[^\s<>"\]]+/)?.[0]?.replace(/[.,;!?)]$/, ''));
+  const title = subject || (firstLine.length > 160 ? firstLine.slice(0, 157) + '…' : firstLine) || (event.kind===20 ? 'Photo' : 'Video');
+  const url = postLink(tag('r')) || httpUrl(content.match(/https?:\/\/[^\s<>"\]]+/)?.[0]?.replace(/[.,;!?)]$/, ''));
   let body = content;
   if (!parent && content.startsWith(title) && (content === title || /^\s*\n/.test(content.slice(title.length)))) {
     body = content.slice(title.length).trim();
   }
   return {event, id:event.id, pubkey:event.pubkey, created_at:event.created_at, title, body, topic, url, root, parent};
+}
+
+export function matchesTopic(post:Post, topic:string):boolean {
+  const explicit = communityOf(post.event);
+  if (explicit) return topicSlug(explicit.slice(71)) === topic;
+  return post.topic === topic || post.event.tags.some(t => t[0]==='t' && topicSlug(t[1] || '')===topic);
 }
 
 export function postDraft(input: {topic:string; title:string; body:string; url?:string}) {
@@ -51,17 +68,22 @@ export function postDraft(input: {topic:string; title:string; body:string; url?:
   if (!topic) throw new Error('Use a topic of 1–48 letters, numbers, hyphens, or underscores.');
   if (!title || title.length > 300) throw new Error('Give your post a title of up to 300 characters.');
   if (body.length > 20000) throw new Error('Keep the post under 20,000 characters.');
-  if (rawUrl && !httpUrl(rawUrl)) throw new Error('Use a valid http or https link.');
+  const link = postLink(rawUrl);
+  if (rawUrl && !link) throw new Error('Enter a web or Hashtree link.');
   const tags = [['t',topic], ['subject',title]];
-  if (rawUrl) tags.push(['r',httpUrl(rawUrl)]);
+  if (link) tags.push(['r',link]);
   // Title, body and link must be readable even in clients that ignore subject/r tags.
-  return {kind:1, tags, content:[title, body, rawUrl && !body.includes(rawUrl) ? httpUrl(rawUrl) : ''].filter(Boolean).join('\n\n')};
+  return {kind:1, tags, content:[title, body, link && !body.includes(rawUrl) ? link : ''].filter(Boolean).join('\n\n')};
 }
 
 export function commentDraft(parent: Post, text: string) {
   const content = text.trim();
   if (!content || content.length > 20000) throw new Error('Write a reply of up to 20,000 characters.');
   const topic = ['t', parent.topic], author = ['p',parent.pubkey];
+  if ([20,21,22].includes(parent.event.kind)) {
+    const kind = String(parent.event.kind);
+    return {kind:1111,tags:[['E',parent.id,'',parent.pubkey],['K',kind],['P',parent.pubkey],['e',parent.id,'',parent.pubkey],['k',kind],author,topic],content};
+  }
   if (parent.event.kind === 1111) {
     const scope = parent.event.tags.filter(t => ['A','K','P','E','I'].includes(t[0]));
     return {kind:1111, tags:[...scope, ['k','1111'], ['e',parent.id,'',parent.pubkey],author,topic], content};

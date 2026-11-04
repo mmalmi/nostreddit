@@ -1,3 +1,4 @@
+import { npubEncode } from 'nostr-tools/nip19';
 import { test, expect } from '@playwright/test';
 import { allowFixtureAuthors } from './helpers/graphPreferences';
 
@@ -63,16 +64,22 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
   expect(errors).toEqual([]);
 });
 
-test('a rejected submission retains the draft and makes no claim of publication', async ({page}) => {
+test('a relay-rejected post stays local and its delivery can be retried from Settings', async ({page}) => {
+  const title = 'Relay rejection /reject-for-test/';
   await page.goto('/');
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
   await page.getByRole('button',{name:'Create profile',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Create a post',exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);
-  await page.getByLabel('Title',{exact:true}).fill('Relay rejection /reject-for-test/');
+  await page.getByLabel('Title',{exact:true}).fill(title);
   await page.getByRole('button',{name:'Publish post'}).click();
-  await expect(page.getByRole('alert')).toBeVisible({timeout:15000});
-  await expect(page.getByLabel('Title',{exact:true})).toHaveValue('Relay rejection /reject-for-test/');
+  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
+  const permalink = page.url();
+  await page.getByRole('link',{name:'Settings',exact:true}).click();
+  const outbox = page.getByRole('region',{name:'Outbox',exact:true});
+  await expect(outbox).toContainText(/block|reject|failed|not accepted|no relay accepted/i,{timeout:15_000});
+  await outbox.getByRole('button',{name:'Retry sync',exact:true}).click();
+  await expect(outbox).toContainText(/block|reject|failed|not accepted|no relay accepted/i,{timeout:15_000});
+  await page.goto(permalink);
+  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
 });
 
 test('extension sign-in, notifications and profile updates work for the active identity', async ({page}) => {
@@ -145,10 +152,10 @@ test('mobile guests can open Settings and persist their feed preferences', async
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole('heading',{name:'Profile backup'})).toHaveCount(0);
   await page.getByLabel('Feed order').selectOption('New');
-  await page.getByLabel('Show image previews').uncheck();
+  await page.getByLabel('Show media previews in feeds').uncheck();
   await page.reload();
   await expect(page.getByLabel('Feed order')).toHaveValue('New');
-  await expect(page.getByLabel('Show image previews')).not.toBeChecked();
+  await expect(page.getByLabel('Show media previews in feeds')).not.toBeChecked();
   await page.goto('/');
   await expect(page.getByRole('button',{name:'New',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(page.locator('article').first()).toBeVisible();
@@ -170,7 +177,7 @@ test('pasting an existing secret key into the name prompt opens private sign-in'
   await expect(page.getByLabel('Secret key',{exact:true})).toHaveAttribute('type','password');
   await page.getByRole('button',{name:'Sign in with secret key'}).click();
   await page.locator('header .account-button').click();
-  await expect(page.getByRole('link',{name:'View profile',exact:true})).toHaveAttribute('href','/u/'+getPublicKey(key));
+  await expect(page.getByRole('link',{name:'View profile',exact:true})).toHaveAttribute('href','/u/'+npubEncode(getPublicKey(key)));
   await expect(page.getByRole('button',{name:/back up|reveal secret key/i})).toHaveCount(0);
   await page.goto('/settings');
   await expect(page.getByRole('heading',{name:'Profile backup'})).toBeVisible();
@@ -188,18 +195,23 @@ test('pasting an existing secret key into the name prompt opens private sign-in'
 });
 
 
-test('a rejected display name can be retried on the same local profile', async ({page}) => {
+test('a refused display name can be changed on the same local profile', async ({page,browser}) => {
   await page.goto('/');
-  await page.getByRole('button',{name:'Create post',exact:true}).first().click();
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
   await page.getByLabel('Display name',{exact:true}).fill('/reject-for-test/');
   await page.getByRole('button',{name:'Create profile',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Publish your name',exact:true})).toBeVisible({timeout:15_000});
-  const initialPubkey = await page.evaluate(() => JSON.parse(localStorage.getItem('nostreddit.account.v1')!).pubkey as string);
-  expect(initialPubkey).toMatch(/^[a-f0-9]{64}$/);
+  await page.getByRole('button',{name:'/reject-for-test/',exact:true}).click();
+  await page.getByRole('link',{name:'View profile',exact:true}).click();
+  const profileUrl = page.url();
+  await page.getByRole('button',{name:'Edit profile',exact:true}).click();
   await page.getByLabel('Display name',{exact:true}).fill('Retry Reader');
-  await page.getByRole('button',{name:'Retry publishing name',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Create a post',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Close dialog',exact:true}).click();
-  await page.getByRole('button',{name:'Retry Reader',exact:true}).click();
-  await expect(page.getByRole('link',{name:'View profile',exact:true})).toHaveAttribute('href','/u/'+initialPubkey);
+  await page.getByRole('button',{name:'Save profile',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Retry Reader',exact:true})).toBeVisible();
+  const fresh = await browser.newContext();
+  try {
+    await allowFixtureAuthors(fresh);
+    const reader = await fresh.newPage();
+    await reader.goto(profileUrl);
+    await expect(reader.getByRole('heading',{name:'Retry Reader',exact:true})).toBeVisible({timeout:15_000});
+  } finally { await fresh.close(); }
 });

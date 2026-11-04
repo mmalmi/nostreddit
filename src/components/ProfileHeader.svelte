@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { profileUrl } from '../lib/profile-url';
   import Avatar from '@iris/svelte-ui/Avatar.svelte';
   import Name from '@iris/svelte-ui/Name.svelte';
   import CopyButton from '@iris/svelte-ui/CopyButton.svelte';
   import { npubEncode } from 'nostr-tools/nip19';
-  import { account, follows, mutes, profiles, canSeeAuthor } from '../lib/network';
+  import { account, follows, mutes, profiles, outboxReady, canSeeAuthor } from '../lib/network';
   import { graphInfo, profileRelations, graphStatus, observeEventAuthors } from '../lib/graph';
   import { snapshotRoot } from '../lib/graph-model';
   import { safeURL, displayName } from '../lib/ui';
@@ -42,8 +43,8 @@
       {:else}
         <p>Your <a href="/settings">visibility settings</a> hide this profile.</p>
         <div class="actions">
-          <button class="outline compact" disabled={followBusy} onclick={onFollow}>{following ? 'Following' : 'Follow'}</button>
-          {#if $account && muted}<button class="outline compact" disabled={muteBusy} onclick={onMute}>Unmute</button>{/if}
+          <button class="outline compact" disabled={followBusy || (!!$account && !$outboxReady)} onclick={onFollow}>{following ? 'Following' : 'Follow'}</button>
+          {#if $account && muted}<button class="outline compact" disabled={muteBusy || (!!$account && !$outboxReady)} onclick={onMute}>Unmute</button>{/if}
         </div>
       {/if}
     </div>
@@ -57,8 +58,8 @@
       <div class="actions">
         {#if mine}<button class="outline compact" onclick={onEdit}>Edit profile</button>
         {:else}
-          <button class="primary compact" disabled={followBusy} onclick={onFollow}><Icon name={following ? 'check' : 'plus'} size={14}/>{following ? 'Following' : 'Follow'}</button>
-          {#if $account}<button class="outline compact" disabled={muteBusy} onclick={onMute}>{muted ? 'Unmute' : 'Mute'}</button>{/if}
+          <button class="primary compact" disabled={followBusy || (!!$account && !$outboxReady)} onclick={onFollow}><Icon name={following ? 'check' : 'plus'} size={14}/>{following ? 'Following' : 'Follow'}</button>
+          {#if $account}<button class="outline compact" disabled={muteBusy || (!!$account && !$outboxReady)} onclick={onMute}>{muted ? 'Unmute' : 'Mute'}</button>{/if}
         {/if}
       </div>
     </div>
@@ -75,8 +76,12 @@
       </div>
     {/if}
     <div class="stats">
-      {#if social?.following != null}<span><strong>{social.following.toLocaleString()}</strong> {social.followingFromList ? 'following' : 'known follows'}</span>{/if}
-      {#if social?.followers != null}<span><strong>{social.followers.toLocaleString()}</strong> known {social.followers === 1 ? 'follower' : 'followers'}</span>{/if}
+      <a class="stat-link" href={profileUrl(pubkey,'following')} aria-label="View following">
+        {#if social?.following != null}<strong>{social.following.toLocaleString()}</strong>{/if} Following
+      </a>
+      <a class="stat-link" href={profileUrl(pubkey,'followers')} aria-label="View followers">
+        {#if social?.followers != null}<strong>{social.followers.toLocaleString()}</strong>{/if} Followers
+      </a>
       {#if !mine && $account && social?.followsViewer}<span class="badge">Follows you</span>{/if}
       {#if distance != null}<span class="badge"><Icon name="globe" size={13}/>{distance === 0 ? 'Graph center' : distance === 1 ? 'Direct connection' : distance + ' steps away'}</span>{/if}
     </div>
@@ -86,7 +91,7 @@
           {#each people.slice(0,3) as key (key)}<span><Avatar pubkey={key} profile={$profiles[key]} name={displayName(key,$profiles[key])} picture={safeURL($profiles[key]?.picture)} size={22} imgProxy={false}/></span>{/each}
         </div>
         <div>
-          <span>Followed by </span>{#each people as key, index (key)}{#if index}, {/if}<a href={'/u/' + key}><Name pubkey={key} profile={$profiles[key]} name={displayName(key,$profiles[key])}/></a>{/each}
+          <span>Followed by </span>{#each people as key, index (key)}{#if index}, {/if}<a href={profileUrl(key)}><Name pubkey={key} profile={$profiles[key]} name={displayName(key,$profiles[key])}/></a>{/each}
           {#if allowedPeople.length > people.length}
             <button class="more" onclick={() => expandedFor = pubkey}>and {allowedPeople.length - people.length} more</button>
           {/if}
@@ -103,7 +108,7 @@
   .restricted a {color:var(--green);text-decoration:underline}
   .restricted .actions {justify-content:flex-start;margin-top:10px}
   .identity {border:1px solid var(--line);border-radius:13px;background:var(--paper);overflow:hidden}
-  .cover {height:78px;background:repeating-linear-gradient(135deg,transparent 0 15px,#ffffff12 15px 16px),linear-gradient(120deg,#2e5941,#afbd8c)}
+  .cover {height:78px;background:repeating-linear-gradient(135deg,transparent 0 15px,#ffffff12 15px 16px),linear-gradient(120deg,var(--deep),color-mix(in srgb,var(--deep) 40%,#f5ebc8))}
   .cover img {width:100%;height:100%;object-fit:cover}
   .bio {padding:0 20px 17px}
   .identity-row {display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:-29px;position:relative}
@@ -118,6 +123,7 @@
   .links a,.links span,.badge {gap:4px}
   .links a,.connections a,.more {color:var(--green)}
   .links a:hover,.connections a:hover,.more:hover {text-decoration:underline}
+  .stat-link:hover,.stat-link:focus-visible {color:var(--green);text-decoration:underline}
   .stats strong {color:var(--ink)}
   .stats:empty {display:none}
   .badge {font-size:11px;border-radius:4px;background:var(--light);color:var(--green);padding:2px 6px}

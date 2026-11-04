@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { profileUrl } from '../lib/profile-url';
   import { account, profiles, notifications, observeNotificationAuthors, notificationPostId, unreadNotificationIds } from '../lib/network';
   import { displayName, age } from '../lib/ui';
   import type { NostrEvent } from 'nostr-pubsub';
@@ -33,7 +34,7 @@
       {@const id = notificationPostId(event)}
       <article class="activity">
         <span class="activity-icon"><Icon name={item.icon} size={18}/></span>
-        <div><div><a class="activity-author" href={'/u/' + event.pubkey}>{displayName(event.pubkey,$profiles[event.pubkey])}</a> {item.title}</div>
+        <div><div><a class="activity-author" href={profileUrl(event.pubkey)}>{displayName(event.pubkey,$profiles[event.pubkey])}</a> {item.title}</div>
           {#if $unreadNotificationIds.has(event.id)}<span class="unread">Unread</span>{/if}
           {#if event.kind !== 7}<p>{event.content.slice(0,180)}</p>{/if}
           {#if id && /^[a-f0-9]{64}$/.test(id)}<a class="activity-link" href={'/post/' + id}>Open discussion ↗</a>{/if}
@@ -45,11 +46,11 @@
 
 <style>
   .inbox {display:grid;gap:.65rem}
-  .activity {display:grid;grid-template-columns:2rem minmax(0,1fr) auto;align-items:start;gap:.8rem;border:1px solid #deded1;background:#fffef8;border-radius:12px;padding:1rem;color:#294337;font-size:.9rem;line-height:1.45}
-  .unread {font-size:.75rem;font-weight:700;color:#355d40}
-  .activity-icon {display:grid;place-items:center;border-radius:50%;width:2rem;height:2rem;background:#e7eedc}
+  .activity {display:grid;grid-template-columns:2rem minmax(0,1fr) auto;align-items:start;gap:.8rem;border:1px solid var(--line);background:var(--paper);border-radius:12px;padding:1rem;color:var(--ink);font-size:.9rem;line-height:1.45}
+  .unread {font-size:.75rem;font-weight:700;color:var(--accent)}
+  .activity-icon {display:grid;place-items:center;border-radius:50%;width:2rem;height:2rem;background:var(--light)}
   .activity-author {font-weight:700;color:inherit}
-  .activity-link {display:inline-block;margin-top:.4rem;font-size:.8rem;color:#395e42}
-  .activity time {font-size:.75rem;color:#687366}
+  .activity-link {display:inline-block;margin-top:.4rem;font-size:.8rem;color:var(--accent)}
+  .activity time {font-size:.75rem;color:var(--muted)}
   .activity p {margin:.35rem 0;overflow-wrap:anywhere}
 </style>

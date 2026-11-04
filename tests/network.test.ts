@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { get } from 'svelte/store';
-import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type EventTemplate } from 'nostr-tools/pure';
+import { finalizeEvent, generateSecretKey, getPublicKey, type EventTemplate } from 'nostr-tools/pure';
 import { nsecEncode } from 'nostr-tools/nip19';
 import type { NostrEvent } from 'nostr-pubsub';
-import { asPost, postDraft, commentDraft, resolveCommunityThreads } from '../src/lib/posts';
-import { account, exportKey, follow, importAccount, like, likes, mute, posts, publishPost, signOut, unlike, loadNotifications, notifications, signInExtension, signEvent } from '../src/lib/network';
+import { asPost, matchesTopic, postDraft, commentDraft, resolveCommunityThreads } from '../src/lib/posts';
+import { mergeChanges } from '../src/lib/local-writes';
+import { nhashEncode } from '@hashtree/core';
+import { account, exportKey, importAccount, signOut, start, loadNotifications, notifications, signInExtension, signEvent } from '../src/lib/network';
 import { visibilitySettings } from '../src/lib/visibility';
 import type { Request, Response } from '../src/lib/relayTypes';
 
@@ -51,61 +53,69 @@ test('NIP-72 top-level NIP-22 threads and replies retain their community scope',
   assert.equal(asPost({...post.event,created_at:1e20}),undefined);
 });
 
-test('signed writes require acknowledgment and preserve follow tags and private mute contents', async () => {
+test('rebase changes over newer contact, mute and metadata records without modifying unrelated fields', () => {
+  const key=getPublicKey(generateSecretKey()), other=getPublicKey(generateSecretKey());
+  const follow=sign({kind:3,tags:[['p',other,'wss://example.org','alias'],['t','old']],content:'{"relays":true}'});
+  const change={kind:3 as const,key,enabled:true};
+  assert.deepEqual(mergeChanges(3,[change],follow),{kind:3,tags:[...follow.tags,['p',key]],content:follow.content});
+  assert.deepEqual(mergeChanges(3,[change,{...change,enabled:false}],follow).tags,follow.tags);
+  const mute=sign({kind:10000,tags:[['word','quiet']],content:'opaque private section'});
+  assert.deepEqual(mergeChanges(10000,[{...change,kind:10000}],mute),{kind:10000,tags:[...mute.tags,['p',key]],content:mute.content});
+  const profile=sign({kind:0,tags:[],content:'{"name":"Tern","unfamiliar":{"nested":1}}'});
+  assert.deepEqual(JSON.parse(mergeChanges(0,[{kind:0,fields:{about:'Field notes'}}],profile).content),
+    {name:'Tern',unfamiliar:{nested:1},about:'Field notes'});
+});
+
+test('topic membership uses explicit community scope before hashtags, keeping multi-tag notes discoverable', () => {
+  const tags=[['t','bitcoin'],['t','mostro']];
+  const note=asPost(sign({kind:1,content:'Market notes',tags}))!;
+  assert.equal(note.topic,'bitcoin');
+  assert.ok(matchesTopic(note,'mostro')); assert.ok(matchesTopic(note,'bitcoin'));
+  assert.equal(matchesTopic(note,'nostr'),false);
+  for(const marker of ['a','A']) {
+    const scoped=asPost(sign({kind:1,content:'Market notes',tags:[...tags,[marker,'34550:'+pubkey+':bitcoin']]}))!;
+    assert.equal(matchesTopic(scoped,'mostro'),false);
+  }
+});
+
+test('post links can carry a Hashtree attachment in a signed note', () => {
+  const root=nhashEncode({hash:new Uint8Array(32).fill(7)});
+  const post=asPost(sign(postDraft({topic:'art',title:'Fresco',body:'',url:root+'/fresco.jpg'})))!;
+  const link='htree://'+root+'/fresco.jpg';
+  assert.equal(post.url,link); assert.equal(post.body,link);
+  assert.deepEqual(post.event.tags.find(t=>t[0]==='r'),['r',link]);
+  assert.throws(()=>postDraft({topic:'art',title:'X',body:'',url:'https://elsewhere.test/%6ehash1'+root.slice(6)}));
+});
+
+test('native picture and video posts accept metadata-only attachments and replies use their event scope', () => {
+  for (const kind of [20,21,22]) {
+    const post=asPost(sign({kind,content:'',tags:[['t','art'],['imeta','url https://files.example/item','m '+(kind===20?'image/jpeg':'video/mp4')]]}))!;
+    assert.ok(post);
+    const reply=asPost(sign(commentDraft(post,'Quite a view')))!;
+    assert.equal(reply.root,post.id); assert.equal(reply.parent,post.id);
+    assert.ok(reply.event.tags.some(t=>t[0]==='K' && t[1]===String(kind)));
+  }
+});
+
+test('notifications respect graph policy and a signer cannot finish after switching profiles', async () => {
   const memory = new Map<string,string>();
   Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{
     setItem:(key:string,value:string) => memory.set(key,value),removeItem:(key:string)=>memory.delete(key)}});
-  Object.defineProperty(globalThis,'document',{configurable:true,value:{visibilityState:'visible', hidden:true}});
-  const other = getPublicKey(generateSecretKey()), target = getPublicKey(generateSecretKey());
+  Object.defineProperty(globalThis,'document',{configurable:true,value:Object.assign(new EventTarget(),{visibilityState:'visible',hidden:true})});
+  Object.defineProperty(globalThis,'window',{configurable:true,value:new EventTarget()});
+  const target = getPublicKey(generateSecretKey());
   const baseTime = Math.floor(Date.now()/1000);
-  const previous = new Map<number,NostrEvent>([
-    [3,sign({kind:3,tags:[['p',other,'wss://example.org','alias'],['t','old']],content:'{"relays":true}'},baseTime)],
-    [10000,sign({kind:10000,tags:[['word','quiet']],content:'opaque encrypted private section'},baseTime)],
-  ]);
-  const sent:NostrEvent[] = [];
-  let reject = true;
   let receiver: MockWorker;
   class MockWorker {
     constructor() {receiver = this;}
     onmessage?: (event:{data:Response}) => void;
-    postMessage(request:Request) {
-      queueMicrotask(() => {
-        if (request.type === 'publish') {
-          assert.ok(verifyEvent(request.event)); sent.push(request.event);
-          this.onmessage?.({data:{type:'result',id:request.id, events:reject?[]:[request.event],...(reject?{error:'No relay accepted this action.'}:{})}});
-        } else if (request.type === 'latest') {
-          const event = previous.get(request.kind);
-          this.onmessage?.({data:{type:'result',id:request.id,events:event?[event]:[]}});
-        }
-      });
-    }
+    postMessage(_request:Request) {}
+    terminate() {}
   }
   Object.defineProperty(globalThis,'Worker',{configurable:true,value:MockWorker});
+  const stop=start();
   await importAccount(nsecEncode(secret));
   assert.equal(get(account)?.pubkey,pubkey); assert.equal(exportKey(),nsecEncode(secret));
-  const input = {topic:'art',title:'Acknowledged',body:'Discussion'};
-  await assert.rejects(publishPost(input),/No relay accepted/);
-  assert.equal(get(posts).length,0);
-  reject = false;
-  const post = await publishPost(input);
-  assert.ok(get(posts).some(p => p.id === post.id));
-  assert.equal(sent[0].id,sent[1].id,'lost acknowledgments can retry the exact same event');
-  await like(post); await like(post);
-  assert.deepEqual(get(likes)[post.id],[pubkey]);
-  assert.equal(sent.filter(event => event.kind===7).length,1);
-  await unlike(post);
-  assert.deepEqual(get(likes)[post.id],[]);
-  await like(post);
-  assert.deepEqual(get(likes)[post.id],[pubkey]);
-  assert.equal(new Set(sent.filter(e => e.kind===7).map(e=>e.id)).size,2);
-  await follow(target,true);
-  const contact = sent.at(-1)!;
-  assert.deepEqual(contact.tags,[...previous.get(3)!.tags,['p',target]]);
-  assert.equal(contact.content,previous.get(3)!.content); assert.ok(contact.created_at>baseTime);
-  await mute(target,true);
-  assert.deepEqual(sent.at(-1)!.tags,[['word','quiet'],['p',target]]);
-  assert.equal(sent.at(-1)!.content,'opaque encrypted private section');
-
   const close = loadNotifications(pubkey);
   const peerSecret = generateSecretKey();
   const peerNote = (kind:number,pub:string,time:number) => finalizeEvent({kind,tags:[['p',pub]],content:'Hi',created_at:time},peerSecret);
@@ -116,7 +126,7 @@ test('signed writes require acknowledgment and preserve follow tags and private 
   assert.deepEqual(get(notifications).map(e=>e.id),[recent.id,older.id]);
   signOut();
   assert.deepEqual(get(notifications),[]);
-  close(); assert.equal(get(account),null); assert.deepEqual([...memory.keys()],['nostreddit.ui.graphVisibility']);
+  close(); stop(); assert.equal(get(account),null); assert.deepEqual([...memory.keys()],['nostreddit.ui.graphVisibility']);
 
   let release: (()=>void) | undefined;
   const signDelay = new Promise<void>(resolve => release = resolve);

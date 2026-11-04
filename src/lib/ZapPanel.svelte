@@ -126,7 +126,7 @@
 
 <style>
   .zap-panel {display:grid;gap:14px;color:inherit}
-  .bolt {display:grid;place-items:center;width:44px;height:44px;border-radius:15px;background:#fff1c8;color:#ad6b05}
+  .bolt {display:grid;place-items:center;width:44px;height:44px;border-radius:15px;background:var(--gold-bg);color:var(--gold)}
   h2,p,form {margin:0}
   h2 {font-family:var(--serif, Georgia, serif);font-size:1.6rem;letter-spacing:-.035em;line-height:1.15}
   p,small {line-height:1.5}
@@ -136,17 +136,17 @@
   label small {font-weight:400}
   .qr {width:min(220px,100%);height:auto;justify-self:center;border-radius:10px}
   .choices,.actions {display:flex;gap:7px;flex-wrap:wrap}
-  button,a,input {border:1px solid var(--line, #ced4c8);border-radius:9px;background:transparent;color:inherit;font:inherit}
+  button,a,input {border:1px solid var(--line);border-radius:9px;background:transparent;color:inherit;font:inherit}
   button,a {padding:9px 14px;font-size:.9rem;font-weight:650;cursor:pointer;text-align:center;text-decoration:none}
   .choices button {flex:1;padding:7px 6px}
-  .selected {border-color:#a85b07;color:#9d5511;background:#fff3db}
+  .selected {border-color:var(--gold);color:var(--gold);background:var(--gold-bg)}
   input {width:100%;box-sizing:border-box;padding:10px 12px}
-  .primary {background:var(--green, #214f3c);color:#fff;border-color:var(--green, #214f3c)}
+  .primary {background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
   button:disabled {opacity:.6;cursor:wait}
   summary {cursor:pointer}
   code {display:block;overflow-wrap:anywhere;max-height:8rem;overflow:auto;font-size:.76rem;margin-top:6px}
   small {opacity:.8}
   .success,.error {padding:12px;border-radius:9px}
-  .success {background:#e0f5e7;color:#205e35}
-  .error {background:#ffebe6;color:#872e20}
+  .success {background:light-dark(#e0f5e7, #213a2a);color:light-dark(#205e35, #a2d5b1)}
+  .error {background:var(--error-bg);color:var(--error)}
 </style>

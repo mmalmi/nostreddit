@@ -1,15 +1,18 @@
-import { derived, get, writable, type Writable } from 'svelte/store';
+import { derived, get, readable, writable, type Writable } from 'svelte/store';
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type EventTemplate } from 'nostr-tools/pure';
 import { decode, nsecEncode } from 'nostr-tools/nip19';
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
-import { graphViewer, graphInfo, graphStatus, observeEventAuthors, observeGraphEvent, observeProfile, profileRelations, setGraphPeers, setGraphRoot } from './graph';
-import { asPost, commentDraft, hexKey, postDraft, resolveCommunityThreads, topicSlug, type Post } from './posts';
-import { snapshotRoot } from './graph-model';
+import { graphViewer, graphInfo, graphStatus, observeEventAuthors, observeGraphEvent, observeDirectoryLists, observeProfile, profileRelations, setPendingEdges, setGraphPeers, setGraphRoot } from './graph';
+import { asPost, discussionKinds, commentDraft, hexKey, postDraft, resolveCommunityThreads, topicSlug, type Post } from './posts';
+import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
 import { matchesZapReceipt, signedZapAuthor, type ZapInvoice } from './zaps';
-import { relayUrls, type Request, type Response } from './relayTypes';
+import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './write-sync';
+import { cacheOwnEvents, type Change } from './local-writes';
+import { noExpansion, type Expansion } from './discovery/discussions';
+import { relayUrls, type ContactQuery, type Request, type Response } from './relayTypes';
 import { readLocal, writeLocal } from './ui';
-export { relayUrls, type Post };
+export { relayUrls, pendingWrites, outboxReady, outboxError, syncing, type Post };
 
 export interface Profile {name:string; about:string; picture:string; banner:string; website:string; lud16:string; lud06:string; nip05:string; display_name:string}
 export interface Account {pubkey:string; method:'local'|'extension'}
@@ -21,6 +24,8 @@ const rawReceipts = writable<Record<string,NostrEvent[]>>({});
 export const follows = writable<string[]>([]), mutes = writable<string[]>([]);
 export const status = writable<'loading'|'live'|'offline'>('loading');
 const rawNotifications = writable<NostrEvent[]>([]);
+let relaySearchVersion = 0;
+const relaySearchIds = new Set<string>();
 let notificationOwner = '', pinnedThread = '', pinnedTopic = '', pinnedAuthor = '';
 const roots = new Map<string,Post>(), replies = new Map<string,Post>();
 const metadata = new Map<string,NostrEvent>(), contacts = new Map<string,NostrEvent>();
@@ -38,11 +43,26 @@ const newest = (a:NostrEvent, b?:NostrEvent) => !b || a.created_at > b.created_a
 
 // Keep verified source records available to relay routing, replaceable-event merges and deletions.
 // Public readers see a projection that changes immediately with graph settings and viewer identity.
-const viewerLists = derived([account, follows, mutes], ([session]) => {
+const listRevision = writable(0);
+const changesForViewer = derived([account,pendingWrites], ([session,rows]) =>
+  rows.filter(row=>row.owner===session?.pubkey && row.change).map(row=>row.change!));
+export const pendingPersonEdits = derived(changesForViewer, changes => changes.flatMap(change =>
+  change.kind === 3 ? [{pubkey:change.key,followed:change.enabled}] : []));
+const viewerLists = derived([account,listRevision,changesForViewer], ([session, ,changes]) => {
   const viewer = session?.pubkey ?? snapshotRoot;
   const keys = (event?: NostrEvent) => new Set(event?.tags.filter(t => t[0] === 'p' && hexKey.test(t[1])).map(t => t[1]));
-  return { viewer, follows: keys(contacts.get(viewer)), mutes: keys(muteEvents.get(viewer)) };
+  const following = keys(contacts.get(viewer)), muted = keys(muteEvents.get(viewer));
+  for (const change of changes) {
+    if (change.kind === 0) continue;
+    const list = change.kind === 3 ? following : muted;
+    if (change.enabled) list.add(change.key); else list.delete(change.key);
+  }
+  return {viewer,follows:following,mutes:muted};
 });
+function syncKeys(store:Writable<string[]>, keys:Set<string>) {
+  const next=[...keys], prev=get(store);
+  if (next.length !== prev.length || next.some((key,i)=>key!==prev[i])) store.set(next);
+}
 export const canSeeAuthor = derived([viewerLists, visibilitySettings, graphViewer, graphInfo, graphStatus],
   ([lists, options, graphRoot, info, status]) => {
     const sameViewer = lists.viewer === graphRoot;
@@ -56,8 +76,13 @@ export const notifications = visibleList(rawNotifications), communities = visibl
 const readNotificationIds = writable(new Set<string>());
 export const unreadNotificationIds = derived([notifications, readNotificationIds], ([events, read]) =>
   new Set(events.filter(event => !read.has(event.id)).map(event => event.id)));
-export const profiles = derived([rawProfiles, canSeeAuthor], ([items, allowed]) =>
-  Object.fromEntries(Object.entries(items).filter(([key]) => allowed(key))));
+export const profiles = derived([rawProfiles, canSeeAuthor, changesForViewer, account], ([items, allowed,changes,session]) => {
+  const visible = Object.fromEntries(Object.entries(items).filter(([key]) => allowed(key)));
+  if (session) for (const change of changes) if (change.kind===0) {
+    visible[session.pubkey] = {...emptyProfile,...visible[session.pubkey],...change.fields};
+  }
+  return visible;
+});
 export const likes = derived([rawLikes, canSeeAuthor], ([items, allowed]) =>
   Object.fromEntries(Object.entries(items).map(([id, keys]) => [id, keys.filter(allowed)])) as Record<string,string[]>);
 
@@ -105,6 +130,7 @@ function ordered(map: Map<string,Post>, limit:number) {
   if (result.length <= limit) return result;
   const retained = new Set(result.filter(p => p.id===pinnedThread || p.root===pinnedThread && !!pinnedThread ||
     p.parent===pinnedThread && !!pinnedThread || p.topic===pinnedTopic || p.pubkey===pinnedAuthor).slice(0,160).map(p=>p.id));
+  for (const id of relaySearchIds) if (map.has(id)) retained.add(id);
   if (map.has(pinnedThread)) retained.add(pinnedThread);
   for (const post of result) {
     if (retained.size < limit) retained.add(post.id);
@@ -122,7 +148,7 @@ function apply(events:NostrEvent[]) {
     if (event.kind === 9735) {
       const sender = zapAuthor(event);
       if (sender) authors.add(sender);
-    } else if ([0,1,7,1111,34550].includes(event.kind)) authors.add(event.pubkey);
+    } else if ([0,7,34550,...discussionKinds].includes(event.kind)) authors.add(event.pubkey);
   }
   if (authors.size) observeEventAuthors([...authors]);
   if (notificationOwner && get(account)?.pubkey === notificationOwner) {
@@ -140,15 +166,18 @@ function apply(events:NostrEvent[]) {
     if (event.kind === 3 || event.kind === 10000) observeGraphEvent(event);
     if (event.kind === 3 && event.pubkey === get(account)?.pubkey && newest(event,contacts.get(event.pubkey))) {
       contacts.set(event.pubkey,event);
-      updateFollows(event);
+      listRevision.update(n=>n+1);
+      void cacheOwnEvents([event]).catch(noop);
     } else if (event.kind === 10000 && event.pubkey === (get(account)?.pubkey ?? snapshotRoot) && newest(event,muteEvents.get(event.pubkey))) {
       muteEvents.set(event.pubkey,event);
-      if (event.pubkey === (get(account)?.pubkey ?? snapshotRoot)) updateMutes(event);
+      listRevision.update(n=>n+1);
+      if (event.pubkey===get(account)?.pubkey) void cacheOwnEvents([event]).catch(noop);
     } else if (event.kind === 34550) {
       const previous = get(rawCommunities);
       if (!previous.some(e => e.id === event.id)) rawCommunities.set([event,...previous].slice(0,80));
     } else if (event.kind === 0 && newest(event,metadata.get(event.pubkey))) {
       metadata.set(event.pubkey,event); ps[event.pubkey] = readProfile(event); profilesDirty = true;
+      if (event.pubkey === get(account)?.pubkey) void cacheOwnEvents([event]).catch(noop);
     } else if (event.kind === 5) {
       for (const tag of event.tags.filter(t => t[0] === 'e' && hexKey.test(t[1]))) {
         const key = event.pubkey+':'+tag[1], prior = deleted.get(key);
@@ -173,6 +202,7 @@ function apply(events:NostrEvent[]) {
       const target = event.tags.filter(t => t[0] === 'e' && hexKey.test(t[1])).at(-1)?.[1];
       if (!target) continue;
       if (event.kind === 7 && ['', '+'].includes(event.content)) {
+        if (event.pubkey===get(account)?.pubkey) {const key=event.pubkey+':'+target; ownReactionTime.set(key,Math.max(ownReactionTime.get(key) ?? 0,event.created_at));}
         const tombstone = deleted.get(event.pubkey+':'+event.id);
         if (tombstone && tombstone.created_at >= event.created_at) continue;
         const entries = reactions.get(target) || new Map<string,NostrEvent>();
@@ -267,7 +297,7 @@ function watch(filters:NostrFilter[], live = false) {
   interests.set(id,interest);
   return () => { interests.delete(id); worker?.postMessage({type:'close',id} satisfies Request); };
 }
-function request(payload: {type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}|{type:'search';query:string}) {
+function request(payload: ContactQuery|{type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}|{type:'search';query:string;expansion:Expansion}) {
   return new Promise<NostrEvent[]>((resolve,reject) => {
     const id = ++seq;
     let owner:Worker;
@@ -276,35 +306,58 @@ function request(payload: {type:'publish';event:NostrEvent}|{type:'latest';kind:
   });
 }
 
-export async function searchRelays(query: string): Promise<Post[]> {
-  const events = await request({type:'search',query});
+const localSync = new WriteSync({
+  current:()=>get(account)?.pubkey ?? '',
+  apply,
+  sign:signEvent,
+  baseline:(owner,kind)=>(kind===0 ? metadata : kind===3 ? contacts : muteEvents).get(owner),
+  latest:(pubkey,kind)=>request({type:'latest',pubkey,kind}),
+  send:event=>request({type:'publish',event}),
+});
+export function retrySync() { return localSync.retry(); }
+export function clearRelaySearch() { relaySearchVersion++; relaySearchIds.clear(); }
+export async function searchRelays(query: string, expansion = noExpansion) {
+  const version = ++relaySearchVersion;
+  const events = await request({type:'search',query,expansion});
+  if (version !== relaySearchVersion) return new Set<string>();
+  relaySearchIds.clear();
+  for (const event of events) relaySearchIds.add(event.id);
   apply(events);
-  return events.map(asPost).filter((post): post is Post => !!post && !post.parent);
+  return new Set(relaySearchIds);
 }
 
 export const homeTopics = ['nostr','bitcoin','technology','art','photography','music','science','gaming','books','asknostr','memes','general'];
 export function start() {
   active = true;
+  const stopOutbox = localSync.start();
   restoreAccount();
-  const home = watch([{kinds:[1,1111], '#t':homeTopics, limit:80}]);
+  const localLists = viewerLists.subscribe(lists => {
+    syncKeys(follows, get(account) ? lists.follows : new Set());
+    syncKeys(mutes, lists.mutes);
+  });
+  const home = watch([{kinds:discussionKinds, '#t':homeTopics, limit:80}]);
   const unsub = account.subscribe(current => {
     setGraphRoot(current?.pubkey ?? null);
-    updateFollows(current ? contacts.get(current.pubkey) : undefined);
-    updateMutes(current ? muteEvents.get(current.pubkey) : undefined);
+    localSync.setOwner(current?.pubkey ?? '');
+  });
+  const stopEdges = changesForViewer.subscribe(changes => {
+    const follows:Record<string,boolean> = {}, mutes:Record<string,boolean> = {};
+    for (const change of changes) if (change.kind!==0) (change.kind===3 ? follows : mutes)[change.key]=change.enabled;
+    setPendingEdges({follows,mutes});
   });
   let ownStop = noop, stopNotifications = noop, friendsStop = noop;
   const own = account.subscribe(current => {
     ownStop();
     stopNotifications();
     stopNotifications = current ? loadNotifications(current.pubkey) : noop;
-    ownStop = current ? watch([{kinds:[0,3,10000],authors:[current.pubkey],limit:3},{kinds:[1,1111],authors:[current.pubkey],limit:40}], true) : noop;
+    ownStop = current ? watch([{kinds:[0,3,10000],authors:[current.pubkey],limit:3},{kinds:discussionKinds,authors:[current.pubkey],limit:40}], true) : noop;
   });
   const friends = follows.subscribe(keys => {
     friendsStop();
     setGraphPeers(keys);
     const filters:NostrFilter[] = [];
     if (keys.length) filters.push({kinds:[3,10000], authors:keys.slice(0,64), limit:128});
-    for (let i = 0; i < Math.min(2048, keys.length); i += 256) filters.push({kinds:[1,1111],authors:keys.slice(i,i+256),limit:40});
+    for (let i = 0; i < Math.min(2048, keys.length); i += 256) filters.push({kinds:discussionKinds,authors:keys.slice(i,i+256),limit:40});
     friendsStop = watch(filters);
   });
   function syncVisibility() {
@@ -333,44 +386,89 @@ export function start() {
   return () => {
     document.removeEventListener('visibilitychange',syncVisibility);
     window.removeEventListener('online',reconnect);
-    unsub(); own(); friends(); ownStop(); stopNotifications(); friendsStop(); home(); shutdown(); active = false;
+    unsub(); localLists(); stopEdges(); stopOutbox(); own(); friends(); ownStop(); stopNotifications(); friendsStop(); home(); shutdown(); active = false;
   };
 }
 export function loadTopic(topic:string) {
   const slug = topicSlug(topic);
   if (!slug) return noop;
   pinnedTopic = slug;
-  const stop = watch([{kinds:[1,1111],'#t':[slug],limit:90},{kinds:[34550],'#d':[slug],limit:3}], true);
+  const stop = watch([{kinds:discussionKinds,'#t':[slug],limit:90},{kinds:[34550],'#d':[slug],limit:3}], true);
   let last = '', closeAddress = noop;
   const unsubscribe = rawCommunities.subscribe(list => {
     const addresses = [...new Set(list.filter(e => e.tags.some(t => t[0] === 'd' && t[1] === slug))
       .map(e => '34550:'+e.pubkey+':'+slug))].sort().slice(0,3);
     if (last === addresses.join()) return;
     last = addresses.join(); closeAddress();
-    closeAddress = addresses.length ? watch([{kinds:[1,1111],'#a':addresses,limit:60},{kinds:[1111],'#A':addresses,limit:60}]) : noop;
+    closeAddress = addresses.length ? watch([{kinds:discussionKinds,'#a':addresses,limit:60},{kinds:[1111],'#A':addresses,limit:60}]) : noop;
   });
   return () => { stop(); unsubscribe(); closeAddress(); if (pinnedTopic === slug) pinnedTopic = ''; };
 }
-export function loadProfile(pubkey:string) {
+const directoryProgress = writable({loading:false,coverage:false});
+let checkDirectoryMembers: ((keys: string[])=>void) | undefined;
+const pageStarts = new Map<number,string>();
+
+export function loadProfile(pubkey:string, directory:RelationshipKind|null = null) {
   if (!hexKey.test(pubkey)) return noop;
   pinnedAuthor = pubkey;
-  const stop = watch([{kinds:[0],authors:[pubkey],limit:1},{kinds:[1,1111],authors:[pubkey],limit:80}]);
-  let scope = '', labels = '', closeLists = noop, closeNames = noop;
+  pageStarts.clear();
+  const filters:NostrFilter[] = [{kinds:[0],authors:[pubkey],limit:1}];
+  if (!directory) filters.push({kinds:discussionKinds,authors:[pubkey],limit:80});
+  const stop = watch(filters);
+  let scope = '', labels = '', closeLists = noop, closeNames = noop, run = 0, active = true;
   let peers: string[] = [];
+  const checked = new Set<string>();
+  const checkMembers = (keys:string[]) => {
+    const fresh = keys.filter(key=>!checked.has(key) && key !== pubkey).slice(0,30);
+    if (!fresh.length || !get(canSeeAuthor)(pubkey) || navigator.onLine === false) return;
+    fresh.forEach(key=>checked.add(key));
+    const token = run;
+    void request({type:'contacts',subject:pubkey,mode:'check',authors:fresh}).then(records => {
+      if (active && token === run) observeDirectoryLists(pubkey,records);
+    }).catch(noop);
+  };
+  checkDirectoryMembers = directory === 'followers' ? checkMembers : undefined;
+  const readLists = async (token:number) => {
+    const current = () => active && token === run && get(canSeeAuthor)(pubkey);
+    const mode = directory || (peers.length ? 'mutual' : 'following');
+    const query:ContactQuery = {type:'contacts',subject:pubkey,mode,authors:peers};
+    let coverage = false;
+    directoryProgress.set({loading:true,coverage});
+    try {
+      const cached = await request({...query,cacheOnly:true});
+      if (!current()) return;
+      coverage = mode === 'followers' || cached.some(event=>event.pubkey === pubkey);
+      observeDirectoryLists(pubkey,cached);
+      directoryProgress.set({loading:true,coverage});
+    } catch { /* A first visit may have no cached records. */ }
+    if (!current()) return;
+    if (navigator.onLine !== false) {
+      try {
+        const events = await request(query);
+        if (!current()) return;
+        coverage = mode === 'followers' || events.some(event=>event.pubkey === pubkey) || coverage;
+        observeDirectoryLists(pubkey,events);
+      } catch { /* Snapshot and previously verified relationships remain available. */ }
+    }
+    if (current()) directoryProgress.set({loading:false,coverage});
+  };
   const syncLists = () => {
     const viewer = get(account)?.pubkey || '';
     const direct = viewer ? get(follows).slice(0,256) : [];
-    const key = [viewer || 'guest', ...direct].join(',');
+    const allowed = get(canSeeAuthor)(pubkey);
+    const key = [viewer || 'guest', allowed, ...direct].join(',');
     if (scope === key) return;
-    scope = key;
-    peers = direct;
-    observeProfile(pubkey, direct);
+    scope = key; peers = direct; checked.clear(); run++;
+    observeProfile(pubkey, direct, directory);
     closeLists();
-    const filters: NostrFilter[] = [{kinds:[3], authors:[pubkey], limit:1}];
-    if (direct.length) filters.push({kinds:[3], authors:direct, '#p':[pubkey], limit:60});
-    closeLists = watch(filters);
+    if (!allowed) {directoryProgress.set({loading:false,coverage:false}); return;}
+    // The ordinary profile header watches its subject's own latest list too.
+    closeLists = directory ? noop : watch([{kinds:[3],authors:[pubkey],limit:1}]);
+    void readLists(run);
   };
+  observeEventAuthors([pubkey]);
   const stopViewer = account.subscribe(syncLists), stopPeers = follows.subscribe(syncLists);
+  const stopAccess = canSeeAuthor.subscribe(syncLists);
   const syncNames = () => {
     const social = get(profileRelations);
     const candidates = social?.subject === pubkey ? social.mutuals : [];
@@ -379,19 +477,90 @@ export function loadProfile(pubkey:string) {
     const known = permitted(pubkey) ? candidates.filter(permitted) : [];
     const key = [scope, ...known].join(',');
     if (labels === key) return;
-    labels = key;
-    closeNames();
-    const filters: NostrFilter[] = known.length ? [{kinds:[0],authors:known,limit:known.length}] : [];
-    // Check the latest lists for the displayed mutuals, including unfollows absent from reverse-tag queries.
-    const refresh = known.filter(friend => peers.includes(friend)).slice(0,6);
-    if (refresh.length) filters.push({kinds:[3],authors:refresh,limit:refresh.length});
-    closeNames = watch(filters);
+    labels = key; closeNames();
+    closeNames = known.length ? watch([{kinds:[0],authors:known,limit:known.length}]) : noop;
+    if (!directory) checkMembers(known.filter(peer=>peers.includes(peer)).slice(0,6));
   };
   const stopLabels = profileRelations.subscribe(syncNames), stopPolicy = canSeeAuthor.subscribe(syncNames);
+  const reconnect = () => {scope='';syncLists();};
+  window.addEventListener('online',reconnect);
   return () => {
-    stop(); stopViewer(); stopPeers(); stopLabels(); stopPolicy(); closeLists(); closeNames();
-    if (pinnedAuthor === pubkey) { pinnedAuthor = ''; observeProfile('', []); }
+    active = false; run++;
+    window.removeEventListener('online',reconnect);
+    stop(); stopViewer(); stopPeers(); stopAccess(); stopLabels(); stopPolicy(); closeLists(); closeNames();
+    if (pinnedAuthor === pubkey) {
+      pinnedAuthor=''; checkDirectoryMembers=undefined; observeProfile('',[]);
+      directoryProgress.set({loading:false,coverage:false});
+    }
   };
+}
+
+type PageStatus = 'loading'|'ready'|'filtered'|'unknown'|'hidden'|'limited';
+type RelationshipPage = {keys:string[]; loading:boolean; hasNext:boolean; status:PageStatus; scanMore:()=>void};
+const pageSize = 30, scanStep = 64, scanBudget = 256;
+
+export function relationshipPage(subject:string, kind:RelationshipKind, pageIndex:number) {
+  return readable<RelationshipPage>({keys:[], loading:true, hasNext:false, status:'loading', scanMore:noop}, set => {
+    const start = pageStarts.get(pageIndex) || '';
+    let cursor = start, retained:string[] = [], extent = scanStep, nameKey = '', stopNames = noop;
+    let active = true, scheduled = false;
+    const later = () => {
+      if (!active || scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => {scheduled=false; if (active) sync();});
+    };
+    const emit = (keys:string[], status:PageStatus, hasNext = false, scanMore = noop) => {
+      const signature = keys.join(',');
+      if (signature !== nameKey) {
+        nameKey=signature; stopNames();
+        stopNames=keys.length ? watch([{kinds:[0],authors:keys,limit:keys.length}]) : noop;
+        if (kind === 'followers') checkDirectoryMembers?.(keys);
+      }
+      set({keys, status, loading:status==='loading', hasNext, scanMore});
+    };
+    const sync = () => {
+      const all = get(graphInfo), status = get(graphStatus), permit = get(canSeeAuthor);
+      observeEventAuthors([subject]);
+      if (!permit(subject)) return emit([], !all[subject] && status !== 'unavailable' ? 'loading' : 'hidden');
+      const social = get(profileRelations), dir = social?.subject === subject ? social.directory : null;
+      const progress = get(directoryProgress);
+      const keys = new Set(dir?.kind === kind ? dir.keys : []);
+      const viewer = get(account)?.pubkey;
+      const edits = get(pendingPersonEdits);
+      let hasPending = false;
+      if (viewer) for (const edit of edits) {
+        const person = kind === 'following' && viewer === subject ? edit.pubkey :
+          kind === 'followers' && edit.pubkey === subject ? viewer : '';
+        if (person) { hasPending=true; if (edit.followed) keys.add(person); else keys.delete(person); }
+      }
+      if (!dir && !hasPending && status !== 'unavailable') return emit([], 'loading');
+      const ordered = [...keys].filter(key=>key>cursor).sort();
+      const batch = ordered.slice(0,extent);
+      observeEventAuthors(batch);
+      const held = retained.filter(key=>keys.has(key) && permit(key));
+      const permitted = [...held,...batch.filter(permit)];
+      const rows = permitted.slice(0,pageSize);
+      if (status !== 'unavailable' && batch.some(key=>!all[key] && !permit(key))) return emit(rows,'loading');
+      if (permitted.length > pageSize) {
+        pageStarts.set(pageIndex+1,rows[pageSize-1]);
+        return emit(rows,'ready',true);
+      }
+      if (batch.length < ordered.length) {
+        if (extent < scanBudget) {extent+=scanStep; later();return emit(rows,'loading');}
+        return emit(rows,'limited',false,() => {
+          retained=rows; cursor=batch[batch.length-1]; extent=scanStep; later();
+        });
+      }
+      if (!rows.length && progress.loading) return emit([], 'loading');
+      if (!rows.length && keys.size) return emit([], 'filtered');
+      if (!rows.length && !dir?.known && !progress.coverage) return emit([], 'unknown');
+      emit(rows,'ready');
+    };
+    // All subscriptions coalesce into one computed page; there is no idle timer.
+    const stops = [profileRelations.subscribe(later), canSeeAuthor.subscribe(later), directoryProgress.subscribe(later),
+      pendingPersonEdits.subscribe(later), account.subscribe(later)];
+    return () => {active=false; stops.forEach(stop=>stop()); stopNames();};
+  });
 }
 export function loadThread(id:string) {
   if (!hexKey.test(id)) return noop;
@@ -410,7 +579,7 @@ export function loadThread(id:string) {
     scope = next;
     closeScope();
     const filters: NostrFilter[] = [];
-    if (root) filters.push({kinds:[1,1111], '#e':[root], limit:180}, {kinds:[1111], '#E':[root], limit:140});
+    if (root) filters.push({kinds:discussionKinds, '#e':[root], limit:180}, {kinds:[1111], '#E':[root], limit:140});
     if (address) filters.push({kinds:[1111], '#A':[address], limit:180});
     closeScope = filters.length ? watch(filters, !!root) : noop;
   };
@@ -488,15 +657,6 @@ export function observe(ids:string[]) {
   });
   return () => { stop(); clearTimeout(timer); stats(); closeDeletions(); };
 }
-function updateFollows(event?:NostrEvent) {
-  const keys = event?.tags.filter(t => t[0] === 'p' && hexKey.test(t[1])).map(t => t[1]) || [];
-  const next = [...new Set(keys)], current = get(follows);
-  if (current.length !== next.length || next.some((v,i) => v !== current[i])) follows.set(next);
-}
-function updateMutes(event?:NostrEvent) {
-  const keys = event?.tags.filter(t => t[0] === 'p' && hexKey.test(t[1])).map(t => t[1]) || [];
-  mutes.set([...new Set(keys)]);
-}
 function remember(session:Account, sk?:Uint8Array) {
   try { localStorage.setItem(keyStorage,JSON.stringify({...session,...(sk ? {nsec:nsecEncode(sk)} : {})})); }
   catch { throw new Error('Allow local storage to save your sign-in on this device.'); }
@@ -545,7 +705,7 @@ export function exportKey() {
   return nsecEncode(secret);
 }
 export function signOut() {
-  localStorage.removeItem(keyStorage); secret?.fill(0); secret = undefined; retryEvents.clear(); account.set(null);
+  localStorage.removeItem(keyStorage); secret?.fill(0); secret = undefined; account.set(null);
 }
 export async function signEvent(template:EventTemplate):Promise<NostrEvent> {
   const session = get(account);
@@ -558,19 +718,9 @@ export async function signEvent(template:EventTemplate):Promise<NostrEvent> {
   return signed;
 }
 type Draft = Omit<EventTemplate,'created_at'> & {created_at?:number};
-// Reuse the signed event for a deliberate retry when a relay may have accepted
-// the previous send but its acknowledgment was lost. Never resend on a timer.
-const retryEvents = new Map<string,{signed:NostrEvent; expires:number}>();
 async function publish(draft:Draft) {
-  const owner = get(account)?.pubkey;
-  if (!owner) throw new Error('Sign in to continue.');
-  const key = JSON.stringify([owner,draft]);
-  const retry = retryEvents.get(key);
-  const event = retry && retry.expires > Date.now() ? retry.signed :
-    await signEvent({...draft,created_at:draft.created_at ?? Math.floor(Date.now()/1000)});
-  retryEvents.set(key,{signed:event,expires:Date.now()+300000});
-  while (retryEvents.size > 12) retryEvents.delete(retryEvents.keys().next().value!);
-  await request({type:'publish',event}); retryEvents.delete(key); apply([event]);
+  const event = await signEvent({...draft,created_at:draft.created_at ?? Math.floor(Date.now()/1000)});
+  await localSync.enqueue({event},event.pubkey);
   return event;
 }
 export async function publishPost(data:Parameters<typeof postDraft>[0]) {
@@ -597,35 +747,21 @@ export async function unlike(post:Post) {
   await publish({kind:5,created_at:time,tags:[...mine.map(e => ['e',e.id]),['k','7']],content:''});
   ownReactionTime.set(me.pubkey+':'+post.id,time);
 }
-let modifying = false;
-async function updateReplaceable(kind:0|3|10000, create:(latest?:NostrEvent)=>Draft|null) {
-  if (modifying) throw new Error('Please wait for your previous update.');
-  const me = get(account);
-  if (!me) throw new Error('Sign in to continue.');
-  modifying = true;
-  try {
-    const candidates = await request({type:'latest',kind,pubkey:me.pubkey});
-    const stored = (kind === 0 ? metadata : kind === 3 ? contacts : muteEvents).get(me.pubkey);
-    const latest = [stored,...candidates].filter((e):e is NostrEvent => Boolean(e)).sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id))[0];
-    if (get(account)?.pubkey !== me.pubkey) throw new Error('The signed-in profile changed. Please try again.');
-    const draft = create(latest);
-    if (draft) await publish({...draft,created_at:Math.max(Math.floor(Date.now()/1000),(latest?.created_at ?? 0)+1)});
-  } finally { modifying = false; }
+function changeLocally(change:Change) {
+  const owner=get(account)?.pubkey;
+  if (!owner) throw new Error('Sign in to continue.');
+  return localSync.enqueue({change},owner);
 }
 export async function saveProfile(fields:Partial<Profile>) {
-  return updateReplaceable(0,event => {
-    const raw = jsonObject(event?.content || '{}');
-    for (const key of Object.keys(emptyProfile) as (keyof Profile)[]) if (typeof fields[key] === 'string') raw[key] = fields[key]!.trim().slice(0,5000);
-    return {kind:0,tags:event?.tags ?? [],content:JSON.stringify(raw)};
-  });
+  const clean: Record<string,string> = {};
+  for (const key of Object.keys(emptyProfile) as (keyof Profile)[]) {
+    if (typeof fields[key]==='string') clean[key]=fields[key]!.trim().slice(0,5000);
+  }
+  if (Object.keys(clean).length) await changeLocally({kind:0,fields:clean});
 }
-async function changePerson(kind:3|10000, pubkey:string, enabled:boolean) {
-  if (!hexKey.test(pubkey)) throw new Error('This profile has an invalid public key.');
-  return updateReplaceable(kind,event => {
-    const tags = event?.tags ?? [], already = tags.some(t => t[0] === 'p' && t[1] === pubkey);
-    if (already === enabled) return null;
-    return {kind, content:event?.content ?? '', tags:enabled ? [...tags,['p',pubkey]] : tags.filter(t => !(t[0] === 'p' && t[1] === pubkey))};
-  });
+async function changePerson(kind:3|10000, key:string, enabled:boolean) {
+  if (!hexKey.test(key)) throw new Error('This profile has an invalid public key.');
+  await changeLocally({kind,key,enabled});
 }
 export const follow = (pubkey:string, followed:boolean) => changePerson(3,pubkey,followed);
 export const mute = (pubkey:string, muted:boolean) => changePerson(10000,pubkey,muted);

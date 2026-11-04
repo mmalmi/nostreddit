@@ -4,10 +4,11 @@
   import {
     topics,
     validTopic,
-    safeURL,
+
     readLocal,
     writeLocal,
   } from '../lib/ui';
+  import { postLink } from '../lib/posts';
   import Icon from './Icon.svelte';
   export let initialTopic: string;
   export let owner: string;
@@ -44,8 +45,8 @@
       error = 'Give your post a title.';
       return;
     }
-    if (url.trim() && !safeURL(url.trim())) {
-      error = 'Enter a full http or https link.';
+    if (url.trim() && !postLink(url.trim())) {
+      error = 'Enter a web or Hashtree link.';
       return;
     }
     busy = true;
@@ -106,9 +107,9 @@
     >
     <label
       >Link <span>(optional)</span><input
-        type="url"
+        type="text" inputmode="url"
         bind:value={url}
-        placeholder="https://…"
+        placeholder="https://… or htree://…"
         maxlength="2048"
       /></label
     >

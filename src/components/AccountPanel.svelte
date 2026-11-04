@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { profileUrl } from '../lib/profile-url';
   import { account, profiles, signInExtension, createProfile, importAccount, signOut, saveProfile } from '../lib/network';
   import { displayName } from '../lib/ui';
   import Icon from './Icon.svelte';
@@ -83,7 +84,7 @@
   {:else if $account && !busy}
     <h2>Your profile</h2>
     <p>{displayName($account.pubkey, $profiles[$account.pubkey])}</p>
-    <a class="outline wide" href={'/u/' + $account.pubkey} onclick={onclose}><Icon name="user"/> View profile</a>
+    <a class="outline wide" href={profileUrl($account.pubkey)} onclick={onclose}><Icon name="user"/> View profile</a>
     <button class="text-button" onclick={() => {signOut(); onclose(); notify('Signed out')}}><Icon name="logout"/> Sign out</button>
   {:else if mode === 'new'}
     <h2>Create a profile</h2>

@@ -1,3 +1,4 @@
+import { profileUrl } from './profile-url';
 import { decode } from 'nostr-tools/nip19';
 import { topicSlug } from './posts';
 
@@ -11,8 +12,8 @@ export function searchTarget(input: string): string {
   if (!/^(npub|nprofile|note|nevent)1/i.test(identifier)) return '';
   try {
     const pointer = decode(identifier);
-    if (pointer.type === 'npub') return '/u/' + pointer.data;
-    if (pointer.type === 'nprofile') return '/u/' + pointer.data.pubkey;
+    if (pointer.type === 'npub') return profileUrl(pointer.data);
+    if (pointer.type === 'nprofile') return profileUrl(pointer.data.pubkey);
     if (pointer.type === 'note') return '/post/' + pointer.data;
     if (pointer.type === 'nevent') return '/post/' + pointer.data.id;
   } catch { /* Treat an incomplete identifier as a local text search. */ }

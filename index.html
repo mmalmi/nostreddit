@@ -3,7 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#f7f5ed" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" />
+  <script>
+    // Restore the palette before the first paint, including on direct links.
+    try {
+      const appearance = JSON.parse(localStorage.getItem('nostreddit.ui.appearance'));
+      for (const key of ['mode', 'theme']) {
+        if (typeof appearance?.[key] === 'string') document.documentElement.dataset[key] = appearance[key];
+      }
+    } catch { /* Use the system preference when storage is unavailable. */ }
+  </script>
   <meta name="description" content="Find your corner of Nostr. Browse communities, share stories, and join the discussion on Nostreddit." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <title>Nostreddit — Community discussions on Nostr</title>

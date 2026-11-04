@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import type { Event as NostrEvent } from 'nostr-tools';
-import { summarizeProfileList, snapshotRoot, type ProfileList, type ProfileRelations, type GraphBadge, type GraphRequest, type GraphReply } from './graph-model';
+import { summarizeProfileList, snapshotRoot, type RelationshipKind, type ProfileList, type ProfileRelations, type GraphBadge, type GraphRequest, type PendingEdges, type GraphReply } from './graph-model';
 
 export const graphInfo = writable<Record<string, GraphBadge>>({});
 export const graphViewer = writable(snapshotRoot);
@@ -16,7 +16,10 @@ const latestLists = new Map<string, NostrEvent>();
 const pending = new Map<string, NostrEvent>();
 const profileLists = new Map<string, ProfileList>();
 let root = snapshotRoot;
+let edges:PendingEdges = {follows:{},mutes:{}};
+let edgeKey = JSON.stringify(edges);
 let selectedProfile = '';
+let selectedDirectory: RelationshipKind | null = null;
 let profilePeers = new Set<string>(), graphPeers = new Set<string>();
 let profileVersion = 0, profileDirty = false, version = 0;
 let cached: Record<string, GraphBadge> = {};
@@ -69,7 +72,7 @@ function schedule() {
       sentProfileVersion = profile ? profileVersion : -1;
       profileDirty = false;
       busy = true;
-      worker.postMessage({root, authors, events, version, profile, lists:profile ? [...profileLists.values()] : []} satisfies GraphRequest);
+      worker.postMessage({root, edges, authors, events, version, profile, directory:selectedDirectory, lists:profile ? [...profileLists.values()] : []} satisfies GraphRequest);
     } catch { unavailable(); }
   }, 24);
 }
@@ -109,10 +112,18 @@ export function setGraphRoot(pubkey: string | null) {
   const next = pubkey && hex.test(pubkey) ? pubkey : snapshotRoot;
   if (root === next) return;
   root = next;
+  edges={follows:{},mutes:{}}; edgeKey=JSON.stringify(edges);
   pending.clear(); latestLists.clear(); profileLists.clear(); graphPeers.clear();
   profileRelations.set(null);
   invalidate();
   graphViewer.set(next);
+}
+
+export function setPendingEdges(next:PendingEdges) {
+  const key=JSON.stringify(next);
+  if (key===edgeKey) return;
+  edges=next; edgeKey=key;
+  invalidate();
 }
 
 export function setGraphPeers(peers: readonly string[]) {
@@ -122,26 +133,37 @@ export function setGraphPeers(peers: readonly string[]) {
   }
 }
 
-export function observeProfile(subject: string, peers: readonly string[]) {
-  if (selectedProfile !== subject) {
+export function observeProfile(subject: string, peers: readonly string[], directory: RelationshipKind | null = null) {
+  if (selectedProfile !== subject || selectedDirectory !== directory) {
     profileLists.clear(); profileRelations.set(null);
   }
-  selectedProfile = subject;
+  selectedProfile = subject; selectedDirectory = directory;
   profilePeers = new Set(peers);
-  for (const key of profileLists.keys()) if (key !== subject && !profilePeers.has(key)) profileLists.delete(key);
+  for (const key of profileLists.keys()) if (!selectedDirectory && key !== subject && !profilePeers.has(key)) profileLists.delete(key);
   profileVersion++; profileDirty = !!subject;
   if (subject) observeEventAuthors([subject]);
   schedule();
 }
 
+// Reverse-tag matches are candidates only. Admit other authors here exclusively after
+// the contact-list query has checked their latest untagged kind-3 records.
+export function observeDirectoryLists(subject: string, events: readonly NostrEvent[]) {
+  if (selectedProfile !== subject) return;
+  let changed = false;
+  for (const event of events) {
+    if (event.kind !== 3 || event.tags.length > 20000) continue;
+    const previous = profileLists.get(event.pubkey);
+    if (previous && (previous.at > event.created_at || (previous.at === event.created_at && previous.id <= event.id))) continue;
+    profileLists.set(event.pubkey, summarizeProfileList(event,subject,root,selectedDirectory === 'following'));
+    changed = true;
+  }
+  if (changed) { profileVersion++; profileDirty = true; schedule(); }
+}
+
 export function observeGraphEvent(event: NostrEvent) {
   if (event.tags.length > 20000 || (event.kind !== 3 && event.kind !== 10000)) return;
   if (event.kind === 3 && selectedProfile && (event.pubkey === selectedProfile || profilePeers.has(event.pubkey))) {
-    const previous = profileLists.get(event.pubkey);
-    if (!previous || event.created_at > previous.at || (event.created_at === previous.at && event.id < previous.id)) {
-      profileLists.set(event.pubkey, summarizeProfileList(event, selectedProfile, root));
-      profileVersion++; profileDirty = true; schedule();
-    }
+    observeDirectoryLists(selectedProfile,[event]);
   }
   if (event.pubkey !== root && !graphPeers.has(event.pubkey)) return;
   const key = event.kind + ':' + event.pubkey;

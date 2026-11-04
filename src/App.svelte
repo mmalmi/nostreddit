@@ -4,6 +4,7 @@
   import {
     posts,
     canSeeAuthor,
+    pendingWrites,
     hiddenPostIds,
     comments,
     profiles,
@@ -21,6 +22,7 @@
     loadTopic,
     loadThread,
     searchRelays,
+    clearRelaySearch,
     loadProfile,
     observe,
     like,
@@ -29,6 +31,9 @@
     relayUrls,
     type Post,
   } from './lib/network';
+  import { createSearchSession } from './lib/discovery/session';
+  import { planPostSearch } from './lib/discovery/query';
+  import { allowModel, keywordScore, relevance, semanticFloor } from './lib/discovery/discussions';
   import { checkSearch, searchTarget } from './lib/search';
   import { observeAuthors, observeEventAuthors, graphInfo, graphStatus } from './lib/graph';
   import {
@@ -47,27 +52,47 @@
   import Card from './components/Card.svelte';
   import ThreadComments from './components/ThreadComments.svelte';
   import ProfileHeader from './components/ProfileHeader.svelte';
+  import Outbox from './components/Outbox.svelte';
+  import { matchesTopic } from './lib/posts';
+  import ProfileConnections from './components/ProfileConnections.svelte';
+  import { profileUrl, profileKeyFromPath, type Relationship } from './lib/profile-url';
   import GraphSettings from './components/GraphSettings.svelte';
+  import AppearanceSettings from './components/AppearanceSettings.svelte';
+  import { watchAppearance } from './lib/appearance';
   import AccountPanel from './components/AccountPanel.svelte';
   import ProfileBackup from './components/ProfileBackup.svelte';
   import EditProfile from './components/EditProfile.svelte';
   import Composer from './components/Composer.svelte';
   import ZapPanel from './lib/ZapPanel.svelte';
-  type Route = { page: string; value: string };
+  type Route = { page: string; value: string; connections?: Relationship; fromTopic?: string };
   function readRoute(): Route {
-    const [base, value = ''] = location.pathname
+    const [base, value = '', section, extra] = location.pathname
       .replace(/^\/+|\/+$/g, '')
       .split('/');
     if (!base) return { page: 'home', value: '' };
     if (base === 'r' && validTopic(value.toLowerCase()))
       return { page: 'topic', value: value.toLowerCase() };
-    if ((base === 'post' || base === 'u') && /^[a-f0-9]{64}$/.test(value))
-      return { page: base === 'u' ? 'profile' : 'thread', value };
-    if (base === 'search')
-      return {
-        page: base,
-        value: new URLSearchParams(location.search).get('q')?.trim() ?? '',
-      };
+    if (base === 'post' && /^[a-f0-9]{64}$/.test(value)) {
+      const from = new URLSearchParams(location.search).get('r') || '';
+      return {page:'thread', value, fromTopic:validTopic(from) ? from : undefined};
+    }
+    if (base === 'u' && !extra && (!section || section === 'followers' || section === 'following')) {
+      const key = profileKeyFromPath(value);
+      if (key) {
+        const connections = section as Relationship | undefined;
+        const canonical = profileUrl(key, connections);
+        if (location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.search + location.hash);
+        return {page:'profile', value:key, connections};
+      }
+    }
+    if (base === 'search') {
+      const query = new URLSearchParams(location.search).get('q')?.trim() ?? '';
+      if (/nsec1[0-9a-z]+/i.test(query)) {
+        history.replaceState(history.state, '', '/search');
+        return {page:base, value:''};
+      }
+      return {page:base, value:query.slice(0, 128)};
+    }
     return {
       page: [
         'topics',
@@ -126,7 +151,10 @@
     mounted = false,
     dialogPrev: HTMLElement | null = null;
   let directoryFilter = '';
-  let remotePosts: Post[] = [];
+  const assistance = createSearchSession();
+  let related = readLocal<boolean>('relatedSearch', true);
+  let searchOrder = 'Best match';
+  let remoteIds = new Set<string>();
   let searchRun = 0;
   let searching = false, searched = false, searchMessage = '';
   async function expandSearch() {
@@ -134,9 +162,12 @@
     searching = true; searched = false;
     searchMessage = '';
     try {
-      const found = await searchRelays(checkSearch(route.value));
+      const query = checkSearch(route.value);
+      const expansion = await assistance.relayExpansion(query);
       if (run !== searchRun) return;
-      remotePosts = found;
+      const found = await searchRelays(query, expansion);
+      if (run !== searchRun) return;
+      remoteIds = found;
       searched = true;
     } catch (error) {
       if (run === searchRun) searchMessage = error instanceof Error ? error.message : 'Relay search failed.';
@@ -146,8 +177,9 @@
   }
   function syncRoute() {
     const next = readRoute();
-    if (next.page !== route.page || next.value !== route.value) {
-      searchRun++; searching = false; searched = false; searchMessage = ''; remotePosts = [];
+    if (next.page !== route.page || next.value !== route.value || next.connections !== route.connections || next.fromTopic !== route.fromTopic) {
+      searchRun++; searching = false; searched = false; searchMessage = ''; remoteIds = new Set(); clearRelaySearch();
+      searchOrder = 'Best match';
       route = next;
       menu = false;
       limit = 24;
@@ -227,9 +259,9 @@
       go('/topics');
       return;
     }
+    if (/nsec1[0-9a-z]+/i.test(search)) { search = ''; notify('Use secret keys only in the sign-in dialog.'); return; }
     const direct = searchTarget(search);
     if (direct) return go(direct);
-    if (/nsec1[0-9a-z]+/i.test(search)) { search = ''; notify('Use secret keys only in the sign-in dialog.'); return; }
     go('/search?q=' + encodeURIComponent(search.trim().slice(0,128)));
   }
   function keypress(e: KeyboardEvent) {
@@ -243,7 +275,7 @@
     }
     if (e.key === 'Escape' && menu) menu = false;
   }
-  function subscribeRoute(page: string, value: string) {
+  function subscribeRoute(page: string, value: string, connections?: Relationship) {
     activeCleanup?.();
     activeCleanup =
       page === 'topic'
@@ -251,7 +283,7 @@
         : page === 'thread'
           ? loadThread(value)
           : page === 'profile'
-            ? loadProfile(value)
+            ? loadProfile(value, connections)
             : undefined;
   }
   function watch(ids: string) {
@@ -259,12 +291,15 @@
     observedCleanup = ids ? observe(ids.split(',')) : undefined;
   }
   onMount(() => {
+    const stopAppearance = watchAppearance();
     const stop = start();
     mounted = true;
     document.addEventListener('click', intercept);
     window.addEventListener('popstate', syncRoute);
     document.addEventListener('keydown', keypress);
     return () => {
+      stopAppearance();
+      assistance.reset(); clearRelaySearch();
       stop();
       activeCleanup?.();
       observedCleanup?.();
@@ -274,45 +309,35 @@
       document.removeEventListener('keydown', keypress);
     };
   });
-  $: if (mounted) subscribeRoute(route.page, route.value);
+  $: if (mounted) subscribeRoute(route.page, route.value, route.connections);
   $: observeEventAuthors(saved.map(p => p.pubkey));
-  $: observeEventAuthors(remotePosts.map(p => p.pubkey));
   $: visibleSaved = saved.filter(p => $canSeeAuthor(p.pubkey));
-  $: visibleSearch = remotePosts.filter(p => $canSeeAuthor(p.pubkey));
+  $: visibleSearch = $posts.filter(p => remoteIds.has(p.id));
   $: thread = [...$posts, ...$comments, ...visibleSaved].find(
     (p) => p.id === route.value,
   );
   $: if (mounted && pageVisible && !modal && route.page === 'thread' && thread) {
     readPostNotifications(thread.id, $notifications);
   }
+  $: threadTopic = thread && route.fromTopic && matchesTopic(thread,route.fromTopic) ? route.fromTopic : thread?.topic;
   $: profile = $profiles[route.value];
   $: profName = route.page === 'profile' ? ($canSeeAuthor(route.value) ? displayName(route.value,profile) : 'Profile') : '';
   $: topic = topicInfo(route.value);
-  $: source = route.page === 'saved' ? visibleSaved : route.page === 'search' && visibleSearch.length
-    ? [...new Map([...$posts,...visibleSearch].map(post => [post.id,post])).values()] : $posts;
+  $: source = route.page === 'saved' ? visibleSaved : $posts;
+  $: plan = route.page === 'search' && route.value ? planPostSearch(route.value) : undefined;
+  $: lexical = new Map(plan ? source.map(p => [p.id, keywordScore(plan!, p, displayName(p.pubkey, $profiles[p.pubkey]))] as const) : []);
+  $: assistance.update(plan && related && pageVisible && allowModel(plan) ? plan : undefined,
+    plan ? [...visibleSearch, ...source.filter(p => !remoteIds.has(p.id))]
+      .filter(p => (lexical.get(p.id) ?? -1) >= 0) : []);
+  $: minimum = semanticFloor(plan, $assistance.scores);
+  $: matchScores = new Map([...lexical].map(([id, score]) => [id, relevance(score, $assistance.scores.get(id), minimum)]));
+  $: relayMatchCount = visibleSearch.filter(p => (matchScores.get(p.id) ?? 0) > 0).length;
+  $: activeOrder = route.page === 'search' ? searchOrder : sorting;
   $: candidates = source.filter((p) => {
-    if (route.page === 'topic')
-      return (
-        p.topic === route.value ||
-        p.event.tags.some(
-          (t) => t[0] === 't' && t[1]?.toLowerCase() === route.value,
-        )
-      );
+    if (route.page === 'topic') return matchesTopic(p,route.value);
     if (route.page === 'following') return $follows.includes(p.pubkey);
     if (route.page === 'profile') return p.pubkey === route.value;
-    if (route.page === 'search') {
-      const words = route.value.toLowerCase().split(/\s+/).filter(Boolean);
-      const text = [
-        p.title,
-        p.body,
-        p.topic,
-        ...p.event.tags.filter(t => t[0] === 't').map(t => t[1]),
-        displayName(p.pubkey, $profiles[p.pubkey]),
-      ]
-        .join(' ')
-        .toLowerCase();
-      return words.length && words.every((term) => text.includes(term));
-    }
+    if (route.page === 'search') return (matchScores.get(p.id) ?? 0) > 0;
     return true;
   });
   // Score only the bounded set already in the local event window.
@@ -343,9 +368,10 @@
       return {
         p,
         score:
-          sorting === 'New'
+          activeOrder === 'Best match' ? matchScores.get(p.id) ?? 0 :
+          activeOrder === 'New'
             ? p.created_at
-            : sorting === 'Top'
+            : activeOrder === 'Top'
               ? votes
               : (votes + boost + 1) / Math.pow(hours + 4, 0.85),
       };
@@ -362,7 +388,7 @@
       ...(route.page === 'profile' ? [route.value] : []),
       ...candidates.slice(0, 240).map((p) => p.pubkey),
     ]);
-  $: ids = (['thread','topics','missing','notifications','settings'].includes(route.page)
+  $: ids = (route.connections || ['thread','topics','missing','notifications','settings'].includes(route.page)
     ? [] : visible.slice(0, 48).map((p) => p.id))
     .sort()
     .join(',');
@@ -374,16 +400,8 @@
       ...$posts.map((p) => p.topic),
     ]),
   ].filter(validTopic);
-  $: topicMatches =
-    route.page === 'search'
-      ? discovered
-          .filter(
-            (x) =>
-              route.value &&
-              x.includes(route.value.toLowerCase().replace(/^r\//, '')),
-          )
-          .slice(0, 5)
-      : [];
+  $: topicMatches = plan ? discovered.filter(slug => plan.hashtags.includes(slug) ||
+    plan.terms.some(term => slug === term || (term.length >= 3 && slug.startsWith(term)))).slice(0,5) : [];
   $: title =
     route.page === 'home'
       ? 'Discussions'
@@ -404,7 +422,7 @@
                   : route.page === 'search'
                     ? 'Search results'
                     : route.page === 'profile'
-                      ? profName
+                      ? (route.connections ? (route.connections === 'followers' ? 'Followers' : 'Following') + ' · ' + profName : profName)
                       : route.page === 'thread'
                         ? 'Discussion'
                         : 'Page not found';
@@ -422,7 +440,7 @@
                 : route.page === 'topics'
                   ? 'Find your corner of the network.'
                   : route.page === 'search'
-                    ? 'Results in the posts and communities loaded here.'
+                    ? 'Loaded discussions and communities.'
                     : '';
   $: document.title =
     (route.page === 'thread' && thread ? thread.title.slice(0, 70) : title) +
@@ -444,11 +462,13 @@
       return;
     }
     if (kind === 'share') {
+      const topic = route.page === 'topic' ? route.value : route.fromTopic;
+      const path = '/post/' + p.id + (topic && matchesTopic(p,topic) ? '?r='+encodeURIComponent(topic) : '');
       try {
-        await navigator.clipboard.writeText(location.origin + '/post/' + p.id);
+        await navigator.clipboard.writeText(location.origin + path);
         notify('Post link copied');
       } catch {
-        go('/post/' + p.id);
+        go(path);
         notify('Copy the link from your address bar');
       }
       return;
@@ -528,7 +548,6 @@
 
 <svelte:document onvisibilitychange={() => pageVisible = document.visibilityState === 'visible'} />
 
-<svelte:head><meta name="theme-color" content="#f6f6ef" /></svelte:head>
 <header class="topbar">
   <div class="bar-inner">
     <button
@@ -607,6 +626,7 @@
         >{/each}
     </div>
     <a class="nav-row" class:active={route.page === 'settings'} aria-current={route.page === 'settings' ? 'page' : undefined} href="/settings"><Icon name="settings" size={18} />Settings</a>
+    {#if $pendingWrites.length}<a class="sync-link" href="/settings">{$pendingWrites.length} pending {$pendingWrites.length === 1 ? 'change' : 'changes'}</a>{/if}
     <div class="left-foot">
       <span class="signal-dot" class:offline={$status === 'offline'}
       ></span>{$status === 'live'
@@ -637,15 +657,22 @@
           {route.page === 'topics' ? 'DIRECTORY' : 'DISCOVERY'}
         </div>
         <h1>{title}</h1>
-        <p>
-          {route.page === 'search'
-            ? '“' + route.value + '” · ' + subtitle
-            : subtitle}
-        </p>
+        {#if route.page === 'search'}
+          <p class="search-summary">“{route.value}” · {subtitle}</p>
+          <form class="refine-search" aria-label="Refine search" onsubmit={e => { e.preventDefault(); submitSearch(); }}>
+            <input aria-label="Refine search" bind:value={search} placeholder="Search discussions" enterkeyhint="search"/>
+            <button type="submit" aria-label="Search discussions"><Icon name="search" size={18}/></button>
+          </form>
+        {:else}<p>{subtitle}</p>{/if}
       </div>
     {/if}
-    {#if route.page === 'settings'}
+    {#if route.connections}
+      {#key route.value + route.connections}
+        <ProfileConnections pubkey={route.value} direction={route.connections}/>
+      {/key}
+    {:else if route.page === 'settings'}
       <div class="page-head"><h1>Settings</h1><p>Preferences are saved in this browser.</p></div>
+      <AppearanceSettings/>
       <section class="preferences" aria-labelledby="feed-preferences">
         <h2 id="feed-preferences">Feed preferences</h2>
         <label><span>Feed order</span>
@@ -653,12 +680,13 @@
             {#each orders as order}<option value={order.name}>{order.name}</option>{/each}
           </select>
         </label>
-        <label><span>Show image previews</span><input type="checkbox" checked={showPreviews} onchange={(event) => {
+        <label><span>Show media previews in feeds</span><input type="checkbox" checked={showPreviews} onchange={(event) => {
           showPreviews = event.currentTarget.checked;
           writeLocal('showPreviews', showPreviews);
         }} /></label>
       </section>
       <GraphSettings/>
+      {#if $account}<Outbox/>{/if}
       {#if $account}
         {#key $account.pubkey + ':' + $account.method}<ProfileBackup method={$account.method}/>{/key}
       {/if}
@@ -713,9 +741,9 @@
           >{/if}
       </section>
     {:else if route.page === 'thread'}
-      <a class="back-link" href={thread ? '/r/' + thread.topic : '/'}
+      <a class="back-link" href={threadTopic ? '/r/' + threadTopic : '/'}
         ><Icon name="back" size={15} />{thread
-          ? 'r/' + thread.topic
+          ? 'r/' + threadTopic
           : 'Home feed'}</a
       >
       {#if thread}
@@ -727,6 +755,7 @@
         {/if}
         <Card
           post={thread}
+          contextTopic={threadTopic}
           saved={saved.some((s) => s.id === thread.id)}
           full
           onaction={action}
@@ -761,13 +790,22 @@
           onEdit={() => showModal('profile')}/>
       {/if}
       {#if route.page === 'search'}
+        <div class="search-assist">
+          <label><input type="checkbox" checked={related} onchange={e => {
+            related = e.currentTarget.checked; writeLocal('relatedSearch', related);
+          }}/> Match related meanings</label>
+          <small role="status">{$assistance.status === 'loading' ? 'Preparing on-device search…' :
+            $assistance.status === 'ranking' ? 'Finding related discussions…' :
+            $assistance.status === 'ready' ? 'Ranked on this device' :
+            $assistance.status === 'unavailable' ? 'On-device model unavailable. Showing keyword matches.' : 'Keyword matches'}</small>
+        </div>
         <div class="relay-search">
-          <button class="outline compact" disabled={searching} onclick={expandSearch}><Icon name="search" size={15}/>{searching ? 'Searching…' : 'Search relays'}</button>
-          <small role="status">{searchMessage || (searched ? (visibleSearch.length ? `Found ${visibleSearch.length} matching discussion${visibleSearch.length === 1 ? '' : 's'} on relays.` : 'Connected relays returned no matching discussions within your graph settings.') : 'Send this query to public search relays to find more discussions.')}</small>
+          <button class="outline compact" disabled={searching || route.value.length < 2} onclick={expandSearch}><Icon name="search" size={15}/>{searching ? 'Searching…' : 'Search relays'}</button>
+          <small role="status">{searchMessage || (searched ? (relayMatchCount ? `Found ${relayMatchCount} matching discussion${relayMatchCount === 1 ? '' : 's'} on relays.` : 'Connected relays returned no matching discussions within your graph settings.') : 'Send search terms to public relays for more results.')}</small>
         </div>
         {#if profileKey(route.value)}<a
             class="search-profile"
-            href={'/u/' + profileKey(route.value)}
+            href={profileUrl(profileKey(route.value))}
             ><Icon name="user" /> Open Nostr profile <Icon
               name="next"
               size={15}
@@ -781,6 +819,11 @@
       {/if}
       <div class="feed-heading">
         {#if route.page === 'home'}<h1>Discussions</h1>{:else}<h2>{route.page === 'profile' ? 'Posts' : 'Discussions'}</h2>{/if}
+        {#if route.page === 'search'}
+          <select class="search-order" aria-label="Sort search results" bind:value={searchOrder}>
+            {#each ['Best match','New','Top','Hot'] as order}<option value={order}>{order}</option>{/each}
+          </select>
+        {:else}
         <div class="sort-bar" aria-label="Sort discussions">
           {#each orders as o}<button
               class:selected={sorting === o.name}
@@ -789,9 +832,11 @@
               ><Icon name={o.icon} size={14} />{o.name}</button
             >{/each}
         </div>
+        {/if}
       </div>
       <section class="feed-list" aria-label="Discussions">
         {#each visible as p (p.id)}<Card
+            contextTopic={route.page === 'topic' ? route.value : undefined}
             {showPreviews}
             post={p}
             saved={saved.some((s) => s.id === p.id)}
@@ -827,8 +872,8 @@
                 here.
               </p>
               <a href="/">Explore the feed</a>
-            {:else if route.page === 'search'}<h2>No matching posts</h2>
-              <p>Try another phrase or browse the community directory.</p>
+            {:else if route.page === 'search'}<h2>{['loading','ranking'].includes($assistance.status) ? 'Looking for matches…' : 'No matching posts'}</h2>
+              <p>{['loading','ranking'].includes($assistance.status) ? 'Checking the discussions on this device.' : 'Try a different search or explore more communities.'}</p>
               <a href="/topics">Browse communities</a>
             {:else if route.page === 'network' && $graphStatus === 'unavailable'}<h2
               >
@@ -928,7 +973,7 @@
         onpublish={(p) => {
           closeModal();
           go('/post/' + p.id);
-          notify('Post published');
+          notify('Post saved');
         }}
       />
     {:else if modal === 'profile' && $account}<EditProfile

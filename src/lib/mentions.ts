@@ -1,5 +1,6 @@
 import { decode } from 'nostr-tools/nip19';
 import { displayName, safeURL } from './ui';
+import { hasTreeCapability, parseTreeAttachment } from './tree-embeds';
 import type { Profile } from './network';
 
 type Part = {text:string; url?:string; person?:string};
@@ -8,7 +9,11 @@ const tokens = /(https?:\/\/[^\s<>]+|(?:nostr:)?(?:npub|nprofile)1[023456789acde
 export function noteParts(text: string, tags: readonly string[][]): Part[] {
   const named = new Set(tags.filter(tag => tag[0] === 'p').map(tag => tag[1]));
   return text.split(tokens).filter(Boolean).map(value => {
-    if (/^https?:\/\//i.test(value)) return {text:value,url:safeURL(value)};
+    if (/^https?:\/\//i.test(value)) {
+      const tree = hasTreeCapability(value) && parseTreeAttachment(value);
+      if (tree) return {text:tree.name,url:tree.viewerUrl};
+      return {text:value,url:hasTreeCapability(value) ? undefined : safeURL(value)};
+    }
     if (named.has(value)) return {text:value,person:value};
     if (/^(?:nostr:)?(?:npub|nprofile)1/i.test(value)) {
       try {

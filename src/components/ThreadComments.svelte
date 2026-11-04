@@ -74,7 +74,7 @@
       lastPublished = published.id;
       drafts = {...drafts, [parent.id]: ''};
       if (active === parent.id) active = '';
-      notify('Reply published');
+      notify('Reply saved');
     } catch (e) {
       if ($account?.pubkey === owner) errors = {...errors, [parent.id]: e instanceof Error ? e.message : 'Could not publish reply.'};
     } finally {
@@ -108,7 +108,7 @@
   {#if $account}{@render composer(thread, false)}{:else}
     <button class="guest-reply" onclick={onSignIn}><Icon name="comment"/> Sign in to leave a comment <Icon name="next" size={14}/></button>
   {/if}
-  {#if lastPublished && !visible.some(row => row.post.id === lastPublished)}<a class="parent-context" href={'/post/'+lastPublished}>View your published reply</a>{/if}
+  {#if lastPublished && !visible.some(row => row.post.id === lastPublished)}<a class="parent-context" href={'/post/'+lastPublished}>View your reply</a>{/if}
   <ol class="thread-list">
     {#each visible as row (row.post.id)}
       {@const p = row.post}
@@ -144,7 +144,7 @@
   .comment-order select {font:inherit;font-weight:600;background:var(--paper);color:var(--ink);padding:4px 6px;border:1px solid var(--line);border-radius:6px}
   .thread-list {--step:18px;--max-depth:7;list-style:none;margin:0;padding:0}
   .thread-list li {--indent:calc(min(var(--depth),var(--max-depth)) * var(--step));padding-left:var(--indent);position:relative}
-  .thread-list li::before {content:'';position:absolute;left:0;top:0;bottom:0;width:var(--indent);pointer-events:none;background:repeating-linear-gradient(to right, transparent 0 8px,#d9dfd3 8px 9px,transparent 9px var(--step))}
+  .thread-list li::before {content:'';position:absolute;left:0;top:0;bottom:0;width:var(--indent);pointer-events:none;background:repeating-linear-gradient(to right, transparent 0 8px,var(--line) 8px 9px,transparent 9px var(--step))}
   .thread-list li.top {border-top:1px solid var(--line);margin-top:8px}
   .branch {display:grid;grid-template-columns:18px minmax(0,1fr);column-gap:6px}
   .branch-toggle {margin-top:9px;width:18px;position:relative;display:flex;align-items:flex-start;justify-content:center;color:var(--muted)}

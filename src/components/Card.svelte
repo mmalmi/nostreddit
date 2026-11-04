@@ -1,13 +1,21 @@
 <script lang="ts">
+  import { profileUrl } from '../lib/profile-url';
   import {
     profiles,
     likes,
     comments,
     receipts,
+    pendingWrites,
+    outboxReady,
     account,
     type Post,
   } from '../lib/network';
   import { displayName, age, safeURL } from '../lib/ui';
+  import { collectMedia } from '../lib/media';
+  import { findTreeEmbeds, hasTreeCapability } from '../lib/tree-embeds';
+  import { matchesTopic } from '../lib/posts';
+  import MediaEmbed from './MediaEmbed.svelte';
+  import TreeEmbed from './TreeEmbed.svelte';
   import { noteParts, partText } from '../lib/mentions';
   import ZapCount from '../lib/ZapCount.svelte';
   import NoteText from './NoteText.svelte';
@@ -16,6 +24,7 @@
   export let post: Post;
   export let saved = false;
   export let showPreviews = true;
+  export let contextTopic: string | undefined = undefined;
   export let full = false;
   export let comment = false;
   export let onaction: (action: string, post: Post) => void;
@@ -23,15 +32,24 @@
   $: name = displayName(post.pubkey, author);
   $: likers = $likes[post.id] ?? [];
   $: liked = Boolean($account && likers.includes($account.pubkey));
+  $: queued = $pendingWrites.some(row=>row.event?.id===post.id);
   $: replyCount = $comments.filter(
     (c) => (comment ? c.parent : c.root) === post.id,
   ).length;
-  $: photo =
-    link && /\.(?:jpg|jpeg|png|webp|avif)$/i.test(new URL(link).pathname)
-      ? link
-      : '';
+  $: topic = contextTopic && matchesTopic(post,contextTopic) ? contextTopic : post.topic;
+  $: permalink = '/post/'+post.id+(contextTopic && topic===contextTopic ? '?r='+encodeURIComponent(topic) : '');
   $: body = post.body || '';
-  $: link = safeURL(post.url);
+  $: link = hasTreeCapability(post.url) ? '' : safeURL(post.url);
+  $: media = collectMedia(post.event.content,post.event.tags,link,post.event.kind);
+  $: trees = findTreeEmbeds([post.event.content, ...post.event.tags.filter(t=>t[0]==='r').map(t=>t[1])].join(' '));
+  $: renderEmbeds = full || showPreviews;
+  $: embeddedLink = media.some(item=>item.url===link);
+  $: attachments = [...media.map(item=>item.url),...trees.map(item=>item.raw)];
+  function stripAttachments(text:string, urls:string[]) {
+    let clean = text;
+    for (const url of urls) clean = clean.split(url).join('');
+    return clean.trim();
+  }
   $: title = post.title || '';
   $: titleFromBody =
     !title && !comment && (body.split('\n')[0] || '').length < 150;
@@ -41,20 +59,13 @@
     rawHeading.endsWith('…') &&
     body.startsWith(rawHeading.slice(0, -1));
   $: chosenHeading = autoShortened && full ? body.split('\n')[0] : rawHeading;
-  $: heading = comment || (full && post.parent)
-    ? ''
-    : link && chosenHeading === link
-      ? photo
-        ? 'Photo in r/' + post.topic
-        : new URL(link).hostname
-      : (link ? chosenHeading.replace(link, '').trim() : chosenHeading) ||
-        chosenHeading;
-  $: remainder =
-    titleFromBody || (!comment && autoShortened)
-      ? body.split('\n').slice(1).join('\n').trim()
-      : body;
-  $: cleanBody = link ? remainder.replace(link, '').trim() : remainder;
-  $: visibleBody = full && post.parent ? post.body : full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
+  $: strippedHeading = stripAttachments(chosenHeading,attachments);
+  $: heading = comment || (full && post.parent) ? '' :
+    strippedHeading === link && link ? new URL(link).hostname :
+    strippedHeading || (trees.length ? trees[0].name : media.length ? (media[0].kind==='image' ? 'Photo' : media[0].kind==='audio' ? 'Audio' : 'Video')+' in r/'+topic : chosenHeading);
+  $: remainder = (titleFromBody || (!comment && autoShortened)) ? body.split('\n').slice(1).join('\n').trim() : body;
+  $: cleanBody = renderEmbeds ? stripAttachments(remainder,[...attachments,...(link ? [link] : [])]) : remainder;
+  $: visibleBody = full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
   $: headingParts = noteParts(heading, post.event.tags);
   $: renderedHeading = headingParts.map(part => partText(part,$profiles)).join('');
   $: picture = safeURL(author?.picture);
@@ -64,10 +75,10 @@
   <div class="byline">
     {#if !comment}<a
         class="community-link"
-        href={'/r/' + encodeURIComponent(post.topic)}
-        ><TopicIcon slug={post.topic} small />r/{post.topic}</a
+        href={'/r/' + encodeURIComponent(topic)}
+        ><TopicIcon slug={topic} small />r/{topic}</a
       ><span class="sep">·</span>{/if}
-    <a class="author" href={'/u/' + post.pubkey}
+    <a class="author" href={profileUrl(post.pubkey)}
       >{#if comment && picture}<img
           src={picture}
           alt=""
@@ -75,43 +86,26 @@
           referrerpolicy="no-referrer"
         />{/if}{name}</a
     ><span class="sep">·</span>
-    <a class="stamp" href={'/post/' + post.id}
+    <a class="stamp" href={permalink}
       ><time datetime={new Date(post.created_at * 1000).toISOString()}
         >{age(post.created_at)}</time
       ></a
     >
+    {#if queued}<small class="queued" title="Saved on this device, waiting to sync">Queued</small>{/if}
   </div>
-  {#if showPreviews && photo && !full && !comment}<a
-      class="post-photo"
-      href={'/post/' + post.id}
-      aria-label="Open image discussion"
-      ><img
-        src={photo}
-        alt=""
-        loading="lazy"
-        referrerpolicy="no-referrer"
-        onerror={(e) =>
-          e.currentTarget.closest('a')?.setAttribute('hidden', '')}
-      /></a
-    >{/if}
   {#if heading}<h2>
-      {#if full}{renderedHeading}{:else}<a href={'/post/' + post.id}>{renderedHeading}</a>{/if}
+      {#if full}{renderedHeading}{:else}<a href={permalink}>{renderedHeading}</a>{/if}
     </h2>{/if}
   {#if visibleBody}<NoteText text={visibleBody} tags={post.event.tags} full={full || comment} />{/if}
-  {#if photo && full}<a
-      class="detail-photo"
-      href={photo}
-      target="_blank"
-      rel="noopener noreferrer"
-      ><img
-        src={photo}
-        alt={post.event.tags.find((t) => t[0] === 'alt')?.[1] ||
-          'Attachment from the author'}
-        loading="lazy"
-        referrerpolicy="no-referrer"
-      /></a
-    >{/if}
-  {#if link}<a
+  {#if renderEmbeds && (media.length || trees.length)}
+    <div class="media-gallery" class:photos={media.length > 1 && !trees.length && media.every(item=>item.kind==='image')}>
+      {#each media as item (item.url)}<MediaEmbed {item} compact={!full}/>{/each}
+      {#each trees as attachment (attachment.url)}<TreeEmbed {attachment}/>{/each}
+    </div>
+  {:else if !renderEmbeds && trees.length}
+    {#each trees as attachment (attachment.url)}<a class="external-post" href={attachment.viewerUrl} target="_blank" rel="noopener noreferrer">Open Hashtree attachment</a>{/each}
+  {/if}
+  {#if link && (!renderEmbeds || !embeddedLink)}<a
       class="external-post"
       href={link}
       target="_blank"
@@ -124,6 +118,7 @@
   <div class="post-actions">
     <button
       class="like"
+      disabled={!!$account && !$outboxReady}
       class:chosen={liked}
       aria-pressed={liked}
       aria-label={liked ? 'Liked' : 'Like'}
@@ -136,7 +131,7 @@
         onclick={() => onaction('reply', post)}
         ><Icon name="comment" size={15} /><span>Reply</span></button
       >
-    {:else}<a aria-label={replyCount + ' comments'} href={'/post/' + post.id}
+    {:else}<a aria-label={replyCount + ' comments'} href={permalink}
         ><Icon name="comment" size={16} /><span>{replyCount}</span></a
       >{/if}
     <button
@@ -166,3 +161,9 @@
     >
   </div>
 </article>
+
+<style>
+  .queued {font-size:.7rem;color:var(--muted)}
+  .media-gallery {display:grid;gap:8px;margin:9px 0;min-width:0}
+  .media-gallery.photos {grid-template-columns:repeat(2,minmax(0,1fr))}
+</style>

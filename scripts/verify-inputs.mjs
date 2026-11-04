@@ -6,6 +6,10 @@ const releases = lock.split('\nsnapshots:')[0].split('\n').filter(line => line.i
 if (!releases.length || releases.some(line => !/integrity: sha512-[a-zA-Z0-9+/]{86}==/.test(line))) {
   throw new Error('Every release tarball must have a SHA-512 integrity pin');
 }
+const treeCore = readFileSync('vendor/hashtree-core-0.4.0.tgz');
+if (createHash('sha512').update(treeCore).digest('base64') !== 'hdqjU1MoGjc55BL5WM93jgVxW7cYOWCWHcYUl5glUT8boEinFfmlmnhyjGp7TNwWgxZKQ7Rgag9XiyDnRUGBUA==') {
+  throw new Error('Unexpected Hashtree Core archive');
+}
 const irisUi = readFileSync('vendor/iris-svelte-ui-3d26f8c.tgz');
 if (createHash('sha256').update(irisUi).digest('hex') !== '888f94c1422f07db33bc4b209a3b2bf5f13b12492c53d717660076de755c935b') {
   throw new Error('Unexpected Iris Kit UI archive');
@@ -14,4 +18,15 @@ const graph = readFileSync('public/socialGraph.bin');
 if (createHash('sha256').update(graph).digest('hex') !== '085ba69fa37725c98c5c8e214bccf2cb4d748c542df5396830e122604c00577e') {
   throw new Error('Unexpected social graph snapshot');
 }
-console.log('Verified pinned release inputs and social graph snapshot');
+const modelInputs = {
+  'search-minilm-q8.onnx': 'b190f50dd46296b9895ae8f274c3455762d08610f8788f4a9bd15019f4f7160c',
+  'search-tokenizer.json': '2fc687b11de0bc1b3d8348f92e3b49ef1089a621506c7661fbf3248fcd54947e',
+  'tokenizer_config.json': '9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3',
+  'search-keywords.bin': '445e2f19b506873911325f594bb620dd156ac0c7ced05e1dbfba34a7814ed866',
+  'search-tag-head.json': '7abebd58ec9bf8b94322a362236ee0a983cf0dae1cf590efcea60c98777a8442',
+};
+for (const [name, digest] of Object.entries(modelInputs)) {
+  if (createHash('sha256').update(readFileSync('src/lib/discovery/model/' + name)).digest('hex') !== digest)
+    throw new Error('Unexpected discussion search input: ' + name);
+}
+console.log('Verified pinned release inputs, search model and social graph snapshot');
