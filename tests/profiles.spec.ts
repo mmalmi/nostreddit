@@ -111,3 +111,42 @@ test('guest relationship pages resolve legacy URLs, paginate nonmutual followers
     await expect(following.getByRole('link',{name:'Morning Walk'})).toBeVisible({timeout:12000});
   } finally {await context.setOffline(false);}
 });
+
+for (const width of [390, 1440]) {
+  test(`profile reserves space for delayed metadata and images at ${width}px`, async ({page, context}, testInfo) => {
+    await page.setViewportSize({width, height:960});
+    await allowFixtureAuthors(context);
+    await context.addInitScript(() => localStorage.setItem('nostreddit.ui.imageProxy', JSON.stringify({enabled:false})));
+    let releaseImages!: () => void;
+    const imagesReady = new Promise<void>(resolve => { releaseImages = resolve; });
+    await page.route('https://profile-images.test/**', async route => {
+      await imagesReady;
+      await route.fulfill({contentType:'image/svg+xml', body:'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#446655"/></svg>'});
+    });
+    const key=generateSecretKey(), pubkey=getPublicKey(key);
+    await page.goto('/u/'+pubkey);
+    const header=page.getByRole('region',{name:'Profile',exact:true});
+    await expect(header.locator('.avatar')).toBeVisible();
+    const before=await header.boundingBox();
+    const event=finalizeEvent({kind:0,tags:[],created_at:Math.floor(Date.now()/1000),content:JSON.stringify({
+      name:'A long profile name that should stay on one line even on a small phone',
+      nip05:'reader@example.com', about:'Watching the coast and sharing stories.', website:'https://example.com',
+      lud16:'reader@example.com', picture:'https://profile-images.test/avatar.svg', banner:'https://profile-images.test/banner.svg',
+    })},key);
+    const relay=new WebSocket(relayUrl);
+    try {
+      await once(relay,'open');
+      const response=once(relay,'message');
+      relay.send(JSON.stringify(['EVENT',event]));
+      expect(JSON.parse(String((await response)[0])).slice(0,3)).toEqual(['OK',event.id,true]);
+    } finally {relay.close();}
+    await expect(header.getByText('Watching the coast and sharing stories.')).toBeVisible();
+    const metadata=await header.boundingBox();
+    expect(Math.abs(metadata!.height-before!.height)).toBeLessThanOrEqual(1);
+    releaseImages();
+    await expect.poll(() => header.locator('img').evaluateAll(images => images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0))).toBe(true);
+    const loaded=await header.boundingBox();
+    expect(Math.abs(loaded!.height-metadata!.height)).toBeLessThanOrEqual(1);
+    await page.screenshot({path:testInfo.outputPath('profile-loaded.png')});
+  });
+}
