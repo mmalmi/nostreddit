@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { posts, comments, profiles } from '../lib/network';
+  import { profiles } from '../lib/network';
+  import { referencePosts } from '../lib/note-references';
   import { postUrl } from '../lib/post-url';
   import { noteParts, partText } from '../lib/mentions';
   import { displayName, age } from '../lib/ui';
   export let id: string;
-  $: post = $posts.find(post=>post.id===id) || $comments.find(post=>post.id===id);
+  $: post = $referencePosts.get(id);
   $: name = post ? displayName(post.pubkey,$profiles[post.pubkey]) : '';
   // Preview text is deliberately non-recursive: quotes cannot fan out into
   // more relay reads, and the whole card remains one accessible link.
-  $: title = post ? noteParts(post.title,post.event.tags).map(part=>partText(part,$profiles)).join('') : '';
-  $: body = post ? noteParts(post.body,post.event.tags).map(part=>partText(part,$profiles)).join('') : '';
+  $: title = post ? noteParts(post.title,post.event.tags).map(part=>partText(part,$profiles,$referencePosts)).join('') : '';
+  $: body = post ? noteParts(post.body,post.event.tags).map(part=>partText(part,$profiles,$referencePosts)).join('') : '';
 </script>
 
 {#if post}

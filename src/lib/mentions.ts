@@ -1,5 +1,5 @@
 import { hashtagParts, type TagPart } from './hashtags';
-import { decode, noteEncode } from 'nostr-tools/nip19';
+import { decode } from 'nostr-tools/nip19';
 import { displayName, safeURL } from './ui';
 import { hasTreeCapability, parseTreeAttachment } from './tree-embeds';
 import type { Profile } from './network';
@@ -31,11 +31,11 @@ export function noteParts(text: string, tags: readonly string[][]): NotePart[] {
     return hashtagParts(value);
   });
 }
-export function partText(part: NotePart, profiles: Record<string,Profile>): string {
+export function partText(part: NotePart, profiles: Record<string,Profile>, notes?:ReadonlyMap<string,{pubkey:string}>): string {
   if (part.person) return '@'+displayName(part.person,profiles[part.person]);
   if (part.event) {
-    const note = noteEncode(part.event);
-    return note.slice(0,12)+'…'+note.slice(-6);
+    const post = notes?.get(part.event);
+    return post ? '[note by '+displayName(post.pubkey,profiles[post.pubkey])+']' : '[note]';
   }
   return part.text;
 }

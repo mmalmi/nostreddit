@@ -20,7 +20,9 @@ test('Nostr URIs and bare identifiers resolve event and profile references amid 
     }
   }
   assert.equal(partText(noteParts('nostr:'+people[0],[])[0],{}),'@'+displayName(pubkey));
-  assert.equal(partText(noteParts('nostr:'+events[1],[])[0],{}),events[0].slice(0,12)+'…'+events[0].slice(-6));
+  const reference=noteParts('nostr:'+events[1],[])[0];
+  assert.equal(partText(reference,{}),'[note]');
+  assert.equal(partText(reference,{},new Map([[id,{pubkey}]])),'[note by '+displayName(pubkey)+']');
 });
 
 test('malformed, embedded, unsupported and wrong-length identifiers remain ordinary text', () => {

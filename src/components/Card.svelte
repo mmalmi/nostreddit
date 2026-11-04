@@ -20,6 +20,7 @@
   import { proxyImage } from '../lib/image-load';
   import TreeEmbed from './TreeEmbed.svelte';
   import { noteParts, partText } from '../lib/mentions';
+  import { referencePosts } from '../lib/note-references';
   import ZapCount from '../lib/ZapCount.svelte';
   import NoteText from './NoteText.svelte';
   import Icon from './Icon.svelte';
@@ -74,9 +75,12 @@
   $: cleanBody = renderEmbeds ? stripAttachments(excerpt,[...attachments,...(link ? [link] : [])]) : excerpt;
   $: visibleBody = full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
   $: headingParts = noteParts(heading, post.event.tags);
-  $: taggedHeading = headingParts.some(part=>part.topic);
+  $: headingQuoteIds = renderEmbeds ? [...new Set(headingParts.flatMap(part=>part.event ? [part.event] : []))].slice(0,4) : [];
+  $: embeddedHeadingIds = headingQuoteIds.filter(id=>$referencePosts.has(id));
+  $: visibleHeadingParts = headingParts.filter(part=>!part.event || !embeddedHeadingIds.includes(part.event));
+  $: taggedHeading = visibleHeadingParts.some(part=>part.topic);
   $: hasReferences = headingParts.some(part=>part.event || part.person);
-  $: renderedHeading = headingParts.map(part => partText(part,$profiles)).join('');
+  $: renderedHeading = visibleHeadingParts.map(part => partText(part,$profiles,$referencePosts)).join('').trim();
   $: picture = safeURL(author?.picture);
 </script>
 
@@ -103,12 +107,12 @@
     {#if isEventId(post.parent) && !full && !comment}<a class="stamp" href={postUrl(post.parent)}>Reply to discussion</a>{/if}
     {#if queued}<small class="queued" title="Saved on this device, waiting to sync">Queued</small>{/if}
   </div>
-  {#if heading}<h2>
+  {#if renderedHeading}<h2>
       {#if full}
-        <NoteText text={heading} tags={post.event.tags} inline />
+        <NoteText text={heading} tags={post.event.tags} inline embeddedIds={embeddedHeadingIds} />
       {:else if taggedHeading}
-        {#each headingParts as part}
-          {#if part.topic}<a class="hashtag" href={topicPath(part.topic)}>{part.text}</a>{:else}<a href={permalink}>{partText(part,$profiles)}</a>{/if}
+        {#each visibleHeadingParts as part}
+          {#if part.topic}<a class="hashtag" href={topicPath(part.topic)}>{part.text}</a>{:else}<a href={permalink}>{partText(part,$profiles,$referencePosts)}</a>{/if}
         {/each}
       {:else}<a href={permalink}>{renderedHeading}</a>{/if}
     </h2>{/if}

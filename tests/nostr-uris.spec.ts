@@ -25,8 +25,10 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     const main = sign(title+'\n\n'+body,[['subject',title],['t',topic]]);
     const reply = sign('Replying to nostr:'+nprofile+': nostr:'+nevent,[['e',main.id,'','root'],['p',main.pubkey]]);
     const headline = sign('nostr:'+nevent,[['t','uri-headline-'+device]]);
+    const sentenceTitle = 'just discovered your channel lots of great interviews';
+    const sentence = sign(sentenceTitle+' nostr:'+nevent,[['t','uri-headline-'+device]]);
     const events = [sign(JSON.stringify({name:'Coastal Walker'}),[],person,0),
-      sign(JSON.stringify({name:'Trail Observer'}),[],author,0),first,second,main,reply,headline];
+      sign(JSON.stringify({name:'Trail Observer'}),[],author,0),first,second,main,reply,headline,sentence];
     const relay = new WebSocket('ws://127.0.0.1:'+(Number(new URL(baseURL!).port)+1));
     try {
       await once(relay,'open');
@@ -42,8 +44,9 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     const text = card.locator('.note-text');
     await expect(text.getByRole('link',{name:'@Coastal Walker',exact:true})).toHaveCount(2);
     for (const id of [first.id,second.id]) {
-      await expect(text.locator('a[href="'+postUrl(id)+'"]')).toBeVisible();
-      await expect(text.locator('a[href="'+postUrl(id)+'"]')).not.toHaveAttribute('target','_blank');
+      await expect(card.locator('.quoted-post[href="'+postUrl(id)+'"]')).toBeVisible();
+      await expect(text.locator('a[href="'+postUrl(id)+'"]')).toHaveCount(0);
+      await expect(card.locator('.quoted-post[href="'+postUrl(id)+'"]')).not.toHaveAttribute('target','_blank');
     }
     await expect(text).toContainText(invalid);
     await expect(card.locator('a[href="'+url+'"]')).toHaveAttribute('target','_blank');
@@ -52,6 +55,7 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     const comment = page.locator('li[data-comment-id="'+reply.id+'"]');
     await expect(comment.getByRole('link',{name:'@Coastal Walker',exact:true})).toHaveAttribute('href',profileUrl(pubkey));
     await expect(comment.locator('.quoted-post')).toContainText('Footprints in the sand');
+    await expect(comment.locator('.note-text')).not.toContainText('[note');
     await page.screenshot({path:info.outputPath('nostr-uris-'+device+'.png'),fullPage:true});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 
@@ -69,10 +73,20 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     await page.getByRole('button',{name:'Show media previews',exact:true}).click();
     await expect(feed.locator('.quoted-post')).toHaveCount(0);
     await expect(feed.locator('.note-text a[href="'+postUrl(first.id)+'"]')).toBeAttached();
+    await expect(feed.locator('.note-text a[href="'+postUrl(first.id)+'"]')).toHaveText('[note by Trail Observer]');
 
     await page.goto(postUrl(headline.id));
-    await expect(page.locator('article.detail h2 a')).toHaveAttribute('href',postUrl(second.id));
     await expect(page.locator('article.detail .quoted-post')).toContainText('Footprints in the sand');
-    await expect(page.locator('article.detail h2')).not.toContainText('nevent1');
+    await expect(page.locator('article.detail h2')).toHaveCount(0);
+    await page.goto(postUrl(sentence.id));
+    await expect(page.locator('article.detail .quoted-post')).toContainText('Footprints in the sand');
+    await expect(page.locator('article.detail h2')).toHaveText(sentenceTitle);
+    await page.screenshot({path:info.outputPath('quote-without-id-'+device+'.png')});
+    await page.goto('/t/uri-headline-'+device);
+    await page.getByRole('button',{name:'Show media previews',exact:true}).click();
+    const sentenceCard=page.locator('article').filter({has:page.getByRole('heading',{name:sentenceTitle,exact:true})});
+    await expect(sentenceCard.locator('.quoted-post')).toContainText('Footprints in the sand');
+    await expect(sentenceCard.locator('h2')).toHaveText(sentenceTitle);
+    await page.screenshot({path:info.outputPath('feed-quote-without-id-'+device+'.png')});
   });
 }
