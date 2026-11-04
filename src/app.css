@@ -1328,6 +1328,22 @@ main > .feed-heading:first-child { margin-top: 0; }
     height: 19px;
   }
 }
+@media (max-width: 360px) {
+  .bar-inner {
+    gap: 4px;
+    padding: 0 8px;
+  }
+  .brand {
+    gap: 4px;
+  }
+  .brand > span {
+    font-size: 20px;
+  }
+  .brand > svg {
+    width: 22px;
+    height: 22px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *:before,
