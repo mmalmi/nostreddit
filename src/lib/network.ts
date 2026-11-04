@@ -13,6 +13,7 @@ import { noExpansion, type Expansion } from './discovery/discussions';
 import type { SearchCursors } from './discovery/relay-search';
 import { relayUrls, type ContactQuery, type Request, type Response } from './relayTypes';
 import { readLocal, writeLocal } from './ui';
+import { startTopicCatalog } from './topic-catalog-store';
 import type { HotSignal } from './hot';
 export { relayUrls, pendingWrites, outboxReady, outboxError, syncing, type Post };
 
@@ -351,6 +352,7 @@ export async function searchRelays(query: string, expansion = noExpansion, curso
 export const homeTopics = ['nostr','bitcoin','technology','art','photography','music','science','gaming','books','asknostr','memes','general'];
 export function start() {
   active = true;
+  const stopTopicCatalog = startTopicCatalog(posts,comments,canSeeAuthor,observeEventAuthors);
   const stopOutbox = localSync.start();
   restoreAccount();
   const localLists = viewerLists.subscribe(lists => {
@@ -407,6 +409,7 @@ export function start() {
   window.addEventListener('online',reconnect);
   return () => {
     document.removeEventListener('visibilitychange',syncVisibility);
+    stopTopicCatalog();
     window.removeEventListener('online',reconnect);
     unsub(); localLists(); stopEdges(); stopOutbox(); own(); friends(); ownStop(); stopNotifications(); friendsStop(); home(); shutdown(); active = false;
   };

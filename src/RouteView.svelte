@@ -51,7 +51,8 @@
   import TopicIcon from './components/TopicIcon.svelte';
   import Card from './components/Card.svelte';
   import { topicPath, topicSlug } from './lib/hashtags';
-  import { matchesTopic, mentionsTopic, postTopics } from './lib/posts';
+  import { seenTopics } from './lib/topic-catalog-store';
+  import { matchesTopic, mentionsTopic } from './lib/posts';
   import { isEventId, postIdFromPath, postUrl } from './lib/post-url';
   import { profileUrl, profileKeyFromPath, type Relationship } from './lib/profile-url';
   import { hotPreferences } from './lib/hot-preferences';
@@ -416,10 +417,11 @@
   $: if (mounted) watch(active ? ids : '');
   $: discovered = [
     ...new Set([
+      ...$seenTopics.map(t=>t.slug),
       ...topics.map((t) => t.slug),
-      ...$posts.flatMap((p) => [...postTopics(p)]),
     ]),
   ].filter(validTopic);
+  $: topicPopularity = new Map($seenTopics.map(t=>[t.slug,t.authors]));
   $: directoryTopic = topicSlug(directoryFilter.trim().replace(/^[tr]\//i,''));
   $: topicMatches = plan ? discovered.filter(slug => plan.hashtags.includes(slug) ||
     plan.terms.some(term => slug === term || (term.length >= 3 && slug.startsWith(term)))).slice(0,5) : [];
@@ -719,6 +721,7 @@
           aria-label="Find or open a topic"
         /></label
       >
+      <p class="catalog-note">Ranked by distinct authors seen in the last 30 days. A local sample, filtered by your settings.</p>
       <section class="directory">
         {#each discovered
           .filter((s) => s.includes(directoryFilter
@@ -731,6 +734,7 @@
               ><TopicIcon {slug} />
               <div>
                 <strong>{slug}</strong>
+                {#if topicPopularity.has(slug)}<small class="topic-popularity">{topicPopularity.get(slug)}{topicPopularity.get(slug) === 64 ? '+' : ''} {topicPopularity.get(slug) === 1 ? 'author' : 'authors'} seen</small>{/if}
               </div></a
             >
           </div>
@@ -1078,6 +1082,7 @@
   </div>{/if}
 
 <style>
+  .catalog-note{font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0}
   /* Match the header's reserved desktop/mobile layout while its code loads. */
   .profile-loading{min-height:452.75px;box-sizing:border-box;border:1px solid var(--line);border-radius:13px;background:var(--paper);padding:20px}
   @media(max-width:520px){.profile-loading{min-height:436.75px}}

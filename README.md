@@ -64,6 +64,10 @@ pnpm test:browser
 
 The browser suite requires Playwright's Chromium installation matching the locked Playwright version. It uses a dedicated production build and a loopback relay, isolated from public Nostr. For an idle CPU sample including workers, run `node scripts/measure-idle.mjs <running-site-url>`. To compare distance, PageRank and GrapeRank against signed local relay samples, run `pnpm exec tsx scripts/compare-ranking.ts SNAPSHOT ROOT EVENTS.jsonl [MORE.jsonl...]`; the command is read-only and verifies signatures. Samples are incomplete relay observations, not proof of identity or a human relevance benchmark. To develop against your own relay, set `VITE_NOSTR_RELAYS` before building. This also disables the public starter feed.
 
+The topic directory remembers tags from discussions and replies seen on this device and ranks them by distinct visible authors over the last 30 days. Repeated posts from one author do not increase the count. These are bounded local samples, not network-wide popularity or proof of unique people. The same remembered tags appear in the post editor's suggestions. Current mute and graph settings also filter remembered counts.
+
+The catalog reuses `nostr-social-graph`'s `UniqueIds` with its own persisted dictionary, independent of graph snapshot IDs. It stores each public key once and numeric author references per tag, with limits of 512 tags, 2,048 authors total, 64 authors per tag, 8,192 tag/author pairs, and 16 tags per observed post. Newer evidence wins when limits are reached. It stores no post text or event IDs; expired evidence is pruned on activity, writes are batched, and there is no background polling. Browser storage failure leaves in-memory discovery available.
+
 ## Deploying
 
 `pnpm build && pnpm run deploy` publishes the verified `dist` bundle to the dedicated Cloudflare Worker configured in `wrangler.jsonc`. The custom domain serves the app entry point for direct topic, profile and thread links. GitHub and Hashtree carry the source history. Deployment credentials stay outside the checkout.

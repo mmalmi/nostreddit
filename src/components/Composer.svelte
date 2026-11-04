@@ -7,6 +7,7 @@
     writeLocal,
   } from '../lib/ui';
   import { topicSlug } from '../lib/hashtags';
+  import { seenTopics } from '../lib/topic-catalog-store';
   import { postLink } from '../lib/posts';
   import Icon from './Icon.svelte';
   export let initialTopic: string;
@@ -39,6 +40,7 @@
   });
   $: if (ready) writeLocal('draft.' + owner, { title, body, url, topic, mode });
   $: slug = topicSlug(topic.trim().replace(/^[tr]\//i, ''));
+  $: suggestedTopics = [...new Set([...$seenTopics.map(t=>t.slug),...topics.map(t=>t.slug)])];
   $: valid = Boolean(slug && title.trim() && (mode === 'text' || postLink(url.trim())));
   function switchTab(e: KeyboardEvent) {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
@@ -98,7 +100,7 @@
         placeholder="Choose a topic"
       /></label>
       <datalist id="composer-topics"
-        >{#each topics as t}<option value={t.slug}>{t.name}</option
+        >{#each suggestedTopics as slug}<option value={slug}>{slug}</option
           >{/each}</datalist
       >
     <div class="post-tabs" role="tablist" aria-label="Post type">
