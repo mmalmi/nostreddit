@@ -8,7 +8,7 @@ export function displayName(pubkey: string, profile?: IrisProfile | null): strin
   return getProfileDisplayName(undefined, pubkey.toLowerCase(), published);
 }
 
-// Navigation suggestions are topic names, not community-owned metadata.
+// Navigation suggestions are open tag names.
 export function topicInfo(slug: string) {
   const colors = ['violet','gold','sky','coral','rose','moss'];
   let hash = 0;

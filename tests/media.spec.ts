@@ -38,7 +38,7 @@ test('photos expand, native video stays idle, and a provider is contacted only o
     return route.fulfill({contentType:'text/html',body:'<title>Fixture player</title>'});
   });
 
-  await page.goto('/r/media-fixture');
+  await page.goto('/t/media-fixture');
   const feedPhoto = page.getByRole('link',{name:'Expand image: Harbor at sunset'});
   await expect(feedPhoto).toBeVisible();
   const bounds = await feedPhoto.boundingBox();

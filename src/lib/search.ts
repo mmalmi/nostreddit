@@ -5,8 +5,8 @@ import { topicSlug, topicPath } from './hashtags';
 
 export function searchTarget(input: string): string {
   const value = input.trim();
-  if (/^(?:r\/|#)/i.test(value)) {
-    const topic = topicSlug(value.replace(/^(?:r\/|#)/i, ''));
+  if (/^(?:[tr]\/|#)/i.test(value)) {
+    const topic = topicSlug(value.replace(/^(?:[tr]\/|#)/i, ''));
     if (topic) return topicPath(topic);
   }
   const identifier = value.replace(/^nostr:/i, '');

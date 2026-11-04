@@ -8,7 +8,7 @@ export function isEventId(id: string): boolean { return eventIdPattern.test(id);
 export function postUrl(id: string, fromTopic?: string): string {
   if (!isEventId(id)) throw new TypeError('Invalid Nostr event ID.');
   const topic = fromTopic ? topicSlug(fromTopic) : '';
-  return '/post/' + noteEncode(id.toLowerCase()) + (topic ? '?r=' + encodeURIComponent(topic) : '');
+  return '/post/' + noteEncode(id.toLowerCase()) + (topic ? '?t=' + encodeURIComponent(topic) : '');
 }
 
 export function postIdFromPath(value: string): string | null {

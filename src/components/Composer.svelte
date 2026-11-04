@@ -34,10 +34,10 @@
   });
   $: if (ready) writeLocal('draft.' + owner, { title, body, url, topic });
   async function send() {
-    const slug = topicSlug(topic.trim().replace(/^r\//i, ''));
+    const slug = topicSlug(topic.trim().replace(/^[tr]\//i, ''));
     if (!slug) {
       error =
-        'Use a community name with letters, numbers, underscores, or hyphens.';
+        'Use a topic with letters, numbers, underscores, or hyphens.';
       return;
     }
     if (!title.trim()) {
@@ -78,9 +78,10 @@
     }}
   >
     <label
-      >Community<input
+      >Topic<input
         bind:value={topic}
         list="composer-topics"
+        aria-describedby="topic-hint"
         required
         maxlength="50"
         placeholder="nostr"
@@ -89,6 +90,7 @@
           >{/each}</datalist
       ></label
     >
+    <small id="topic-hint">No #hashtag needed in your post text.</small>
     <label
       >Title<input
         bind:value={title}

@@ -68,7 +68,7 @@
   $: strippedHeading = stripAttachments(chosenHeading,attachments);
   $: heading = comment || (full && post.parent) ? '' :
     strippedHeading === link && link ? new URL(link).hostname :
-    strippedHeading || (trees.length ? trees[0].name : media.length ? (media[0].kind==='image' ? 'Photo' : media[0].kind==='audio' ? 'Audio' : 'Video')+' in r/'+topic : chosenHeading);
+    strippedHeading || (trees.length ? trees[0].name : media.length ? (media[0].kind==='image' ? 'Photo' : media[0].kind==='audio' ? 'Audio' : 'Video')+' in t/'+topic : chosenHeading);
   $: remainder = (titleFromBody || (!comment && autoShortened)) ? body.split('\n').slice(1).join('\n').trim() : body;
   $: excerpt = post.parent && !full && !comment && remainder.startsWith(chosenHeading) ? remainder.slice(chosenHeading.length).trim() : remainder;
   $: cleanBody = renderEmbeds ? stripAttachments(excerpt,[...attachments,...(link ? [link] : [])]) : excerpt;
@@ -83,9 +83,9 @@
 <article class="post-card" class:detail={full} class:comment-card={comment}>
   <div class="byline">
     {#if !comment}<a
-        class="community-link"
+        class="topic-link"
         href={topicPath(topic)}
-        ><TopicIcon slug={topic} small />r/{topic}</a
+        ><TopicIcon slug={topic} small />t/{topic}</a
       ><span class="sep">·</span>{/if}
     <a class="author" href={profileUrl(post.pubkey)} aria-label={name}
       >{#if comment && picture}<img

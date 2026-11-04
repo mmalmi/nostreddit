@@ -115,10 +115,10 @@ test('guests can widen and restore the same graph limit across home, topic, save
   await expect(page.locator('main article')).toHaveCount(0);
   await expect(page.locator('main')).not.toContainText(outsideTitle);
   await page.goto('/topics');
-  await expect(page.getByRole('heading',{name:'Communities',exact:true})).toBeVisible();
-  await expect(page.locator('main a[href="/r/unmapped-ephemera"]')).toHaveCount(0);
-  await page.goto('/r/unmapped-ephemera');
-  await expect(page.getByRole('heading',{name:'r/unmapped-ephemera',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Topics',exact:true})).toBeVisible();
+  await expect(page.locator('main a[href="/t/unmapped-ephemera"]')).toHaveCount(0);
+  await page.goto('/t/unmapped-ephemera');
+  await expect(page.getByRole('heading',{name:'t/unmapped-ephemera',exact:true})).toBeVisible();
   await expect(page.locator('main')).not.toContainText(outsideTitle);
   await page.goto('/search?q=ephemera');
   await page.getByRole('button',{name:'Search relays',exact:true}).click();

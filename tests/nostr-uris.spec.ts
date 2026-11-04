@@ -63,7 +63,7 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     await expect(page).toHaveURL(new URL(profileUrl(pubkey),baseURL).href);
     await expect(page.getByRole('heading',{name:'Coastal Walker',exact:true})).toBeVisible();
 
-    await page.goto('/r/'+topic);
+    await page.goto('/t/'+topic);
     const feed = page.locator('article').filter({has:page.getByRole('heading',{name:'A walk with @Coastal Walker'})});
     await expect(feed.locator('.quoted-post')).toHaveCount(2);
     await page.getByRole('button',{name:'Show media previews',exact:true}).click();

@@ -46,7 +46,7 @@
     readLocal,
     writeLocal,
   } from './lib/ui';
-  import CommunityIntro from './components/CommunityIntro.svelte';
+  import TopicIntro from './components/TopicIntro.svelte';
   import Notifications from './components/Notifications.svelte';
   import Mark from './components/Mark.svelte';
   import Icon from './components/Icon.svelte';
@@ -56,7 +56,7 @@
   import ProfileHeader from './components/ProfileHeader.svelte';
   import Outbox from './components/Outbox.svelte';
   import { topicPath, topicSlug } from './lib/hashtags';
-  import { matchesTopic, mentionsTopic } from './lib/posts';
+  import { matchesTopic, mentionsTopic, postTopics } from './lib/posts';
   import ProfileConnections from './components/ProfileConnections.svelte';
   import { isEventId, postIdFromPath, postUrl } from './lib/post-url';
   import { profileUrl, profileKeyFromPath, type Relationship } from './lib/profile-url';
@@ -72,7 +72,6 @@
   import ProfileBackup from './components/ProfileBackup.svelte';
   import EditProfile from './components/EditProfile.svelte';
   import Composer from './components/Composer.svelte';
-  import CreateCommunity from './components/CreateCommunity.svelte';
   import ZapPanel from './lib/ZapPanel.svelte';
   type Route = { page: string; value: string; connections?: Relationship; fromTopic?: string };
   function readRoute(): Route {
@@ -80,17 +79,22 @@
       .replace(/^\/+|\/+$/g, '')
       .split('/');
     if (!base) return { page: 'home', value: '' };
-    if (base==='r' && !section) {
+    if ((base==='t' || base==='r') && !section) {
       let slug='';
       try {slug=topicSlug(decodeURIComponent(value));} catch { /* Invalid escaped topic. */ }
-      if(slug) return {page:'topic',value:slug};
+      if(slug) {
+        const canonical=topicPath(slug);
+        if(location.pathname!==canonical) history.replaceState(history.state,'',canonical+location.search+location.hash);
+        return {page:'topic',value:slug};
+      }
     }
     if (base === 'post' && section === undefined) {
       const id = postIdFromPath(value);
       if (id) {
         const canonical = postUrl(id);
         if (location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.search + location.hash);
-        const from = topicSlug(new URLSearchParams(location.search).get('r') || '');
+        const params = new URLSearchParams(location.search);
+        const from = topicSlug(params.get('t') || params.get('r') || '');
         return {page:'thread', value:id, fromTopic:from || undefined};
       }
     }
@@ -157,8 +161,7 @@
     alertTimer: ReturnType<typeof setTimeout>,
     busy = new Set<string>(),
     zapPost: Post | undefined;
-  let joined = readLocal<string[]>('joined', []),
-    saved = readLocal<Post[]>('saved', []),
+  let saved = readLocal<Post[]>('saved', []),
     sorting = readLocal<string>('sort', 'Hot');
   let showPreviews = readLocal<boolean>('showPreviews', true);
   let limit = 24,
@@ -385,14 +388,14 @@
   $: hotActive = activeOrder === 'Hot' && ['home','topic','following','network','saved','profile','search'].includes(route.page) && !route.connections;
   $: hotScope = hotActive ? `${route.page}:${route.value}:${$account?.pubkey || 'guest'}:${hotRefresh}` : '';
   $: if(mounted)setGraphRanking(hotActive && $hotPreferences.connectionStrength);
-  $: hotOptions = {now:Date.now()/1000,signals:$hotSignals,follows:new Set($follows),joined,saved:visibleSaved,
+  $: hotOptions = {now:Date.now()/1000,signals:$hotSignals,follows:new Set($follows),saved:visibleSaved,
     topic:route.page === 'topic' ? route.value : '', seen:new Set(seenHot),
     distance:(key:string)=>$graphInfo[key]?.distance, knownBy:(key:string)=>$graphInfo[key]?.followedByFriends ?? 0,
     influence:$hotPreferences.connectionStrength ? (key:string)=>$graphInfo[key]?.influence : undefined};
   $: baseHot = hotActive ? rankHot(allowedCandidates,hotOptions) : [];
   $: discoveryActors = $follows.length ? $follows : Object.keys($graphInfo).filter(key=>$graphInfo[key].distance===1);
   $: if(mounted) hotObserver.update(allowedCandidates.map(p=>p.id),pageVisible ? hotScope : '',discoveryActors);
-  $: hotInterest = hotQuery(route.page === 'topic' ? route.value : '', $hotPreferences.interests,joined,visibleSaved);
+  $: hotInterest = hotQuery(route.page === 'topic' ? route.value : '', $hotPreferences.interests,visibleSaved);
   $: aiHotActive = hotActive && ['home','topic'].includes(route.page) && pageVisible && $hotPreferences.ai;
   $: aiCandidates = aiHotActive ? hotCandidates(allowedCandidates,baseHot,hotInterest) : [];
   $: hotAssistance.update(aiHotActive ? hotInterest : '',aiCandidates,hotScope);
@@ -429,17 +432,17 @@
   $: discovered = [
     ...new Set([
       ...topics.map((t) => t.slug),
-      ...joined,
-      ...$posts.map((p) => p.topic),
+      ...$posts.flatMap((p) => [...postTopics(p)]),
     ]),
   ].filter(validTopic);
+  $: directoryTopic = topicSlug(directoryFilter.trim().replace(/^[tr]\//i,''));
   $: topicMatches = plan ? discovered.filter(slug => plan.hashtags.includes(slug) ||
     plan.terms.some(term => slug === term || (term.length >= 3 && slug.startsWith(term)))).slice(0,5) : [];
   $: title =
     route.page === 'home'
       ? 'Home'
       : route.page === 'topic'
-        ? 'r/' + route.value
+        ? 't/' + route.value
         : route.page === 'following'
           ? 'Following'
           : route.page === 'network'
@@ -451,7 +454,7 @@
                 : route.page === 'notifications'
                 ? 'Notifications'
                 : route.page === 'topics'
-                  ? 'Communities'
+                  ? 'Topics'
                   : route.page === 'search'
                     ? 'Search results'
                     : route.page === 'profile'
@@ -469,19 +472,13 @@
               : route.page === 'notifications'
                 ? 'Replies, mentions, and likes for your profile.'
                 : route.page === 'topics'
-                  ? 'Find your corner of the network.'
+                  ? 'Browse a topic or enter any tag to open it.'
                   : route.page === 'search'
-                    ? 'Loaded discussions and communities.'
+                    ? 'Loaded discussions and topics.'
                     : '';
   $: document.title =
     (route.page === 'thread' && thread ? thread.title.slice(0, 70) : title) +
     ' · Nostreddit';
-  function join(slug: string) {
-    const exists = joined.includes(slug);
-    joined = exists ? joined.filter((x) => x !== slug) : [...joined, slug];
-    writeLocal('joined', joined);
-    notify(exists ? 'Community removed' : 'Community joined');
-  }
   async function action(kind: string, p: Post) {
     if (kind === 'save') {
       const exists = saved.some((x) => x.id === p.id);
@@ -648,15 +645,14 @@
         >{/each}
     </div>
     <div class="nav-group">
-      <div class="side-label">COMMUNITIES</div>
-      <button class="nav-row" onclick={() => showModal('community')}><Icon name="plus" size={18}/>Create community</button>
+      <div class="side-label">TOPICS</div>
       <a class="nav-row" class:active={route.page === 'topics'} href="/topics"
         ><Icon name="compass" />Explore all</a
       >
-      {#each [...new Set( [...joined, ...topics.map((t) => t.slug)] )].slice(0, 15) as slug (slug)}<a
+      {#each topics.map((t) => t.slug) as slug (slug)}<a
           class="nav-row topic-row"
           class:active={route.page === 'topic' && route.value === slug}
-          href={'/r/' + slug}><TopicIcon {slug} small />r/{slug}</a
+          href={topicPath(slug)}><TopicIcon {slug} small />t/{slug}</a
         >{/each}
     </div>
     <a class="nav-row" class:active={route.page === 'settings'} aria-current={route.page === 'settings' ? 'page' : undefined} href="/settings"><Icon name="settings" size={18} />Settings</a>
@@ -672,8 +668,8 @@
   </aside>
   <main>
     {#if route.page === 'topic'}
-      <div class="mobile-community-intro">
-        <CommunityIntro {title} joined={joined.includes(route.value)} onjoin={() => join(route.value)}/>
+      <div class="mobile-topic-intro">
+        <TopicIntro {title}/>
       </div>
     {:else if ['following', 'network', 'saved'].includes(route.page)}
       <section class="hero">
@@ -736,12 +732,11 @@
     {:else if route.page === 'notifications'}
       <Notifications onSignIn={() => showModal('account')} />
     {:else if route.page === 'topics'}
-      <button class="outline compact community-create" onclick={() => showModal('community')}><Icon name="plus" size={15}/>Create community</button>
       <label class="directory-input"
         ><Icon name="search" /><input
           bind:value={directoryFilter}
-          placeholder="Find or open a community"
-          aria-label="Find or open a community"
+          placeholder="Find or open a topic"
+          aria-label="Find or open a topic"
         /></label
       >
       <section class="directory">
@@ -749,45 +744,28 @@
           .filter((s) => s.includes(directoryFilter
                 .trim()
                 .toLowerCase()
-                .replace(/^r\//, '')))
+                .replace(/^(?:[tr]\/|#)/, '')))
           .slice(0, 80) as slug}
           <div class="directory-row">
-            <a href={'/r/' + slug}
+            <a href={topicPath(slug)}
               ><TopicIcon {slug} />
               <div>
-                <strong>r/{slug}</strong>
+                <strong>t/{slug}</strong>
               </div></a
-            ><button
-              class="outline compact"
-              aria-label={(joined.includes(slug) ? 'Leave ' : 'Join ') +
-                'r/' +
-                slug}
-              onclick={() => join(slug)}
-              ><Icon
-                name={joined.includes(slug) ? 'check' : 'plus'}
-                size={14}
-              />{joined.includes(slug) ? 'Joined' : 'Join'}</button
             >
           </div>
         {/each}
-        {#if validTopic(directoryFilter
-            .trim()
-            .toLowerCase()
-            .replace(/^r\//, '')) && !discovered.includes(directoryFilter
-              .trim()
-              .toLowerCase()
-              .replace(/^r\//, ''))}<a
+        {#if directoryTopic && !discovered.includes(directoryTopic)}<a
             class="new-topic"
-            href={'/r/' +
-              directoryFilter.trim().toLowerCase().replace(/^r\//, '')}
-            >Open r/{directoryFilter.trim().toLowerCase().replace(/^r\//, '')}
+            href={topicPath(directoryTopic)}
+            >Open t/{directoryTopic}
             <Icon name="next" size={15} /></a
           >{/if}
       </section>
     {:else if route.page === 'thread'}
       <a class="back-link" href={threadTopic ? topicPath(threadTopic) : '/'}
         ><Icon name="back" size={15} />{thread
-          ? 'r/' + threadTopic
+          ? 't/' + threadTopic
           : 'Home feed'}</a
       >
       {#if thread}
@@ -856,8 +834,8 @@
             /></a
           >{/if}
         {#if topicMatches.length}<div class="search-topics">
-            {#each topicMatches as slug}<a href={'/r/' + slug}
-                ><TopicIcon {slug} small />r/{slug}</a
+            {#each topicMatches as slug}<a href={topicPath(slug)}
+                ><TopicIcon {slug} small />t/{slug}</a
               >{/each}
           </div>{/if}
       {/if}
@@ -936,8 +914,8 @@
               </p>
               <a href="/">Explore the feed</a>
             {:else if route.page === 'search'}<h2>{['loading','ranking'].includes($assistance.status) ? 'Looking for matches…' : 'No matching posts'}</h2>
-              <p>{['loading','ranking'].includes($assistance.status) ? 'Checking the discussions on this device.' : 'Try a different search or explore more communities.'}</p>
-              <a href="/topics">Browse communities</a>
+              <p>{['loading','ranking'].includes($assistance.status) ? 'Checking the discussions on this device.' : 'Try a different search or explore more topics.'}</p>
+              <a href="/topics">Browse topics</a>
             {:else if route.page === 'network' && $graphStatus === 'unavailable'}<h2
               >
                 Social graph unavailable
@@ -958,13 +936,13 @@
               </h2>
               <p>
                 {route.page === 'topic'
-                  ? 'Start a conversation in r/' + route.value + '.'
+                  ? 'Start a conversation in t/' + route.value + '.'
                   : 'Posts appear as your relays connect.'}
               </p>
               {#if route.page === 'topic'}<button
                   class="primary compact"
                   onclick={compose}>Create a post</button
-                >{:else}<a href="/topics">Explore communities</a>{/if}
+                >{:else}<a href="/topics">Explore topics</a>{/if}
             {/if}
           </div>{/each}
       </section>
@@ -986,22 +964,22 @@
         {/if}
     {/if}
   </main>
-  <aside class="right-rail" aria-label="Community information">
+  <aside class="right-rail" aria-label="Topic information">
     {#if route.page === 'topic'}
-      <CommunityIntro {title} joined={joined.includes(route.value)} onjoin={() => join(route.value)}/>
+      <TopicIntro {title}/>
     {/if}
     <section class="rail-panel popular">
       <div class="rail-eyebrow"><Icon name="compass" size={14} /> DISCOVER</div>
-      <h2>Explore communities</h2>
+      <h2>Explore topics</h2>
       {#each topics.slice(0, 4) as item}<a
           class="rail-topic"
-          href={'/r/' + item.slug}
+          href={topicPath(item.slug)}
           ><TopicIcon slug={item.slug} />
-          <div><strong>r/{item.slug}</strong></div>
+          <div><strong>t/{item.slug}</strong></div>
           <Icon name="next" size={12} /></a
         >{/each}
       <a class="all-topics" href="/topics"
-        >All communities <Icon name="next" size={14} /></a
+        >All topics <Icon name="next" size={14} /></a
       >
     </section>
     <div class="rail-footer">
@@ -1015,7 +993,7 @@
     class="modal"
     aria-label={modal === 'account'
       ? 'Nostr profile'
-      : modal === 'community' ? 'Create community' : modal === 'compose'
+      : modal === 'compose'
         ? 'Create post'
         : modal === 'zap'
           ? 'Zap post'
@@ -1041,11 +1019,6 @@
       ><Icon name="close" size={18} /></button
     >
     {#if modal === 'account'}<AccountPanel onclose={accountDone} {notify} />
-    {:else if modal === 'community'}<CreateCommunity oncreate={slug=>{
-        closeModal();
-        if(!joined.includes(slug)){joined=[...joined,slug];writeLocal('joined',joined);}
-        go(topicPath(slug));compose();
-      }}/>
     {:else if modal === 'compose' && $account}<Composer
         initialTopic={route.page === 'topic' ? route.value : ''}
         owner={$account.pubkey}
@@ -1085,5 +1058,4 @@
   .hot-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 12px;font-size:12px;color:var(--muted)}
   .hot-status{color:var(--muted)}
   .hot-controls button{font-size:12px;color:var(--accent)}
-  .community-create{margin-bottom:14px}
 </style>

@@ -54,7 +54,7 @@ async function saveSnapshot() {
   if (!db) return;
   const events = await runtime.store.query([
     { kinds: discussionKinds, limit: 200 }, { kinds: [0], limit: 170 },
-    { kinds: [5, 7, 9735], limit: 200 }, { kinds: [3, 10000,34550], limit: 40 },
+    { kinds: [5, 7, 9735], limit: 200 }, { kinds: [3, 10000], limit: 40 },
   ]);
   // Bound disk use even when individual profiles or contact lists are enormous.
   let bytes = 0;

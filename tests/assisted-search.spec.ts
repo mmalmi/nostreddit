@@ -39,7 +39,7 @@ async function ranked(page: Page) {
   await expect(page.getByText('Ranked on this device',{exact:true})).toBeVisible({timeout:25_000});
 }
 test('a reader finds paraphrases, excludes a competing meaning and can switch back to keywords', async ({page}) => {
-  await page.goto('/r/'+tag);
+  await page.goto('/t/'+tag);
   await expect(page.getByRole('link',{name:notes[0][0],exact:true})).toBeVisible();
   await page.keyboard.press('/');
   await expect(page.getByLabel('Search Nostreddit')).toBeFocused();
@@ -92,7 +92,7 @@ test('a cold model failure preserves immediate results and a newer query wins', 
     await allowFixtureAuthors(context);
     await context.route('**/*.onnx', route=>route.abort());
     const page = await context.newPage();
-    await page.goto('/r/'+tag);
+    await page.goto('/t/'+tag);
     await expect(page.getByRole('link',{name:notes[0][0],exact:true})).toBeVisible();
     await submit(page,'handheld portraits'); await submit(page,'rear derailleur');
     await expect(page.locator('article h2').first()).toHaveText(notes[1][0]);
@@ -111,7 +111,7 @@ test('a cold model failure preserves immediate results and a newer query wins', 
 test('the home shell skips model downloads and a previous search works after offline reload', async ({page,context,baseURL}) => {
   const requests: string[] = [];
   context.on('request', request => { if (request.url().includes('/assets/search/')) requests.push(request.url()); });
-  await page.goto('/r/'+tag);
+  await page.goto('/t/'+tag);
   await expect(page.getByRole('link',{name:notes[0][0],exact:true})).toBeVisible();
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
   expect(requests).toEqual([]);

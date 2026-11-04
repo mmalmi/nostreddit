@@ -11,10 +11,14 @@ const pointer = neventEncode({ id, relays:['wss://example.org'],kind:1 });
 
 test('hex, note and nevent identify the same post, including when pasted into search', () => {
   assert.equal(postUrl(id),'/post/'+note);
-  assert.equal(postUrl(id.toUpperCase(),'#Järvi'),'/post/'+note+'?r=j%C3%A4rvi');
+  assert.equal(postUrl(id.toUpperCase(),'#Järvi'),'/post/'+note+'?t=j%C3%A4rvi');
   assert.equal(postUrl(id,'invalid/path'),'/post/'+note);
   for (const value of [id,id.toUpperCase(),note,note.toUpperCase(),pointer]) assert.equal(postIdFromPath(value),id);
   for (const value of [note,'nostr:'+note,pointer,'nostr:'+pointer]) assert.equal(searchTarget(value),'/post/'+note);
+});
+
+test('topic searches use readable topic URLs and accept old r/ shortcuts', () => {
+  for(const value of ['#Bitcoin','t/Bitcoin','r/Bitcoin']) assert.equal(searchTarget(value),'/t/bitcoin');
 });
 
 test('rejects malformed event paths, wrong entity types and note payloads of the wrong length', () => {

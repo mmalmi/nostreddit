@@ -5,7 +5,7 @@ import { planPostSearch } from './discovery/query';
 
 export interface HotSignal { target:string; actor:string; at:number; kind:'like'|'reply'|'zap' }
 export interface HotOptions {
-  now?:number; follows?:ReadonlySet<string>; joined?:readonly string[]; saved?:readonly Post[];
+  now?:number; follows?:ReadonlySet<string>; saved?:readonly Post[];
   distance?:(key:string)=>number|null|undefined; signals?:readonly HotSignal[];
   knownBy?:(key:string)=>number;
   influence?:(key:string)=>number|undefined;
@@ -54,7 +54,7 @@ export function hotScores(posts:readonly Post[], options:HotOptions={}) {
     crowd.set(signal.actor,Math.max(crowd.get(signal.actor)||0,strength));
     actors.set(post.id,crowd);
   }
-  const interests=new Set((options.joined||[]).slice(0,64));
+  const interests=new Set<string>();
   for(const post of (options.saved||[]).slice(0,32)) interests.add(post.topic);
   return posts.map(post=>{
     const age=Math.max(0,now-post.created_at)/HOUR;
@@ -101,13 +101,12 @@ export function rankHot(posts:readonly Post[],options:HotOptions={}) {
 }
 
 /** Membership is decided before AI. The model can never pull unrelated posts
- * into /r/topic or bypass a graph or mute filter. */
-export function hotQuery(topic:string, preference:string, joined:readonly string[],saved:readonly Post[]) {
+ * into /t/topic or bypass a graph or mute filter. */
+export function hotQuery(topic:string, preference:string, saved:readonly Post[]) {
   const explicit=preference.trim().slice(0,300);
   if(explicit) return explicit;
   if(topic) return topic.replace(/[_-]+/g,' ');
-  return [...joined.slice(0,6).map(topic=>topic.replace(/[_-]+/g,' ')),
-    ...saved.slice(0,3).map(post=>post.title.slice(0,100))].join('. ').slice(0,500);
+  return saved.slice(0,3).map(post=>post.title.slice(0,100)).join('. ').slice(0,500);
 }
 
 export function hotCandidates(posts:readonly Post[],social:readonly Post[],query:string) {

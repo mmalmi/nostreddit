@@ -40,7 +40,8 @@ test('NIP-10 replies preserve the original root, immediate parent and recipients
 test('NIP-72 top-level NIP-22 threads and replies retain their community scope', () => {
   const address = '34550:'+pubkey+':music';
   const post = asPost(sign({kind:1111,content:'Record of the week',tags:[['A',address],['a',address],['K','34550'],['k','34550'],['P',pubkey]]}))!;
-  assert.equal(post.topic,'music'); assert.equal(post.root,'');
+  assert.equal(post.topic,'general'); assert.equal(post.root,'');
+  assert.equal(matchesTopic(post,'music'),false);
   const reply = asPost(sign(commentDraft(post,'Nice pick')))!;
   assert.equal(reply.parent,post.id); assert.equal(reply.root,post.id);
   assert.ok(reply.event.tags.some(t => t[0] === 'A' && t[1] === address));
@@ -66,7 +67,7 @@ test('rebase changes over newer contact, mute and metadata records without modif
     {name:'Tern',unfamiliar:{nested:1},about:'Field notes'});
 });
 
-test('topic membership uses explicit community scope before hashtags, keeping multi-tag notes discoverable', () => {
+test('topic feeds use tags regardless of community addresses', () => {
   const tags=[['t','bitcoin'],['t','mostro']];
   const note=asPost(sign({kind:1,content:'Market notes',tags}))!;
   assert.equal(note.topic,'bitcoin');
@@ -74,7 +75,10 @@ test('topic membership uses explicit community scope before hashtags, keeping mu
   assert.equal(matchesTopic(note,'nostr'),false);
   for(const marker of ['a','A']) {
     const scoped=asPost(sign({kind:1,content:'Market notes',tags:[...tags,[marker,'34550:'+pubkey+':bitcoin']]}))!;
-    assert.equal(matchesTopic(scoped,'mostro'),false);
+    assert.ok(matchesTopic(scoped,'mostro'));
+    assert.ok(matchesTopic(scoped,'bitcoin'));
+    const addressOnly=asPost(sign({kind:1,content:'Market notes',tags:[[marker,'34550:'+pubkey+':bitcoin']]}))!;
+    assert.equal(matchesTopic(addressOnly,'bitcoin'),false);
   }
 });
 

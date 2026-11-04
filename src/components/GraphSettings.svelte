@@ -23,7 +23,7 @@
     <input type="checkbox" checked={$visibilitySettings.hideOvermuted} onchange={(event) =>
       visibilitySettings.set({...$visibilitySettings, hideOvermuted: event.currentTarget.checked})} />
   </label>
-  <p>Your mutes always apply. Community mute filtering uses the closest people in your graph who follow or mute a profile.</p>
+  <p>Your mutes always apply. Social-graph mute filtering uses the closest people in your graph who follow or mute a profile.</p>
   {#if $graphStatus === 'unavailable'}<p role="status">The graph is unavailable. Posts that need a graph check are hidden.</p>{/if}
 </section>
 

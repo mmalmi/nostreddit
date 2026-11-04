@@ -12,7 +12,7 @@
   <label class="interests"><span>Your interests</span><textarea rows="2" maxlength="300"
     placeholder="Photography, open-source projects, places to explore…" value={$hotPreferences.interests}
     onchange={e=>setHotPreferences({...$hotPreferences,interests:e.currentTarget.value})}></textarea></label>
-  <small>Optional, on this device. Downloads about 33 MB once. Leave interests blank to use joined communities and saved posts, or the topic you’re browsing. Hot works immediately either way.</small>
+  <small>Optional, on this device. Downloads about 33 MB once. Leave interests blank to use saved posts or the topic you’re browsing. Hot works immediately either way.</small>
 </section>
 <style>
   .hot-settings{margin-bottom:14px}p,small{color:var(--muted);font-size:13px;line-height:1.6}p{margin:0 0 10px}

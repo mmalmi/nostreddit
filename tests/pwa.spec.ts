@@ -104,6 +104,6 @@ self.addEventListener('fetch',e=>{
     expect(await fresh.evaluate(async file=>Boolean(await (await caches.open('nostreddit-optional-v1')).match(file)),file)).toBe(true);
     await context.setOffline(true);
     await fresh.goto(url+'/topics');
-    await expect(fresh.getByRole('heading',{name:'Communities',exact:true})).toBeVisible();
+    await expect(fresh.getByRole('heading',{name:'Topics',exact:true})).toBeVisible();
   } finally {await context.close();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });

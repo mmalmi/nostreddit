@@ -37,7 +37,7 @@ test('proxy settings reroute open tabs, profile images and posters and preserve 
       return route.fulfill({contentType:'image/png',headers:{'Access-Control-Allow-Origin':'*'},body:png});
     });
   }
-  await page.goto('/r/proxy-fixture');
+  await page.goto('/t/proxy-fixture');
   const image=page.locator('.image-link img').first();
   await expect(image).toHaveAttribute('src',/^https:\/\/imgproxy\.iris\.to\/.+\/rs:fit:350:350\/dpr:2\//);
   await expect(page.locator('.load .poster').first()).toHaveAttribute('src',/^https:\/\/vidproxy\.iris\.to\/.+\/thumb\//);

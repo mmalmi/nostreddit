@@ -27,7 +27,7 @@ export function asPost(event: NostrEvent): Post | undefined {
   const tag = (name: string) => event.tags.find(t => t[0] === name)?.[1] || '';
   const community = communityOf(event);
   const hashtag = event.tags.filter(t => t[0] === 't').map(t => topicSlug(t[1] || '')).find(Boolean);
-  const topic = topicSlug(community?.slice(71) || '') || hashtag || 'general';
+  const topic = hashtag || [...contentTopics((tag('subject') || tag('title'))+'\n'+event.content)][0] || 'general';
   let root = '', parent = '';
   if (event.kind === 1) {
     const refs = event.tags.filter(t => t[0] === 'e' && hexKey.test(t[1]) && t[3] !== 'mention');
@@ -55,20 +55,30 @@ export function asPost(event: NostrEvent): Post | undefined {
 }
 
 const inlineTopics = new WeakMap<Post,Set<string>>();
-export function mentionsTopic(post:Post, topic:string) {
+function mentionedTopics(post:Post) {
   let tags=inlineTopics.get(post);
   if (!tags) {
     const subject=post.event.tags.find(t=>t[0]==='subject' || t[0]==='title')?.[1] || '';
     tags=contentTopics(subject+'\n'+post.event.content);
     inlineTopics.set(post,tags);
   }
-  return tags.has(topic);
+  return tags;
+}
+
+export function mentionsTopic(post:Post, topic:string) { return mentionedTopics(post).has(topic); }
+
+const taggedTopics = new WeakMap<Post,ReadonlySet<string>>();
+export function postTopics(post:Post):ReadonlySet<string> {
+  let tags=taggedTopics.get(post);
+  if (!tags) {
+    tags=new Set([...post.event.tags.filter(t=>t[0]==='t').map(t=>topicSlug(t[1] || '')).filter(Boolean),...mentionedTopics(post)]);
+    taggedTopics.set(post,tags);
+  }
+  return tags;
 }
 
 export function matchesTopic(post:Post, topic:string):boolean {
-  const explicit = communityOf(post.event);
-  if (explicit) return topicSlug(explicit.slice(71)) === topic;
-  return post.topic === topic || post.event.tags.some(t => t[0]==='t' && topicSlug(t[1] || '')===topic) || mentionsTopic(post,topic);
+  return postTopics(post).has(topic);
 }
 
 export function postDraft(input: {topic:string; title:string; body:string; url?:string}) {

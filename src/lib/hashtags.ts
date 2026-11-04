@@ -4,7 +4,7 @@ export function topicSlug(value:string) {
   const slug=value.trim().replace(/^#/,'').toLowerCase().normalize('NFC');
   return slugPattern.test(slug) ? slug : '';
 }
-export function topicPath(slug:string) { return '/r/'+encodeURIComponent(slug); }
+export function topicPath(slug:string) { return '/t/'+encodeURIComponent(slug); }
 
 // Consume whole URLs so their fragments, including Iris Drive paths, never become tags.
 const tokens=/(?:(?:https?|htree|hashtree|nhash|ftp):\/\/|(?:nhash|npub)1[023456789acdefghjklmnpqrstuvwxyz]+\/)[^\s<>]+|(?:^|[^\p{L}\p{M}\p{N}_/#.])(#([\p{L}\p{N}][\p{L}\p{M}\p{N}_-]*))/giu;
@@ -31,8 +31,8 @@ export function contentTopics(text:string) {
   return new Set(hashtagParts(text).flatMap(part=>part.topic ? [part.topic] : []));
 }
 
-export function topicTags(community:string, text:string) {
-  const topics=new Set([community,...contentTopics(text)]);
+export function topicTags(topic:string, text:string) {
+  const topics=new Set([topic,...contentTopics(text)]);
   if (topics.size>128) throw new Error('Use up to 128 topics in one post or reply.');
   return [...topics].map(topic=>['t',topic]);
 }

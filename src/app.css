@@ -528,7 +528,7 @@ main > .feed-heading:first-child { margin-top: 0; }
   border-color: var(--strong-line);
 }
 .byline,
-.community-link,
+.topic-link,
 .author,
 .stamp,
 .post-actions,
@@ -550,7 +550,7 @@ main > .feed-heading:first-child { margin-top: 0; }
   line-height: 1.5;
   min-width: 0;
 }
-.community-link {
+.topic-link {
   gap: 6px;
   color: var(--body-text);
   font-weight: 700;
@@ -711,9 +711,9 @@ main > .feed-heading:first-child { margin-top: 0; }
   background: light-dark(#e3edde, #2a3428);
   color: light-dark(#547044, #b3cc9e);
 }
-.mobile-community-intro { display: none; }
+.mobile-topic-intro { display: none; }
 @media (min-width: 981px) {
-  .mobile-community-intro + .feed-heading { margin-top: 0; }
+  .mobile-topic-intro + .feed-heading { margin-top: 0; }
 }
 .right-rail {
   display: flex;
@@ -1124,7 +1124,7 @@ main > .feed-heading:first-child { margin-top: 0; }
   }
 }
 @media (max-width: 980px) {
-  .mobile-community-intro { display: block; }
+  .mobile-topic-intro { display: block; }
   .right-rail {
     display: none;
   }

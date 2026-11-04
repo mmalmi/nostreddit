@@ -66,9 +66,9 @@ test('local interests and semantic matches are boosts, never membership or visib
   const result=rankHot(input,{now,topic:'nostr',ai:new Map([[b.id,1],[outside.id,1]])});
   assert.equal(result[0].id,b.id);assert.deepEqual(new Set(result),new Set(input));
   assert.equal(rankHot(input,{now,ai:new Map([[a.id,NaN],[b.id,Infinity]])}).length,2);
-  assert.equal(hotQuery('nostr','landscape photography',[],[]),'landscape photography');
-  assert.equal(hotQuery('open-source','',[],[]),'open source');
-  assert.equal(hotQuery('','',[],[]),'');
+  assert.equal(hotQuery('nostr','landscape photography',[]),'landscape photography');
+  assert.equal(hotQuery('open-source','',[]),'open source');
+  assert.equal(hotQuery('','',[]),'');
 });
 test('seen posts are downweighted without disappearing, and results are deterministic',()=>{
   const a=post(1),b=post(2);

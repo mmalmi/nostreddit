@@ -16,8 +16,8 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
   await root.getByRole('button',{name:'Save post', exact:true}).click();
   await page.goto('/saved');
   await expect(page.getByRole('link',{name:'Notes from the coast',exact:true})).toBeVisible();
-  await page.goto('/r/photography');
-  await expect(page.getByRole('heading',{name:'r/photography',exact:true})).toBeVisible();
+  await page.goto('/t/photography');
+  await expect(page.getByRole('heading',{name:'t/photography',exact:true})).toBeVisible();
 
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
   const displayName = page.getByLabel('Display name', {exact:true});
@@ -136,9 +136,9 @@ test('a guest can expand a local search to relays and open a Nostr event identif
   await search.press('Enter');
   await expect(page).toHaveURL(url => url.pathname === href);
   await expect(page.getByRole('heading',{name:'An ephemeris on the archive shelf',exact:true})).toBeVisible();
-  await search.fill('r/observatory');
+  await search.fill('t/observatory');
   await search.press('Enter');
-  await expect(page.getByRole('heading',{name:'r/observatory',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'t/observatory',exact:true})).toBeVisible();
 });
 
 

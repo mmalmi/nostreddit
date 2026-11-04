@@ -38,7 +38,6 @@ const reactionIds = writable(0);
 const reactionTargets = new Map<string,string>();
 const deleted = new Map<string,NostrEvent>();
 const ownReactionTime = new Map<string,number>();
-const rawCommunities = writable<NostrEvent[]>([]);
 const keyStorage = 'nostreddit.account.v1';
 let secret: Uint8Array | undefined;
 const noop = () => {};
@@ -75,7 +74,7 @@ function visibleList<T extends {pubkey:string}>(raw: Writable<T[]>) {
   return derived([raw, canSeeAuthor], ([items, allowed]) => items.filter(item => allowed(item.pubkey)));
 }
 export const posts = visibleList(rawPosts), comments = visibleList(rawComments);
-export const notifications = visibleList(rawNotifications), communities = visibleList(rawCommunities);
+export const notifications = visibleList(rawNotifications);
 const readNotificationIds = writable(new Set<string>());
 export const unreadNotificationIds = derived([notifications, readNotificationIds], ([events, read]) =>
   new Set(events.filter(event => !read.has(event.id)).map(event => event.id)));
@@ -156,7 +155,7 @@ function apply(events:NostrEvent[]) {
     if (event.kind === 9735) {
       const sender = zapAuthor(event);
       if (sender) authors.add(sender);
-    } else if ([0,7,34550,...discussionKinds].includes(event.kind)) authors.add(event.pubkey);
+    } else if ([0,7,...discussionKinds].includes(event.kind)) authors.add(event.pubkey);
   }
   if (authors.size) observeEventAuthors([...authors]);
   if (notificationOwner && get(account)?.pubkey === notificationOwner) {
@@ -180,9 +179,6 @@ function apply(events:NostrEvent[]) {
       muteEvents.set(event.pubkey,event);
       listRevision.update(n=>n+1);
       if (event.pubkey===get(account)?.pubkey) void cacheOwnEvents([event]).catch(noop);
-    } else if (event.kind === 34550) {
-      const previous = get(rawCommunities);
-      if (!previous.some(e => e.id === event.id)) rawCommunities.set([event,...previous].slice(0,80));
     } else if (event.kind === 0 && newest(event,metadata.get(event.pubkey))) {
       metadata.set(event.pubkey,event); ps[event.pubkey] = readProfile(event); profilesDirty = true;
       if (event.pubkey === get(account)?.pubkey) void cacheOwnEvents([event]).catch(noop);
@@ -419,16 +415,8 @@ export function loadTopic(topic:string) {
   const slug = topicSlug(topic);
   if (!slug) return noop;
   pinnedTopic = slug;
-  const stop = watch([{kinds:discussionKinds,'#t':[slug],limit:90},{kinds:[34550],'#d':[slug],limit:3}], true);
-  let last = '', closeAddress = noop;
-  const unsubscribe = rawCommunities.subscribe(list => {
-    const addresses = [...new Set(list.filter(e => e.tags.some(t => t[0] === 'd' && t[1] === slug))
-      .map(e => '34550:'+e.pubkey+':'+slug))].sort().slice(0,3);
-    if (last === addresses.join()) return;
-    last = addresses.join(); closeAddress();
-    closeAddress = addresses.length ? watch([{kinds:discussionKinds,'#a':addresses,limit:60},{kinds:[1111],'#A':addresses,limit:60}]) : noop;
-  });
-  return () => { stop(); unsubscribe(); closeAddress(); if (pinnedTopic === slug) pinnedTopic = ''; };
+  const stop = watch([{kinds:discussionKinds,'#t':[slug],limit:90}], true);
+  return () => { stop(); if (pinnedTopic === slug) pinnedTopic = ''; };
 }
 const directoryProgress = writable({loading:false,coverage:false});
 let checkDirectoryMembers: ((keys: string[])=>void) | undefined;

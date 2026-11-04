@@ -22,24 +22,25 @@ test('a shared hashtagged reply reopens at its canonical note URL and legacy lin
   } finally {relay.close();}
   const path='/post/'+noteEncode(reply.id);
   const postPath='/post/'+noteEncode(original.id);
-  await page.goto('/r/permalinks');
+  await page.goto('/t/permalinks');
   const card=page.locator('article').filter({hasText:text});
   await expect(card).toBeVisible();
   await expect(card.getByRole('link',{name:'Reply to discussion'})).toHaveAttribute('href',postPath);
-  await expect(card.getByRole('time').locator('..')).toHaveAttribute('href',path+'?r=permalinks');
+  await expect(card.getByRole('time').locator('..')).toHaveAttribute('href',path+'?t=permalinks');
   await card.getByRole('button',{name:'Copy post link'}).click();
-  const expected=new URL(path+'?r=permalinks',baseURL).href;
+  const expected=new URL(path+'?t=permalinks',baseURL).href;
   await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(expected);
   const reopened=await context.newPage();
   try {
     await reopened.goto(await page.evaluate(()=>navigator.clipboard.readText()));
     await expect(reopened.locator('article').first()).toContainText(text);
-    await expect(reopened.locator('.back-link').first()).toHaveAttribute('href','/r/permalinks');
+    await expect(reopened.locator('.back-link').first()).toHaveAttribute('href','/t/permalinks');
     await expect(reopened.getByRole('link',{name:'View original discussion'})).toHaveAttribute('href',postPath);
     const suffix='?r=permalinks&view=compact#context';
     for(const old of [reply.id.toUpperCase(),neventEncode({id:reply.id,relays:['wss://example.org']})]) {
       await reopened.goto('/post/'+old+suffix);
       await expect(reopened).toHaveURL(new URL(path+suffix,baseURL).href);
+      await expect(reopened.locator('.back-link').first()).toHaveAttribute('href','/t/permalinks');
       await expect(reopened.locator('article').first()).toContainText(text);
     }
     await reopened.goto('/post/'+noteEncode(original.id)+'/unexpected');

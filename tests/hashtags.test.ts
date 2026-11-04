@@ -11,12 +11,12 @@ test('hashtag text, links and signed tags agree without exposing URL fragments',
   assert.deepEqual([...contentTopics(text)],tags);
   assert.deepEqual([...new Set(noteParts(text,[]).flatMap(p=>p.topic || []))],tags);
   assert.equal(hashtagParts(text).map(p=>p.text).join(''),text);
-  assert.equal(topicPath('海辺'),'/r/%E6%B5%B7%E8%BE%BA');
+  assert.equal(topicPath('海辺'),'/t/%E6%B5%B7%E8%BE%BA');
   assert.deepEqual(topicTags('art',text).map(t=>t[1]),['art','café','海辺','coastal-art']);
   assert.deepEqual([...contentTopics('#'+ 'a'.repeat(49))],[]);
 });
 
-test('written hashtags preserve Nostr community order, explicit address and threading', () => {
+test('written hashtags preserve topic order and threading without community ownership', () => {
   const author=generateSecretKey(), pubkey=getPublicKey(author);
   const sign=(draft:ReturnType<typeof postDraft> | ReturnType<typeof commentDraft>)=>asPost(finalizeEvent({...draft,created_at:123},author))!;
   let root=sign(postDraft({topic:'mostro',title:'Using #Bitcoin',body:'Trade with #Mostro and #Lightning.'}));
@@ -28,7 +28,16 @@ test('written hashtags preserve Nostr community order, explicit address and thre
   const address='34550:'+pubkey+':mostro';
   root=asPost(finalizeEvent({kind:1,created_at:124,content:'About #Bitcoin',tags:[['a',address]]},author))!;
   const scoped=sign(commentDraft(root,'#Bitcoin'));
-  assert.equal(matchesTopic(scoped,'bitcoin'),false); assert.ok(matchesTopic(scoped,'mostro'));
+  assert.ok(matchesTopic(scoped,'bitcoin')); assert.equal(matchesTopic(scoped,'mostro'),false);
+  assert.ok(scoped.event.tags.some(tag=>tag[0]==='a' && tag[1]===address));
   const unsignedTag=asPost(finalizeEvent({kind:1,created_at:125,content:'Some #music',tags:[]},author))!;
   assert.ok(matchesTopic(unsignedTag,'music'));
+});
+
+test('choosing a topic adds a signed tag without inserting a visible hashtag', () => {
+  const draft=postDraft({topic:'Gardening',title:'Winter seedlings',body:'What are you growing?'});
+  assert.deepEqual(draft.tags.filter(tag=>tag[0]==='t'),[['t','gardening']]);
+  assert.equal(draft.content,'Winter seedlings\n\nWhat are you growing?');
+  const post=asPost(finalizeEvent({...draft,created_at:123},generateSecretKey()))!;
+  assert.ok(matchesTopic(post,'gardening'));
 });

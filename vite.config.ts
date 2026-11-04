@@ -19,7 +19,7 @@ export default defineConfig({
       registerType: 'prompt',
       manifest: {
         id: '/', name: 'Nostreddit', short_name: 'Nostreddit',
-        description: 'Community discussions on Nostr',
+        description: 'Topic discussions on Nostr',
         lang: 'en', scope: '/', start_url: '/', display: 'standalone',
         background_color: '#f5f5ee', theme_color: '#163f31',
         icons: [

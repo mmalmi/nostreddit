@@ -27,7 +27,7 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
   test(device+' can publish a multi-tag discussion and browse hashtags in its headline, body, and replies',async({page,context},info)=>{
     await allowFixtureAuthors(context);
     await page.setViewportSize({width,height});
-    await page.goto('/r/mostro');
+    await page.goto('/t/mostro');
     await page.getByRole('button',{name:'Create post',exact:true}).first().click();
     await page.getByRole('button',{name:'Create profile',exact:true}).click();
     const headlineTag='Tides-'+device, bodyTag='Sunrise-'+device, replyTag='Waterline-'+device;
@@ -44,15 +44,15 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
     await expect.poll(async()=>(await published(pointer.data))?.tags.filter(t=>t[0]==='t').map(t=>t[1])).toEqual(expected);
 
     await page.getByRole('heading',{name:title}).getByRole('link',{name:'#'+headlineTag}).click();
-    await expect(page).toHaveURL(new RegExp('/r/'+headlineTag.toLowerCase()+'$'));
+    await expect(page).toHaveURL(new RegExp('/t/'+headlineTag.toLowerCase()+'$'));
     const card=page.locator('article').filter({has:page.getByRole('heading',{name:title})});
-    await expect(card.locator('.community-link')).toHaveText('r/'+headlineTag.toLowerCase());
+    await expect(card.locator('.topic-link')).toHaveText('t/'+headlineTag.toLowerCase());
     await card.getByRole('link',{name:'#'+bodyTag,exact:true}).first().click();
     const fromTag=bodyTag.toLowerCase();
-    await expect(page).toHaveURL(new RegExp('/r/'+fromTag+'$'));
+    await expect(page).toHaveURL(new RegExp('/t/'+fromTag+'$'));
     await card.locator('.stamp').first().click();
-    await expect(page).toHaveURL(new RegExp('/post/'+identifier+'\\?r='+fromTag+'$'));
-    await expect(page.locator('a.back-link').first()).toHaveAttribute('href','/r/'+fromTag);
+    await expect(page).toHaveURL(new RegExp('/post/'+identifier+'\\?t='+fromTag+'$'));
+    await expect(page.locator('a.back-link').first()).toHaveAttribute('href','/t/'+fromTag);
     const reply='The channel is rising. #'+replyTag;
     await page.getByLabel('Your reply').fill(reply);
     await page.getByRole('button',{name:'Post reply',exact:true}).click();
@@ -60,12 +60,12 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
     const id=await row.getAttribute('data-comment-id');
     await expect.poll(async()=>(await published(id!))?.tags.filter(t=>t[0]==='t').map(t=>t[1])).toEqual(['mostro',replyTag.toLowerCase()]);
     await row.getByRole('link',{name:'#'+replyTag,exact:true}).click();
-    await expect(page).toHaveURL(new RegExp('/r/'+replyTag.toLowerCase()+'$'));
+    await expect(page).toHaveURL(new RegExp('/t/'+replyTag.toLowerCase()+'$'));
     const matchingReply=page.locator('article').filter({has:page.getByRole('heading',{name:reply})});
     await expect(matchingReply.getByRole('link',{name:'Reply to discussion'})).toBeVisible();
     await page.screenshot({path:info.outputPath('tagged-reply-'+device+'.png')});
     await matchingReply.locator('.stamp').first().click();
-    await expect(page.locator('a.back-link').first()).toHaveAttribute('href','/r/'+replyTag.toLowerCase());
+    await expect(page.locator('a.back-link').first()).toHaveAttribute('href','/t/'+replyTag.toLowerCase());
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   });
 }

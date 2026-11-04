@@ -19,15 +19,15 @@ test.beforeAll(async()=>{
 });
 test('independent connections outweigh many keys behind one follow; switching modes and offline reload work',async({page,context},info)=>{
   await context.addInitScript(session=>localStorage.setItem('nostreddit.account.v1',JSON.stringify(session)),{pubkey:getPublicKey(viewer),method:'local',nsec:nsecEncode(viewer)});
-  await page.goto('/r/connection-check');
+  await page.goto('/t/connection-check');
   await expect(page.locator('article h2').first()).toHaveText('Independent recommendations');
   const flood=page.locator('article').filter({has:page.getByRole('heading',{name:'Repeated promotion',exact:true})});
   await expect(flood.getByRole('button',{name:'Like',exact:true})).toHaveText('40');
   await page.screenshot({path:info.outputPath('connection-strength.png')});
   await page.goto('/settings');await page.getByLabel('Weight reactions by connection strength').uncheck();
-  await page.goto('/r/connection-check');await expect(page.locator('article h2').first()).toHaveText('Repeated promotion');
+  await page.goto('/t/connection-check');await expect(page.locator('article h2').first()).toHaveText('Repeated promotion');
   await page.goto('/settings');await page.getByLabel('Weight reactions by connection strength').check();
-  await page.goto('/r/connection-check');await expect(page.locator('article h2').first()).toHaveText('Independent recommendations');
+  await page.goto('/t/connection-check');await expect(page.locator('article h2').first()).toHaveText('Independent recommendations');
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
   // The bounded feed snapshot is written in a batch; wait for its durable
   // records before testing a fresh offline page (not merely the DOM cache).
@@ -49,7 +49,7 @@ test('ordinary settings and distance mode do not import the optional ranking mod
   const page=await context.newPage();
   const requests:string[]=[];context.on('request',r=>requests.push(r.url()));
   await page.goto('/settings');await page.getByLabel('Weight reactions by connection strength').uncheck();
-  await page.goto('/r/connection-check');await expect(page.getByRole('button',{name:'Refresh Hot',exact:true})).toBeVisible();
+  await page.goto('/t/connection-check');await expect(page.getByRole('button',{name:'Refresh Hot',exact:true})).toBeVisible();
   expect(requests.filter(url=>/\/ranking-[^/]+\.js/.test(url))).toEqual([]);
   }finally{await context.close();}
 });
