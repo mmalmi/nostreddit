@@ -42,7 +42,7 @@ export default defineConfig({
   build: {rollupOptions:{output:{assetFileNames:assets}}},
   worker: {format:'es', rollupOptions:{output:{
     assetFileNames:assets,
-    entryFileNames: chunk => (chunk.name === 'meaning.worker' ? 'assets/search/' : 'assets/') + '[name]-[hash].js',
+    entryFileNames: chunk => (['meaning.worker','hot.worker'].includes(chunk.name) ? 'assets/search/' : 'assets/') + '[name]-[hash].js',
   }}},
   server: { host: '127.0.0.1', port: 43162, strictPort: true },
   preview: { host: '127.0.0.1', port: 43162, strictPort: true }

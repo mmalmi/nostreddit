@@ -12,6 +12,7 @@ import { cacheOwnEvents, type Change } from './local-writes';
 import { noExpansion, type Expansion } from './discovery/discussions';
 import { relayUrls, type ContactQuery, type Request, type Response } from './relayTypes';
 import { readLocal, writeLocal } from './ui';
+import type { HotSignal } from './hot';
 export { relayUrls, pendingWrites, outboxReady, outboxError, syncing, type Post };
 
 export interface Profile {name:string; about:string; picture:string; banner:string; website:string; lud16:string; lud06:string; nip05:string; display_name:string}
@@ -21,6 +22,7 @@ const rawPosts = writable<Post[]>([]), rawComments = writable<Post[]>([]);
 const rawProfiles = writable<Record<string,Profile>>({});
 const rawLikes = writable<Record<string,string[]>>({});
 const rawReceipts = writable<Record<string,NostrEvent[]>>({});
+const rawHotSignals = writable<HotSignal[]>([]);
 export const follows = writable<string[]>([]), mutes = writable<string[]>([]);
 export const status = writable<'loading'|'live'|'offline'>('loading');
 const rawNotifications = writable<NostrEvent[]>([]);
@@ -98,6 +100,11 @@ export const receipts = derived([rawReceipts, canSeeAuthor], ([items, allowed]) 
     const key = zapAuthor(event);
     return key !== null && allowed(key);
   })])) as Record<string,NostrEvent[]>);
+export const hotSignals = derived([rawHotSignals,comments,canSeeAuthor], ([signals,replies,allowed]) => [
+  ...signals.filter(signal=>allowed(signal.actor)),
+  ...replies.flatMap(reply=>[...new Set([reply.root,reply.parent])].filter(Boolean)
+    .map(target=>({target,actor:reply.pubkey,at:reply.created_at,kind:'reply' as const}))),
+]);
 export const hiddenPostIds = derived([rawPosts, rawComments, canSeeAuthor], ([roots, replies, allowed]) =>
   new Set([...roots, ...replies].filter(post => !allowed(post.pubkey)).map(post => post.id)));
 
@@ -160,7 +167,7 @@ function apply(events:NostrEvent[]) {
       if (byId.size !== previous.length) rawNotifications.set([...byId.values()].sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id)).slice(0,100));
     }
   }
-  let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, receiptsDirty = false;
+  let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, receiptsDirty = false, hotDirty = false;
   const ps = get(rawProfiles), ls = get(rawLikes), rs = get(rawReceipts);
   for (const event of events) {
     if (event.kind === 3 || event.kind === 10000) observeGraphEvent(event);
@@ -208,6 +215,7 @@ function apply(events:NostrEvent[]) {
         const entries = reactions.get(target) || new Map<string,NostrEvent>();
         if (!entries.has(event.id) && entries.size < 1000) {
           entries.set(event.id,event); reactions.set(target,entries); reactionTargets.set(event.id,target);
+          hotDirty = true;
           reactionIds.update(count => count+1);
           if (!ls[target]?.includes(event.pubkey)) { ls[target] = [...(ls[target] || []),event.pubkey]; likesDirty = true; }
         }
@@ -254,6 +262,18 @@ function apply(events:NostrEvent[]) {
     rawLikes.set(ls);
   }
   if (receiptsDirty) { trimRecord(rs,600); rawReceipts.set(rs); }
+  if (likesDirty || receiptsDirty || hotDirty) {
+    const signals:HotSignal[]=[];
+    for(const [target,entries] of reactions) {
+      const people=new Map<string,number>();
+      for(const event of entries.values()) people.set(event.pubkey,Math.min(people.get(event.pubkey)??Infinity,event.created_at));
+      for(const [actor,at] of people) signals.push({target,actor,at,kind:'like'});
+    }
+    for(const [target,events] of Object.entries(rs)) for(const event of events) {
+      const actor=zapAuthor(event);if(actor) signals.push({target,actor,at:event.created_at,kind:'zap'});
+    }
+    rawHotSignals.set(signals);
+  }
 }
 
 type Interest = Extract<Request,{type:'watch'}>;
@@ -656,6 +676,43 @@ export function observe(ids:string[]) {
     },220);
   });
   return () => { stop(); clearTimeout(timer); stats(); closeDeletions(); };
+}
+// Fetch engagement independently of the ranked viewport. Otherwise the first
+// visible posts monopolize evidence and a popular post lower down never rises.
+export function createHotObserver() {
+  let scope='',pending:string[]=[],seen=new Set<string>(),stops:(()=>void)[]=[];
+  let discovery=false,stopSignals=noop;
+  const fetched=new Set<string>();
+  let timer:ReturnType<typeof setTimeout>;
+  const reset=()=>{clearTimeout(timer);stopSignals();stopSignals=noop;stops.forEach(stop=>stop());stops=[];seen.clear();fetched.clear();pending=[];scope='';discovery=false;};
+  const flush=()=>{
+    const ids=pending.filter(id=>!seen.has(id)).slice(0,160-seen.size);
+    for(let i=0;i<ids.length;i+=32) {
+      const batch=ids.slice(i,i+32);batch.forEach(id=>seen.add(id));
+      stops.push(watch([{kinds:[7,9735,1,1111,5],'#e':batch,limit:128},{kinds:[1111],'#E':batch,limit:64}]));
+    }
+  };
+  return {reset,update(ids:string[],key:string,actors:string[]=[]){
+    if(!key){if(scope)reset();return;}
+    if(key!==scope){reset();scope=key;}
+    if(!discovery && key.startsWith('home:') && actors.length) {
+      discovery=true;
+      const authors=actors.filter(get(canSeeAuthor)).slice(0,64);
+      if(authors.length) {
+        const since=Math.floor(Date.now()/1000)-48*3600;
+        stops.push(watch([{kinds:[7],authors,since,limit:180}]));
+        stopSignals=rawHotSignals.subscribe(signals=>{
+          const allowed=get(canSeeAuthor);
+          const ids=[...new Set(signals.filter(signal=>signal.kind==='like'&&signal.at>=since&&authors.includes(signal.actor)&&allowed(signal.actor))
+            .map(signal=>signal.target))].filter(id=>!roots.has(id)&&!replies.has(id)&&!fetched.has(id)).slice(0,48-fetched.size);
+          if(ids.length){ids.forEach(id=>fetched.add(id));stops.push(watch([{ids,limit:ids.length}]))}
+        });
+      }
+    }
+    pending=[...new Set(ids)].filter(id=>hexKey.test(id)).slice(0,160);
+    // Coalesce incoming relay batches into bounded one-shot reads.
+    if(pending.some(id=>!seen.has(id))&&seen.size<160){clearTimeout(timer);timer=setTimeout(flush,350);}
+  }};
 }
 function remember(session:Account, sk?:Uint8Array) {
   try { localStorage.setItem(keyStorage,JSON.stringify({...session,...(sk ? {nsec:nsecEncode(sk)} : {})})); }

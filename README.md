@@ -12,6 +12,10 @@
 
 Settings → Image proxy controls how remote images and video thumbnails load. The Iris proxy is enabled by default. You can disable fallback to the original image host or configure your own proxy servers and signing settings.
 
+Hot ranks recent activity from distinct people, with more weight for people nearby in the social graph. Old activity fades, repeated replies and self-reactions cannot manufacture popularity, and zap amounts do not buy position. It mixes authors and leaves one in five places for a fresh unanswered post when one is available. Joined communities, saved topics and recently opened posts help personalize the order. New and Top remain available. Once you scroll into the feed, incoming activity preserves the reading order; **Show updated posts** applies the new ranking.
+
+Settings → Hot feed offers optional local AI personalization. Enter interests, or leave them blank to use joined communities, saved posts or the current topic. The existing pinned MiniLM model boosts matching meanings without removing discussions or overriding community membership and graph settings. Social ranking appears immediately and remains the default. AI runs in one worker on at most 48 candidates at a time, with a 72-document budget per feed visit, and releases the runtime after idle. Hidden tabs stop inference. Three bounded sets of meaning scores stay on the device for fast offline reuse. Interests and post text are never sent to an AI provider.
+
 Appearance follows your device by default. In Settings → Appearance, you can switch to Light or Dark and choose a Forest, Ocean, Plum, or Ember palette. Both choices are saved in this browser.
 
 [Settings](https://nostreddit.iris.to/settings) lets guests and signed-in readers choose their feed order, image previews, and social graph filters. The default maximum is five follow steps. Choose Unlimited to include distant profiles, or turn off community mute filtering. Your own mutes still apply. The same rules apply to discussions, comments, profiles, reactions, notifications, and zap senders.
@@ -33,6 +37,8 @@ Open a photo to expand it. Small public photos opened from hosts that permit cac
 Click a hashtag in a headline, post, or reply to open its topic feed. Publishing signs each distinct hashtag as a lowercase Nostr `t` tag, with the chosen community first. A tagged reply links to its own branch. Public hashtag notes can appear in multiple matching topics. In a topic feed, the card links to the topic being browsed. Explicit community addresses take precedence over hashtags. A shared hashtag does not confer moderator control over other clients. Saved posts, profile keys, joined topics, and drafts belong to the current browser.
 
 Hashtree attachments accept Iris-style `htree://nhash…/filename` links, equivalent bare nhash paths and Iris Drive fragment links. Opening an attachment fetches hash-addressed blocks from the Iris Blossom readers, checks their SHA-256 hashes, and decrypts them on the device. Verified wire blocks are retained for offline revisits within an 80 MiB / 512-block cache. Inline reads are limited to 64 MiB of plaintext; larger items can be opened in Iris Drive.
+
+Hot reads engagement for up to 160 eligible posts independently of which cards are on screen. On Home it also reads recent likes from up to 64 follows (or nearby public-graph authors for guests), fetching at most 48 referenced discussions. These are bounded history requests, with no idle polling. All authors and activity still pass through the current social-graph policy. Counts represent the events available from connected relays, not a complete network-wide total.
 
 The reader uses the vendored `@hashtree/core` 0.4.0 archive from [Hashtree TS runtime v0.5.27](https://github.com/mmalmi/hashtree/releases/tag/hashtree-ts-runtime-v0.5.27), the same SHA-512 pin as Iris Social. The build verifies the archive; the frozen lockfile pins its MessagePack, hashing and bech32 dependencies.
 

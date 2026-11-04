@@ -14,6 +14,8 @@
     unreadNotificationIds,
     readPostNotifications,
     likes,
+    hotSignals,
+    createHotObserver,
     follows,
     mutes,
     mute,
@@ -61,6 +63,10 @@
   import GraphSettings from './components/GraphSettings.svelte';
   import AppearanceSettings from './components/AppearanceSettings.svelte';
   import ImageProxySettings from './components/ImageProxySettings.svelte';
+  import HotSettings from './components/HotSettings.svelte';
+  import { hotPreferences, watchHotPreferences } from './lib/hot-preferences';
+  import { rankHot, hotQuery, hotCandidates } from './lib/hot';
+  import { createHotSession } from './lib/hot-session';
   import { watchAppearance } from './lib/appearance';
   import AccountPanel from './components/AccountPanel.svelte';
   import ProfileBackup from './components/ProfileBackup.svelte';
@@ -163,6 +169,10 @@
     dialogPrev: HTMLElement | null = null;
   let directoryFilter = '';
   const assistance = createSearchSession();
+  const hotAssistance = createHotSession(), hotObserver = createHotObserver();
+  let seenHot = readLocal<string[]>('seenHot', []);
+  let heldHot: string[] | undefined;
+  let hotRefresh = 0;
   let related = readLocal<boolean>('relatedSearch', true);
   let searchOrder = 'Best match';
   let remoteIds = new Set<string>();
@@ -192,6 +202,10 @@
       searchRun++; searching = false; searched = false; searchMessage = ''; remoteIds = new Set(); clearRelaySearch();
       searchOrder = 'Best match';
       route = next;
+      heldHot = undefined;
+      if(next.page === 'thread' && !seenHot.includes(next.value)) {
+        seenHot = [...seenHot, next.value].slice(-500); writeLocal('seenHot', seenHot);
+      }
       menu = false;
       limit = 24;
       directoryFilter = '';
@@ -303,6 +317,7 @@
   }
   onMount(() => {
     const stopAppearance = watchAppearance();
+    const stopHotPreferences = watchHotPreferences();
     const stop = start();
     mounted = true;
     document.addEventListener('click', intercept);
@@ -310,6 +325,7 @@
     document.addEventListener('keydown', keypress);
     return () => {
       stopAppearance();
+      stopHotPreferences(); hotAssistance.reset(); hotObserver.reset();
       assistance.reset(); clearRelaySearch();
       stop();
       activeCleanup?.();
@@ -352,49 +368,45 @@
     if (route.page === 'search') return (matchScores.get(p.id) ?? 0) > 0;
     return true;
   });
-  // Score only the bounded set already in the local event window.
   $: replyCounts = $comments.reduce<Record<string, number>>((m, c) => {
     m[c.root] = (m[c.root] || 0) + 1;
     return m;
   }, {});
-  $: scored = candidates
-    .filter(
-      (p) =>
-        (route.page === 'profile' ||
-          (!$graphInfo[p.pubkey]?.muted && !$mutes.includes(p.pubkey))) &&
-        (route.page !== 'network' ||
-          ($graphInfo[p.pubkey]?.distance ?? 99) <= 2),
-    )
-    .map((p) => {
-      const votes = ($likes[p.id]?.length || 0) + (replyCounts[p.id] || 0);
-      const distance = $graphInfo[p.pubkey]?.distance;
-      const boost =
-        ($follows.includes(p.pubkey)
-          ? 4
-          : distance != null && distance <= 2
-            ? 2
-            : 0) +
-        (joined.includes(p.topic) ? 1 : 0) +
-        (p.event.tags.some((t) => t[0] === 'subject') ? 2 : 0);
-      const hours = Math.max(0, (Date.now() / 1000 - p.created_at) / 3600);
-      return {
-        p,
-        score:
-          activeOrder === 'Best match' ? matchScores.get(p.id) ?? 0 :
-          activeOrder === 'New'
-            ? p.created_at
-            : activeOrder === 'Top'
-              ? votes
-              : (votes + boost + 1) / Math.pow(hours + 4, 0.85),
-      };
-    })
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        b.p.created_at - a.p.created_at ||
-        a.p.id.localeCompare(b.p.id),
-    );
-  $: visible = scored.slice(0, limit).map((x) => x.p);
+  $: allowedCandidates = candidates.filter(p =>
+    (route.page === 'profile' || (!$graphInfo[p.pubkey]?.muted && !$mutes.includes(p.pubkey))) &&
+    (route.page !== 'network' || ($graphInfo[p.pubkey]?.distance ?? 99) <= 2));
+  $: hotActive = activeOrder === 'Hot' && ['home','topic','following','network','saved','profile','search'].includes(route.page) && !route.connections;
+  $: hotScope = hotActive ? `${route.page}:${route.value}:${$account?.pubkey || 'guest'}:${hotRefresh}` : '';
+  $: hotOptions = {now:Date.now()/1000,signals:$hotSignals,follows:new Set($follows),joined,saved:visibleSaved,
+    topic:route.page === 'topic' ? route.value : '', seen:new Set(seenHot),
+    distance:(key:string)=>$graphInfo[key]?.distance};
+  $: baseHot = hotActive ? rankHot(allowedCandidates,hotOptions) : [];
+  $: discoveryActors = $follows.length ? $follows : Object.keys($graphInfo).filter(key=>$graphInfo[key].distance===1);
+  $: if(mounted) hotObserver.update(allowedCandidates.map(p=>p.id),pageVisible ? hotScope : '',discoveryActors);
+  $: hotInterest = hotQuery(route.page === 'topic' ? route.value : '', $hotPreferences.interests,joined,visibleSaved);
+  $: aiHotActive = hotActive && ['home','topic'].includes(route.page) && pageVisible && $hotPreferences.ai;
+  $: aiCandidates = aiHotActive ? hotCandidates(allowedCandidates,baseHot,hotInterest) : [];
+  $: hotAssistance.update(aiHotActive ? hotInterest : '',aiCandidates,hotScope);
+  $: ranked = hotActive ? ($hotAssistance.scores.size ? rankHot(allowedCandidates,{...hotOptions,ai:$hotAssistance.scores}) : baseHot)
+    : [...allowedCandidates].sort((a,b) => {
+      const score = (p:Post) => activeOrder === 'Best match' ? matchScores.get(p.id) ?? 0 : activeOrder === 'New' ? p.created_at
+        : ($likes[p.id]?.length || 0) + (replyCounts[p.id] || 0);
+      return score(b)-score(a) || b.created_at-a.created_at || a.id.localeCompare(b.id);
+    });
+  $: rankedById = new Map(ranked.map(p=>[p.id,p]));
+  $: heldIds = new Set(heldHot);
+  $: ordered = hotActive && heldHot ? [
+    ...heldHot.map(id=>rankedById.get(id)).filter((p):p is Post=>Boolean(p)),
+    ...ranked.filter(p=>!heldIds.has(p.id)),
+  ] : ranked;
+  $: hotChanged = hotActive && heldHot && ranked.slice(0,limit).some((p,i)=>ordered[i]?.id !== p.id);
+  $: visible = ordered.slice(0,limit);
+  function holdHotOrder() {
+    if(hotActive && !heldHot && window.scrollY > 160) heldHot=ranked.map(p=>p.id);
+  }
+  function refreshHot() {
+    heldHot=undefined;hotOptions={...hotOptions,now:Date.now()/1000};hotRefresh++;window.scrollTo({top:0,behavior:'instant'});
+  }
   $: if (mounted && route.page !== 'thread')
     observeAuthors([
       ...(route.page === 'profile' ? [route.value] : []),
@@ -544,6 +556,7 @@
     }
   }
   function changeOrder(name: string) {
+    heldHot = undefined;
     sorting = name;
     writeLocal('sort', name);
   }
@@ -558,6 +571,7 @@
   }
 </script>
 
+<svelte:window onscroll={holdHotOrder}/>
 <svelte:document onvisibilitychange={() => pageVisible = document.visibilityState === 'visible'} />
 
 <header class="topbar">
@@ -697,6 +711,7 @@
           writeLocal('showPreviews', showPreviews);
         }} /></label>
       </section>
+      <HotSettings/>
       <ImageProxySettings/>
       <GraphSettings/>
       {#if $account}<Outbox/>{/if}
@@ -847,6 +862,15 @@
         </div>
         {/if}
       </div>
+      {#if hotActive && (route.page === 'home' || route.page === 'topic')}
+        <div class="hot-controls">
+          <a href="/settings" class="hot-status">{$hotPreferences.ai && hotInterest
+            ? $hotAssistance.status === 'loading' ? 'Personalizing…' : $hotAssistance.status === 'ready' ? 'Personalized on this device'
+              : $hotAssistance.status === 'unavailable' ? 'AI unavailable · social ranking' : 'Hot preferences'
+            : 'Hot preferences'}</a>
+          <button onclick={refreshHot}>{hotChanged ? 'Show updated posts' : 'Refresh Hot'}</button>
+        </div>
+      {/if}
       <section class="feed-list" aria-label="Discussions">
         {#each visible as p (p.id)}<Card
             contextTopic={route.page === 'topic' ? route.value : undefined}
@@ -918,7 +942,7 @@
             {/if}
           </div>{/each}
       </section>
-      {#if scored.length > limit}<button
+      {#if ordered.length > limit}<button
           class="load-more outline"
           onclick={() => (limit += 24)}
           >Load more discussions <Icon name="down" size={15} /></button
@@ -1014,3 +1038,9 @@
       onclick={() => (toast = '')}><Icon name="close" size={14} /></button
     >
   </div>{/if}
+
+<style>
+  .hot-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 12px;font-size:12px;color:var(--muted)}
+  .hot-status{color:var(--muted)}
+  .hot-controls button{font-size:12px;color:var(--accent)}
+</style>
