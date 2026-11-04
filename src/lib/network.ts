@@ -203,13 +203,19 @@ function watch(filters:NostrFilter[], live = false) {
   interests.set(id,interest);
   return () => { interests.delete(id); worker?.postMessage({type:'close',id} satisfies Request); };
 }
-function request(payload: {type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}) {
+function request(payload: {type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}|{type:'search';query:string}) {
   return new Promise<NostrEvent[]>((resolve,reject) => {
     const id = ++seq;
     let owner:Worker;
     try { owner = connect(); } catch { reject(new Error('Nostr connections are unavailable in this browser.')); return; }
     waiting.set(id,{resolve,reject}); owner.postMessage({...payload,id});
   });
+}
+
+export async function searchRelays(query: string): Promise<Post[]> {
+  const events = await request({type:'search',query});
+  apply(events);
+  return events.map(asPost).filter((post): post is Post => !!post && !post.parent);
 }
 
 export const homeTopics = ['nostr','bitcoin','technology','art','photography','music','science','gaming','books','asknostr','memes','general'];

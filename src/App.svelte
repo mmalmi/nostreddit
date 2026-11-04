@@ -16,6 +16,7 @@
     start,
     loadTopic,
     loadThread,
+    searchRelays,
     loadProfile,
     observe,
     publishComment,
@@ -25,6 +26,7 @@
     relayUrls,
     type Post,
   } from './lib/network';
+  import { checkSearch, searchTarget } from './lib/search';
   import { observeAuthors, graphInfo, graphStatus } from './lib/graph';
   import {
     topics,
@@ -119,9 +121,28 @@
     mounted = false,
     dialogPrev: HTMLElement | null = null;
   let directoryFilter = '';
+  let remotePosts: Post[] = [];
+  let searchRun = 0;
+  let searching = false, searchMessage = '';
+  async function expandSearch() {
+    const run = ++searchRun;
+    searching = true;
+    searchMessage = '';
+    try {
+      const found = await searchRelays(checkSearch(route.value));
+      if (run !== searchRun) return;
+      remotePosts = found;
+      searchMessage = found.length ? `Found ${found.length} matching discussion${found.length === 1 ? '' : 's'} on relays.` : 'Connected relays returned no matching discussions.';
+    } catch (error) {
+      if (run === searchRun) searchMessage = error instanceof Error ? error.message : 'Relay search failed.';
+    } finally {
+      if (run === searchRun) searching = false;
+    }
+  }
   function syncRoute() {
     const next = readRoute();
     if (next.page !== route.page || next.value !== route.value) {
+      searchRun++; searching = false; searchMessage = ''; remotePosts = [];
       route = next;
       menu = false;
       limit = 24;
@@ -199,7 +220,10 @@
       go('/topics');
       return;
     }
-    go('/search?q=' + encodeURIComponent(search.trim()));
+    const direct = searchTarget(search);
+    if (direct) return go(direct);
+    if (/nsec1[0-9a-z]+/i.test(search)) { search = ''; notify('Use secret keys only in the sign-in dialog.'); return; }
+    go('/search?q=' + encodeURIComponent(search.trim().slice(0,128)));
   }
   function keypress(e: KeyboardEvent) {
     if (
@@ -251,7 +275,8 @@
   $: graphBadge = $graphInfo[route.value];
   $: profName = profile?.display_name || profile?.name || shortKey(route.value);
   $: topic = topicInfo(route.value);
-  $: source = route.page === 'saved' ? saved : $posts;
+  $: source = route.page === 'saved' ? saved : route.page === 'search' && remotePosts.length
+    ? [...new Map([...$posts,...remotePosts].map(post => [post.id,post])).values()] : $posts;
   $: candidates = source.filter((p) => {
     if (route.page === 'topic')
       return (
@@ -268,6 +293,7 @@
         p.title,
         p.body,
         p.topic,
+        ...p.event.tags.filter(t => t[0] === 't').map(t => t[1]),
         $profiles[p.pubkey]?.name,
         $profiles[p.pubkey]?.display_name,
       ]
@@ -848,6 +874,10 @@
           </div>
         </section>{/if}
       {#if route.page === 'search'}
+        <div class="relay-search">
+          <button class="outline compact" disabled={searching} onclick={expandSearch}><Icon name="search" size={15}/>{searching ? 'Searching…' : 'Search relays'}</button>
+          <small role="status">{searchMessage || 'Send this query to public search relays to find more discussions.'}</small>
+        </div>
         {#if profileKey(route.value)}<a
             class="search-profile"
             href={'/u/' + profileKey(route.value)}

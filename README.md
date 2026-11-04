@@ -5,7 +5,7 @@
 ## Using the forum
 
 - Open a community such as [/r/photography](https://nostreddit.iris.to/r/photography). Public hashtagged notes appear alongside discussions created here. New topic names work immediately. Matching NIP-72 community definitions can also supply scoped discussions and NIP-22 replies.
-- Browse Hot, New, Top, Following, and In network. Search the loaded discussions, open a Nostr profile, or read replies, mentions and likes in Notifications. Saved posts and joined topics are stored in the browser.
+- Browse Hot, New, Top, Following, and In network. Search loaded discussions and optionally query public relays. Paste an npub, nprofile, note, or nevent to open it directly. Open a Nostr profile, or read replies, mentions and likes in Notifications. Saved posts and joined topics are stored in the browser.
 - Sign in with a NIP-07 extension, import an nsec, or create a browser-local key. Back up a generated key before signing out. Others can read your posts without using Nostreddit.
 - Text and link posts are signed kind 1 events with a topic and subject. Replies preserve thread references. Likes publish kind 7 events, and undo issues a deletion request. Public follows and mutes preserve other entries on your lists. A successful write requires relay acknowledgement.
 - Zap a participant who has a Lightning address or LNURL set on their profile. Use a browser wallet or take the invoice to another wallet.
@@ -14,7 +14,7 @@
 
 A dedicated worker runs `nostr-pubsub` for bounded relay subscriptions, verified event ingestion and acknowledged writes. IndexedDB keeps a small snapshot for subsequent visits. After the first successful online visit a service worker caches the public app shell, so previously loaded discussions can be opened offline. A signed starter feed provides an immediate first visit while relays connect. The bundled records came from public relays and retain their original authors, IDs, timestamps and signatures.
 
-A separate worker loads the `nostr-social-graph` snapshot once, uses the guest or signed-in user's graph root, and calculates follow distance and mutes. The 1,941,939-byte graph comes from Iris Social commit `42aff67aa101860437b21c9cddc688dfc4bc04d7`. Its SHA-256 and projection details are in `public/socialGraphSnapshot.provenance.json`. The build and browser verify the graph digest. The feed and graph workers use bounded requests. Hidden tabs suspend relay connections.
+A separate worker loads the `nostr-social-graph` snapshot once, uses the guest or signed-in user's graph root, and calculates follow distance and mutes. The 1,941,939-byte graph comes from Iris Social commit `42aff67aa101860437b21c9cddc688dfc4bc04d7`. Its SHA-256 and projection details are in `public/socialGraphSnapshot.provenance.json`. The build and browser verify the graph digest. Full-text search contacts relay.ditto.pub and search.nos.today only when the reader selects Search relays. The feed and graph workers use bounded requests. Hidden tabs suspend relay connections.
 
 Public topic streams are hashtag-based. A shared hashtag does not confer moderator control over other clients. Saved posts, profile keys, joined topics, and drafts belong to the current browser.
 

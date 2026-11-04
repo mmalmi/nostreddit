@@ -1,5 +1,6 @@
 import { MemoryEventStore, NostrRuntime, type NostrEvent, type RuntimeSubscription } from 'nostr-pubsub';
-import { relayUrls, testRelays, type Request, type Response } from './relayTypes';
+import { checkSearch } from './search';
+import { relayUrls, searchRelayUrls, testRelays, type Request, type Response } from './relayTypes';
 
 const runtime = new NostrRuntime({
   relays: relayUrls, store: new MemoryEventStore(2300), batchWindowMs: 50,
@@ -117,6 +118,23 @@ self.onmessage = async (message: MessageEvent<Request>) => {
       reply({type: 'result', id: req.id, events: [req.event]});
       return;
     }
+    if (req.type === 'search') {
+      const query = checkSearch(req.query);
+      const result = await runtime.query([{kinds: [1,1111], search: query, limit: 50}], {
+        cache: 'network-only', relays: searchRelayUrls, deadline: Date.now() + 6500, limit: 50,
+      });
+      if (!result.events.length && !result.sources.some(source => source.complete)) {
+        throw new Error('No search relay responded. Your local results are still available.');
+      }
+      // Some relays ignore search. Only surface matches to the submitted terms.
+      const terms = query.toLowerCase().split(/\s+/);
+      const events = result.events.filter(event => {
+        const text = [event.content, ...event.tags.filter(t => ['t','subject','title'].includes(t[0])).map(t => t[1])].join(' ').toLowerCase();
+        return terms.every(term => text.includes(term));
+      });
+      reply({type:'result', id:req.id, events});
+      return;
+    }
     const result = await runtime.query([{ kinds: [req.kind], authors: [req.pubkey], limit: 1 }], {
       cache: 'network-only', deadline: Date.now() + 5500,
     });
@@ -127,7 +145,7 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     reply({type: 'result', id: req.id, events: result.events});
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Relay request failed.';
-    if (req.type === 'latest' || req.type === 'publish')
+    if (req.type === 'latest' || req.type === 'publish' || req.type === 'search')
       reply({type: 'result', id: req.id, events: [], error: message});
   }
 };

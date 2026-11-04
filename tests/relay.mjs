@@ -9,7 +9,8 @@ const secret = generateSecretKey(), now = Math.floor(Date.now()/1000);
 const signed = (kind, content, tags) => finalizeEvent({ kind, content, tags, created_at: now }, secret);
 const records = [
   signed(0, JSON.stringify({name:'Field Observer', about:'Field notes from the coast.'}), []),
-  signed(1, 'Notes from the coast\n\nWhat did you see on the trail this morning?', [['subject','Notes from the coast'],['t','photography']])
+  signed(1, 'Notes from the coast\n\nWhat did you see on the trail this morning?', [['subject','Notes from the coast'],['t','photography']]),
+  signed(1, 'An ephemeris on the archive shelf', [['subject','An ephemeris on the archive shelf'],['t','observatory']])
 ];
 const sessions = new Map();
 const send = (socket, ...parts) => socket.send(JSON.stringify(parts));
