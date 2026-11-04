@@ -411,6 +411,16 @@ export function start() {
     unsub(); localLists(); stopEdges(); stopOutbox(); own(); friends(); ownStop(); stopNotifications(); friendsStop(); home(); shutdown(); active = false;
   };
 }
+// Renew existing discussion subscriptions without disturbing their owners.
+export function refreshFeed() {
+  if (!active || !visible()) return;
+  if (!worker) { connect(); return; }
+  for (const interest of interests.values()) {
+    if (!interest.filters.some(filter => filter.kinds?.some(kind => discussionKinds.includes(kind)))) continue;
+    worker.postMessage({type:'close',id:interest.id} satisfies Request);
+    worker.postMessage(interest);
+  }
+}
 export function loadTopic(topic:string) {
   const slug = topicSlug(topic);
   if (!slug) return noop;

@@ -21,6 +21,7 @@
     mute,
     unlike,
     loadTopic,
+    refreshFeed,
     loadThread,
     searchRelays,
     loadProfile,
@@ -408,6 +409,7 @@
   }
   function refreshHot() {
     heldHot=undefined;hotOptions={...hotOptions,now:Date.now()/1000};hotRefresh++;
+    refreshFeed();
     notify('Hot refreshed');
     window.scrollTo({top:0,behavior:'instant'});
   }
