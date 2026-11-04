@@ -122,7 +122,8 @@ test('guests can widen and restore the same graph limit across home, topic, save
   await expect(page.locator('main')).not.toContainText(outsideTitle);
   await page.goto('/search?q=ephemera');
   await page.getByRole('button',{name:'Search relays',exact:true}).click();
-  await expect(page.locator('.relay-search small')).toContainText(/returned no matching/i);
+  await expect(page.locator('.relay-search small')).toContainText('No matches in this batch. Load more to search older discussions.');
+  await expect(page.getByRole('button',{name:'Load more results',exact:true})).toBeVisible();
   await expect(page.getByRole('heading',{name:outsideTitle,exact:true})).toHaveCount(0);
 });
 
