@@ -427,7 +427,7 @@
     plan.terms.some(term => slug === term || (term.length >= 3 && slug.startsWith(term)))).slice(0,5) : [];
   $: title =
     route.page === 'home'
-      ? 'Discussions'
+      ? 'Home'
       : route.page === 'topic'
         ? 'r/' + route.value
         : route.page === 'following'
@@ -852,13 +852,13 @@
           </div>{/if}
       {/if}
       <div class="feed-heading">
-        {#if route.page === 'home'}<h1>Discussions</h1>{:else}<h2>{route.page === 'profile' ? 'Posts' : 'Discussions'}</h2>{/if}
+        {#if route.page === 'home'}<h1 class="visually-hidden">Home feed</h1>{/if}
         {#if route.page === 'search'}
           <select class="search-order" aria-label="Sort search results" bind:value={searchOrder}>
             {#each ['Best match','New','Top','Hot'] as order}<option value={order}>{order}</option>{/each}
           </select>
         {:else}
-        <div class="sort-bar" aria-label="Sort discussions">
+        <div class="sort-bar" role="group" aria-label="Sort discussions">
           {#each orders as o}<button
               class:selected={sorting === o.name}
               aria-pressed={sorting === o.name}
@@ -867,6 +867,16 @@
             >{/each}
         </div>
         {/if}
+        <button
+          class="preview-toggle"
+          aria-label="Show media previews"
+          aria-pressed={showPreviews}
+          title={showPreviews ? 'Hide media previews' : 'Show media previews'}
+          onclick={() => {
+            showPreviews = !showPreviews;
+            writeLocal('showPreviews', showPreviews);
+          }}
+        ><Icon name="image" size={16} /><span>Previews</span></button>
       </div>
       {#if hotActive && (route.page === 'home' || route.page === 'topic')}
         <div class="hot-controls">

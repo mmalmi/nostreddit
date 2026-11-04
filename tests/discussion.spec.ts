@@ -142,10 +142,15 @@ test('a guest can expand a local search to relays and open a Nostr event identif
 });
 
 
-test('mobile guests can open Settings and persist their feed preferences', async ({page}) => {
+test('mobile guests can open Settings and persist their feed preferences', async ({page}, testInfo) => {
   await page.setViewportSize({width:390,height:844});
   await page.goto('/');
-  await expect(page.locator('main').getByRole('heading').first()).toHaveText('Discussions');
+  await expect(page.getByRole('heading',{name:'Home feed',level:1})).toBeAttached();
+  await expect(page).toHaveTitle('Home · Nostreddit');
+  const previews = page.getByRole('button',{name:'Show media previews',exact:true});
+  await expect(previews).toHaveAttribute('aria-pressed','true');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({path:testInfo.outputPath('feed-toolbar-mobile.png')});
   await expect(page.getByRole('heading',{name:'About Nostreddit'})).toHaveCount(0);
   await page.getByRole('button',{name:'Toggle navigation'}).click();
   await page.getByRole('link',{name:'Settings',exact:true}).click();
@@ -158,8 +163,14 @@ test('mobile guests can open Settings and persist their feed preferences', async
   await expect(page.getByLabel('Show media previews in feeds')).not.toBeChecked();
   await page.goto('/');
   await expect(page.getByRole('button',{name:'New',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(previews).toHaveAttribute('aria-pressed','false');
   await expect(page.locator('article').first()).toBeVisible();
   await expect(page.locator('.post-photo')).toHaveCount(0);
+  await previews.focus();
+  await page.keyboard.press('Space');
+  await expect(previews).toHaveAttribute('aria-pressed','true');
+  await page.reload();
+  await expect(previews).toHaveAttribute('aria-pressed','true');
 });
 
 test('pasting an existing secret key into the name prompt opens private sign-in', async ({page}) => {

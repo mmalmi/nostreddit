@@ -436,8 +436,18 @@ main {
   gap: 10px;
   margin: 24px 0 13px;
 }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 main > .feed-heading:first-child { margin-top: 0; }
-.feed-heading :is(h1, h2),
 .section-title h2 {
   font: 700 23px/1.2 var(--serif);
   letter-spacing: -0.8px;
@@ -456,7 +466,8 @@ main > .feed-heading:first-child { margin-top: 0; }
   align-items: center;
   gap: 5px;
   border-radius: 5px;
-  padding: 4px 9px;
+  min-height: 36px;
+  padding: 6px 10px;
   color: var(--muted);
   font-weight: 600;
   font-size: 12px;
@@ -471,6 +482,26 @@ main > .feed-heading:first-child { margin-top: 0; }
 }
 .sort-bar button.selected svg {
   color: var(--gold);
+}
+.preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.preview-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--surface);
+}
+.preview-toggle:hover {
+  color: var(--accent);
+  border-color: var(--strong-line);
 }
 .feed-list {
   display: flex;
@@ -1196,9 +1227,6 @@ main > .feed-heading:first-child { margin-top: 0; }
   .feed-heading {
     margin: 18px 0 10px;
   }
-  .feed-heading :is(h1, h2) {
-    font-size: 21px;
-  }
   .post-card {
     padding: 14px 15px;
   }
@@ -1274,9 +1302,6 @@ main > .feed-heading:first-child { margin-top: 0; }
   .sort-bar button {
     padding: 4px 7px;
     font-size: 11px;
-  }
-  .feed-heading :is(h1, h2) {
-    font-size: 20px;
   }
   .byline {
     font-size: 10.5px;

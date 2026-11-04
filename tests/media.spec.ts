@@ -44,6 +44,15 @@ test('photos expand, native video stays idle, and a provider is contacted only o
   const bounds = await feedPhoto.boundingBox();
   expect(bounds!.width).toBeGreaterThan(200);
   expect(bounds!.height).toBeGreaterThan(120);
+  const previews = page.getByRole('button',{name:'Show media previews',exact:true});
+  await previews.click();
+  await expect(previews).toHaveAttribute('aria-pressed','false');
+  await expect(page.locator('.media-gallery')).toHaveCount(0);
+  await page.reload();
+  await expect(previews).toHaveAttribute('aria-pressed','false');
+  await expect(page.locator('.media-gallery')).toHaveCount(0);
+  await previews.click();
+  await expect(feedPhoto).toBeVisible();
   await page.getByRole('link',{name:'From the pier',exact:true}).click();
   await expect(page).toHaveURL(url => url.pathname + url.search === postUrl(note.id,'media-fixture'));
   const expand = page.getByRole('link',{name:'Expand image: Harbor at sunset'});
