@@ -43,7 +43,7 @@ test('a reader finds paraphrases, excludes a competing meaning and can switch ba
   await expect(page.getByRole('link',{name:notes[0][0],exact:true})).toBeVisible();
   await page.keyboard.press('/');
   await expect(page.getByLabel('Search Nostreddit')).toBeFocused();
-  const top = page.locator('article h2').first();
+  const top = page.locator('[data-route-active=\"true\"] article h2').first();
   for (const [query, expected] of [
     ['taking pictures in low light without a flash',notes[0][0]],
     ['fixing a slipping bicycle chain',notes[1][0]],
@@ -95,7 +95,7 @@ test('a cold model failure preserves immediate results and a newer query wins', 
     await page.goto('/t/'+tag);
     await expect(page.getByRole('link',{name:notes[0][0],exact:true})).toBeVisible();
     await submit(page,'handheld portraits'); await submit(page,'rear derailleur');
-    await expect(page.locator('article h2').first()).toHaveText(notes[1][0]);
+    await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(notes[1][0]);
     await expect(page.getByText(/model unavailable/i)).toBeVisible({timeout:20_000});
     await expect(page.getByRole('link',{name:notes[0][0],exact:true})).toHaveCount(0);
     const input = page.getByLabel('Search Nostreddit');
@@ -104,7 +104,7 @@ test('a cold model failure preserves immediate results and a newer query wins', 
     await expect(page).toHaveURL(/q=rear%20derailleur/);
     await page.goto('/search?q=nsec1deadbeef');
     await expect(page).toHaveURL(/\/search$/);
-    await expect(page.locator('main')).not.toContainText('nsec1');
+    await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText('nsec1');
   } finally { await context.close(); }
 });
 
@@ -117,7 +117,7 @@ test('the home shell skips model downloads and a previous search works after off
   expect(requests).toEqual([]);
   const query = 'taking pictures in low light #'+tag;
   await submit(page,query); await ranked(page);
-  await expect(page.locator('article h2').first()).toHaveText(notes[0][0]);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(notes[0][0]);
   await expect.poll(() => page.evaluate(async () => {
     const stores = await Promise.all((await caches.keys()).map(name=>caches.open(name)));
     const keys = (await Promise.all(stores.map(store=>store.keys()))).flat();
@@ -140,5 +140,5 @@ test('the home shell skips model downloads and a previous search works after off
   await page.reload({waitUntil:'domcontentloaded'});
   expect(await page.evaluate(()=>navigator.onLine)).toBe(false);
   await ranked(page);
-  await expect(page.locator('article h2').first()).toHaveText(notes[0][0]);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(notes[0][0]);
 });

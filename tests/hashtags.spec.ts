@@ -45,7 +45,7 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
 
     await page.getByRole('heading',{name:title}).getByRole('link',{name:'#'+headlineTag}).click();
     await expect(page).toHaveURL(new RegExp('/t/'+headlineTag.toLowerCase()+'$'));
-    const card=page.locator('article').filter({has:page.getByRole('heading',{name:title})});
+    const card=page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:title})});
     await expect(card.locator('.topic-link')).toHaveText('t/'+headlineTag.toLowerCase());
     await card.getByRole('link',{name:'#'+bodyTag,exact:true}).first().click();
     const fromTag=bodyTag.toLowerCase();
@@ -56,12 +56,12 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
     const reply='The channel is rising. #'+replyTag;
     await page.getByLabel('Your reply').fill(reply);
     await page.getByRole('button',{name:'Post reply',exact:true}).click();
-    const row=page.locator('li[data-comment-id]').filter({hasText:reply});
+    const row=page.locator('[data-route-active=\"true\"] li[data-comment-id]').filter({hasText:reply});
     const id=await row.getAttribute('data-comment-id');
     await expect.poll(async()=>(await published(id!))?.tags.filter(t=>t[0]==='t').map(t=>t[1])).toEqual(['mostro',replyTag.toLowerCase()]);
     await row.getByRole('link',{name:'#'+replyTag,exact:true}).click();
     await expect(page).toHaveURL(new RegExp('/t/'+replyTag.toLowerCase()+'$'));
-    const matchingReply=page.locator('article').filter({has:page.getByRole('heading',{name:reply})});
+    const matchingReply=page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:reply})});
     await expect(matchingReply.getByRole('link',{name:'Reply to discussion'})).toBeVisible();
     await page.screenshot({path:info.outputPath('tagged-reply-'+device+'.png')});
     await matchingReply.locator('.stamp').first().click();

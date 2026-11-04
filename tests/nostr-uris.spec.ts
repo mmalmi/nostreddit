@@ -39,7 +39,7 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     } finally {relay.close();}
 
     await page.goto(postUrl(main.id));
-    const card = page.locator('article.detail').first();
+    const card = page.locator('[data-route-active=\"true\"] article.detail').first();
     await expect(card.locator('h2').getByRole('link',{name:'@Coastal Walker',exact:true})).toHaveAttribute('href',profileUrl(pubkey));
     const text = card.locator('.note-text');
     await expect(text.getByRole('link',{name:'@Coastal Walker',exact:true})).toHaveCount(2);
@@ -52,7 +52,7 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     await expect(card.locator('a[href="'+url+'"]')).toHaveAttribute('target','_blank');
     await expect(card.locator('.quoted-post')).toHaveCount(2);
     await expect(card.locator('.quoted-post').first()).toContainText('A quiet morning beside the water.');
-    const comment = page.locator('li[data-comment-id="'+reply.id+'"]');
+    const comment = page.locator('[data-route-active=\"true\"] li[data-comment-id="'+reply.id+'"]');
     await expect(comment.getByRole('link',{name:'@Coastal Walker',exact:true})).toHaveAttribute('href',profileUrl(pubkey));
     await expect(comment.locator('.quoted-post')).toContainText('Footprints in the sand');
     await expect(comment.locator('.note-text')).not.toContainText('[note');
@@ -68,7 +68,7 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     await expect(page.getByRole('heading',{name:'Coastal Walker',exact:true})).toBeVisible();
 
     await page.goto('/t/'+topic);
-    const feed = page.locator('article').filter({has:page.getByRole('heading',{name:'A walk with @Coastal Walker'})});
+    const feed = page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:'A walk with @Coastal Walker'})});
     await expect(feed.locator('.quoted-post')).toHaveCount(2);
     await page.getByRole('button',{name:'Show media previews',exact:true}).click();
     await expect(feed.locator('.quoted-post')).toHaveCount(0);
@@ -76,15 +76,15 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     await expect(feed.locator('.note-text a[href="'+postUrl(first.id)+'"]')).toHaveText('[note by Trail Observer]');
 
     await page.goto(postUrl(headline.id));
-    await expect(page.locator('article.detail .quoted-post')).toContainText('Footprints in the sand');
-    await expect(page.locator('article.detail h2')).toHaveCount(0);
+    await expect(page.locator('[data-route-active=\"true\"] article.detail .quoted-post')).toContainText('Footprints in the sand');
+    await expect(page.locator('[data-route-active=\"true\"] article.detail h2')).toHaveCount(0);
     await page.goto(postUrl(sentence.id));
-    await expect(page.locator('article.detail .quoted-post')).toContainText('Footprints in the sand');
-    await expect(page.locator('article.detail h2')).toHaveText(sentenceTitle);
+    await expect(page.locator('[data-route-active=\"true\"] article.detail .quoted-post')).toContainText('Footprints in the sand');
+    await expect(page.locator('[data-route-active=\"true\"] article.detail h2')).toHaveText(sentenceTitle);
     await page.screenshot({path:info.outputPath('quote-without-id-'+device+'.png')});
     await page.goto('/t/uri-headline-'+device);
     await page.getByRole('button',{name:'Show media previews',exact:true}).click();
-    const sentenceCard=page.locator('article').filter({has:page.getByRole('heading',{name:sentenceTitle,exact:true})});
+    const sentenceCard=page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:sentenceTitle,exact:true})});
     await expect(sentenceCard.locator('.quoted-post')).toContainText('Footprints in the sand');
     await expect(sentenceCard.locator('h2')).toHaveText(sentenceTitle);
     await page.screenshot({path:info.outputPath('feed-quote-without-id-'+device+'.png')});

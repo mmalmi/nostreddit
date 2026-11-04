@@ -12,7 +12,7 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
   await expect(seed).toBeVisible();
   await seed.click();
   const seedUrl = page.url();
-  const root = page.locator('article').first();
+  const root = page.locator('[data-route-active=\"true\"] article').first();
   await root.getByRole('button',{name:'Save post', exact:true}).click();
   await page.goto('/saved');
   await expect(page.getByRole('link',{name:'Notes from the coast',exact:true})).toBeVisible();
@@ -37,7 +37,7 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
   const publishedUrl = page.url();
   await page.getByLabel('Your reply').fill('Under the pier this morning.');
   await page.getByRole('button',{name:'Post reply',exact:true}).click();
-  await expect(page.locator('article').filter({hasText:'Under the pier this morning.'}).last()).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] article').filter({hasText:'Under the pier this morning.'}).last()).toBeVisible();
   await root.getByRole('button',{name:'Like',exact:true}).click();
   await expect(root.getByRole('button',{name:'Liked',exact:true})).toHaveAttribute('aria-pressed','true');
 
@@ -47,8 +47,8 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
     const second = await reader.newPage();
     await second.goto(publishedUrl);
     await expect(second.getByRole('heading',{name:'Where do shorebirds shelter?'})).toBeVisible();
-    await expect(second.locator('article').filter({hasText:'Under the pier this morning.'}).last()).toBeVisible();
-    await expect(second.locator('article').first().getByRole('button',{name:'Like',exact:true})).toHaveText('1');
+    await expect(second.locator('[data-route-active=\"true\"] article').filter({hasText:'Under the pier this morning.'}).last()).toBeVisible();
+    await expect(second.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Like',exact:true})).toHaveText('1');
   } finally { await reader.close(); }
 
   await page.goto(seedUrl);
@@ -165,7 +165,7 @@ test('mobile guests can open Settings and persist their feed preferences', async
   await page.goto('/');
   await expect(page.getByRole('button',{name:'New',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(previews).toHaveAttribute('aria-pressed','false');
-  await expect(page.locator('article').first()).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] article').first()).toBeVisible();
   await expect(page.locator('.post-photo')).toHaveCount(0);
   await previews.focus();
   await page.keyboard.press('Space');

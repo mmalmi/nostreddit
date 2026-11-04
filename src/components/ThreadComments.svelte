@@ -8,6 +8,8 @@
   import Card from './Card.svelte';
   import Icon from './Icon.svelte';
 
+  const replyPrefix = 'reply-' + crypto.randomUUID() + '-';
+  export let routeActive = true;
   export let thread: Post;
   export let saved: Post[];
   export let onaction: (action: string, post: Post) => void;
@@ -34,18 +36,18 @@
   }
   $: useDraftOwner($account?.pubkey ?? '');
   $: members = discussionPosts(thread.id, $comments);
-  $: if (mounted) observeAuthors([thread.pubkey, ...members.slice(0,239).map(p => p.pubkey)]);
+  $: if (mounted && routeActive) observeAuthors([thread.pubkey, ...members.slice(0,239).map(p => p.pubkey)]);
   $: muted = new Set($mutes);
   $: rows = commentRows(thread.id, members.filter(p => !muted.has(p.pubkey) && !$graphInfo[p.pubkey]?.muted), order, $likes);
   $: expanded = visibleCommentRows(rows, collapsed);
   $: visible = expanded.slice(0, limit);
   // Bound relay work to the displayed slice, including the active post.
   $: watched = [thread.id, ...visible.slice(-48).map(row => row.post.id)].sort().join(',');
-  $: if (mounted) watch(watched);
+  $: if (mounted) watch(routeActive ? watched : '');
   onMount(() => { mounted = true; return () => stop?.(); });
   function watch(ids: string) {
     stop?.();
-    stop = observe(ids.split(','));
+    stop = ids ? observe(ids.split(',')) : undefined;
   }
   function author(pubkey: string, profile?: Profile) {
     return displayName(pubkey,profile);
@@ -60,7 +62,7 @@
     active = post.id;
     if (!$account) { onSignIn(); return; }
     await tick();
-    document.getElementById('reply-' + post.id)?.focus();
+    document.getElementById(replyPrefix + post.id)?.focus();
   }
   async function send(parent: Post) {
     const text = (drafts[parent.id] ?? '').trim();
@@ -87,7 +89,7 @@
 {#snippet composer(parent: Post, nested: boolean)}
   {@const editing = active === parent.id || sending.has(parent.id)}
   <form class="reply-form" onsubmit={(e) => {e.preventDefault(); send(parent);}}>
-    <textarea id={'reply-' + parent.id} aria-label={nested ? 'Your reply to ' + author(parent.pubkey, $profiles[parent.pubkey]) : 'Your reply'}
+    <textarea id={replyPrefix + parent.id} aria-label={nested ? 'Your reply to ' + author(parent.pubkey, $profiles[parent.pubkey]) : 'Your reply'}
       placeholder={nested ? 'Reply to ' + author(parent.pubkey, $profiles[parent.pubkey]) + '…' : 'Add to the discussion…'}
       value={drafts[parent.id] ?? ''} oninput={(e) => drafts = {...drafts, [parent.id]:e.currentTarget.value}}
       onfocus={() => active = parent.id}

@@ -7,7 +7,7 @@ import { allowFixtureAuthors } from './helpers/graphPreferences';
 
 test.beforeEach(async ({context}) => { await allowFixtureAuthors(context); });
 
-const relayUrl = 'ws://127.0.0.1:43164';
+const relayUrl = process.env.NOSTREDDIT_TEST_RELAY_URL || 'ws://127.0.0.1:43164';
 
 async function seedDiscussion() {
   const birder = generateSecretKey(), ranger = generateSecretKey();
@@ -44,7 +44,7 @@ async function seedDiscussion() {
 }
 
 const row = (page: Page, id: string) => page.locator(`li[data-comment-id="${id}"]`);
-const rows = (page: Page) => page.locator('li[data-comment-id]');
+const rows = (page: Page) => page.locator('[data-route-active=\"true\"] li[data-comment-id]');
 async function expectOrder(page: Page, posts: Event[]) {
   await expect.poll(() => rows(page).evaluateAll(els => els.map(el => el.getAttribute('data-comment-id'))))
     .toEqual(posts.map(post => post.id));

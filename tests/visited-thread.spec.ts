@@ -34,7 +34,7 @@ test('an older visited thread and its comment permalink survive eviction from th
 
   await page.goto('/post/'+old.id);
   await expect(page.getByRole('heading',{name:old.content})).toBeVisible();
-  await expect(page.locator('li[data-comment-id="'+reply.id+'"]')).toContainText(reply.content);
+  await expect(page.locator('[data-route-active=\"true\"] li[data-comment-id="'+reply.id+'"]')).toContainText(reply.content);
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
   await page.goto('/post/'+recent.id);
   await expect(page.getByRole('heading',{name:recent.content})).toBeVisible();
@@ -58,11 +58,11 @@ test('an older visited thread and its comment permalink survive eviction from th
   await context.setOffline(true);
   // The focused reply has not been visited as a separate page.
   await page.goto('/post/'+comment.id);
-  await expect(page.locator('main article').first()).toContainText(comment.content);
-  await expect(page.locator('li[data-comment-id="'+reply.id+'"]')).toContainText(reply.content);
+  await expect(page.locator('[data-route-active=\"true\"] main article').first()).toContainText(comment.content);
+  await expect(page.locator('[data-route-active=\"true\"] li[data-comment-id="'+reply.id+'"]')).toContainText(reply.content);
   await page.getByRole('link',{name:'View original discussion'}).click();
   await expect(page.getByRole('heading',{name:old.content})).toBeVisible();
-  await expect(page.locator('li[data-comment-id="'+comment.id+'"]')).toContainText(comment.content);
+  await expect(page.locator('[data-route-active=\"true\"] li[data-comment-id="'+comment.id+'"]')).toContainText(comment.content);
   await page.reload();
-  await expect(page.locator('li[data-comment-id="'+reply.id+'"]')).toContainText(reply.content);
+  await expect(page.locator('[data-route-active=\"true\"] li[data-comment-id="'+reply.id+'"]')).toContainText(reply.content);
 });

@@ -23,7 +23,7 @@ test('a shared hashtagged reply reopens at its canonical note URL and legacy lin
   const path='/post/'+noteEncode(reply.id);
   const postPath='/post/'+noteEncode(original.id);
   await page.goto('/t/permalinks');
-  const card=page.locator('article').filter({hasText:text});
+  const card=page.locator('[data-route-active=\"true\"] article').filter({hasText:text});
   await expect(card).toBeVisible();
   await expect(card.getByRole('link',{name:'Reply to discussion'})).toHaveAttribute('href',postPath);
   await expect(card.getByRole('time').locator('..')).toHaveAttribute('href',path+'?t=permalinks');
@@ -33,7 +33,7 @@ test('a shared hashtagged reply reopens at its canonical note URL and legacy lin
   const reopened=await context.newPage();
   try {
     await reopened.goto(await page.evaluate(()=>navigator.clipboard.readText()));
-    await expect(reopened.locator('article').first()).toContainText(text);
+    await expect(reopened.locator('[data-route-active=\"true\"] article').first()).toContainText(text);
     await expect(reopened.locator('.back-link').first()).toHaveAttribute('href','/t/permalinks');
     await expect(reopened.getByRole('link',{name:'View original discussion'})).toHaveAttribute('href',postPath);
     const suffix='?r=permalinks&view=compact#context';
@@ -41,7 +41,7 @@ test('a shared hashtagged reply reopens at its canonical note URL and legacy lin
       await reopened.goto('/post/'+old+suffix);
       await expect(reopened).toHaveURL(new URL(path+suffix,baseURL).href);
       await expect(reopened.locator('.back-link').first()).toHaveAttribute('href','/t/permalinks');
-      await expect(reopened.locator('article').first()).toContainText(text);
+      await expect(reopened.locator('[data-route-active=\"true\"] article').first()).toContainText(text);
     }
     await reopened.goto('/post/'+noteEncode(original.id)+'/unexpected');
     await expect(reopened.getByRole('heading',{name:'Page not found'})).toBeVisible();

@@ -26,7 +26,7 @@ test.beforeAll(async()=>{
 test('shared badges distinguish self, follows and familiar neighbors; profile explains them and offline follow updates',async({page,context},info)=>{
   await context.addInitScript(session=>localStorage.setItem('nostreddit.account.v1',JSON.stringify(session)),{pubkey:getPublicKey(viewer),method:'local',nsec:nsecEncode(viewer)});
   await page.goto('/t/badge-check');
-  const badge=(post:Event)=>page.locator('article').filter({has:page.getByRole('heading',{name:post.content,exact:true})}).getByTestId('social-distance-badge');
+  const badge=(post:Event)=>page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:post.content,exact:true})}).getByTestId('social-distance-badge');
   await expect(badge(ownPost)).toHaveClass(/self/);
   await expect(badge(friendPost)).toHaveClass(/following/);
   await expect(badge(grayPost)).toHaveClass(/friend/);
@@ -54,7 +54,7 @@ test('shared badges distinguish self, follows and familiar neighbors; profile ex
 
 test('guest badges explain the public graph without claiming the reader follows someone',async({page})=>{
   await page.goto(postUrl(guestPost.id));
-  const badge=page.locator('article.detail').getByTestId('social-distance-badge');
+  const badge=page.locator('[data-route-active=\"true\"] article.detail').getByTestId('social-distance-badge');
   await expect(badge).toHaveAttribute('title','Direct connection in the public graph');
   await page.goto('/u/'+npubEncode(guestPost.pubkey));
   await page.locator('.social-context summary').click();

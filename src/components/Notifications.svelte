@@ -7,9 +7,9 @@
   import Icon from './Icon.svelte';
   import SocialBadge from './SocialBadge.svelte';
 
-  let { onSignIn }: { onSignIn: () => void } = $props();
+  let { active = true, onSignIn }: { active?: boolean; onSignIn: () => void } = $props();
   $effect(() => {
-    if ($account) return observeNotificationAuthors();
+    if (active && $account) return observeNotificationAuthors();
   });
   function detail(event: NostrEvent) {
     const reply = event.tags.some(t => t[0] === 'e' && !['mention'].includes(t[3])) || event.kind === 1111;

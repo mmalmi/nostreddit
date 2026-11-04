@@ -34,7 +34,7 @@ for(const width of [1440,390,320]) {
     await page.screenshot({path:info.outputPath('post-editor.png')});
     await editor.getByRole('button',{name:'Publish post',exact:true}).click();
     await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
-    await expect(page.locator('main article').first()).not.toContainText('unused-link');
+    await expect(page.locator('[data-route-active=\"true\"] main article').first()).not.toContainText('unused-link');
     const reply=page.getByLabel('Your reply',{exact:true});
     await expect(reply).toHaveAttribute('rows','1');
     await reply.fill('Looking out from the pier.');
@@ -44,14 +44,14 @@ for(const width of [1440,390,320]) {
     await reply.click();
     await expect(reply).toHaveValue('Looking out from the pier.');
     await page.getByRole('button',{name:'Post reply',exact:true}).click();
-    const row=page.locator('li[data-comment-id]').filter({hasText:'Looking out from the pier.'});
+    const row=page.locator('[data-route-active=\"true\"] li[data-comment-id]').filter({hasText:'Looking out from the pier.'});
     await row.getByRole('button',{name:'Reply to comment',exact:true}).click();
     const nested=row.getByRole('textbox');
     await expect(nested).toBeFocused();
     await nested.fill('I can see the boats from here.');
     await page.screenshot({path:info.outputPath('inline-reply.png')});
     await row.getByRole('button',{name:'Post reply',exact:true}).click();
-    await expect(page.locator('li[data-depth="1"]').filter({hasText:'I can see the boats from here.'})).toBeVisible();
+    await expect(page.locator('[data-route-active=\"true\"] li[data-depth="1"]').filter({hasText:'I can see the boats from here.'})).toBeVisible();
     await page.screenshot({path:info.outputPath('published-replies.png')});
     const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>({tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right})).slice(0,12));
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),JSON.stringify(overflow)).toBe(true);
@@ -77,6 +77,6 @@ test('the feed link shortcut requires a topic and publishes a link post',async({
   await page.screenshot({path:info.outputPath('link-editor.png')});
   await publish.click();
   await expect(page.getByRole('heading',{name:'A useful field guide',exact:true})).toBeVisible();
-  await expect(page.locator('main article').first().getByRole('link',{name:'t/field-guides',exact:true})).toBeVisible();
-  await expect(page.locator('main article a[href="https://example.org/field-guide"]').first()).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] main article').first().getByRole('link',{name:'t/field-guides',exact:true})).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] main article a[href="https://example.org/field-guide"]').first()).toBeVisible();
 });

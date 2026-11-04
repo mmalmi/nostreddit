@@ -20,7 +20,7 @@ const texts=[
 ];
 const aiPosts=texts.map(([title,body],i)=>record(generateSecretKey(),title+'\n\n'+body,[['subject',title],['t','hot-ai']],1,at-600+i));
 async function publish(events:Event[]) {
-  const socket=new WebSocket('ws://127.0.0.1:43164');
+  const socket=new WebSocket(process.env.NOSTREDDIT_TEST_RELAY_URL || 'ws://127.0.0.1:43164');
   try {
     await once(socket,'open');
     for(const event of events){const ack=once(socket,'message');socket.send(JSON.stringify(['EVENT',event]));expect(JSON.parse(String((await ack)[0])).slice(0,3)).toEqual(['OK',event.id,true]);}
@@ -44,15 +44,15 @@ test('Hot finds activity below the viewport on the homepage and in a community, 
   context.on('request',request=>{if(request.url().includes('/assets/search/'))modelRequests.push(request.url());});
   const started=performance.now();
   await page.goto('/t/hot-lab');
-  await expect(page.locator('article h2').first()).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toBeVisible();
   const firstContent=performance.now()-started;
-  await expect(page.locator('article h2').first()).toHaveText(active.content);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(active.content);
   await page.getByRole('button',{name:'New',exact:true}).click();
-  await expect(page.locator('article h2').first()).toHaveText(quiet[0].content);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(quiet[0].content);
   await page.getByRole('button',{name:'Hot',exact:true}).click();
-  await expect(page.locator('article h2').first()).toHaveText(active.content);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(active.content);
   await page.goto('/');
-  await expect(page.locator('article h2').first()).toHaveText(active.content);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(active.content);
   expect(modelRequests).toEqual([]);
   await page.screenshot({path:info.outputPath('hot-desktop.png')});
   console.log(JSON.stringify({hotFirstContentMs:Math.round(firstContent),defaultModelRequests:modelRequests.length}));
@@ -61,8 +61,8 @@ test('Hot finds activity below the viewport on the homepage and in a community, 
 test('local AI improves a specific interest over social-only ranking and preserves all community posts',async({page,context},info)=>{
   await page.setViewportSize({width:390,height:844});
   await page.goto('/t/hot-ai');
-  await expect(page.locator('article h2')).toHaveCount(texts.length);
-  const social=await page.locator('article h2').allTextContents();
+  await expect(page.locator('[data-route-active=\"true\"] article h2')).toHaveCount(texts.length);
+  const social=await page.locator('[data-route-active=\"true\"] article h2').allTextContents();
   await page.goto('/settings');
   await page.getByLabel('Your interests').fill('taking photographs in low light without a flash');
   await page.getByLabel('Personalize Hot with AI').check();
@@ -70,14 +70,14 @@ test('local AI improves a specific interest over social-only ranking and preserv
   await page.goto('/t/hot-ai');
   await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible({timeout:30_000});
   const elapsed=performance.now()-started;
-  const ranked=await page.locator('article h2').allTextContents();
+  const ranked=await page.locator('[data-route-active=\"true\"] article h2').allTextContents();
   expect(ranked[0]).toBe(texts[0][0]);expect(new Set(ranked)).toEqual(new Set(texts.map(([title])=>title)));
   expect(social[0]).not.toBe(texts[0][0]);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:info.outputPath('hot-ai-mobile.png')});
   const requests:string[]=[];page.on('request',request=>{if(request.url().endsWith('.onnx'))requests.push(request.url());});
   await page.reload();
-  await expect(page.locator('article h2').first()).toHaveText(texts[0][0]);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(texts[0][0]);
   await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible();
   expect(requests).toEqual([]);
   await page.goto('/settings');await expect(page.getByLabel('Personalize Hot with AI')).toBeChecked();
@@ -86,7 +86,7 @@ test('local AI improves a specific interest over social-only ranking and preserv
   for(const [query,title] of [['repairing a slipping bicycle chain',texts[1][0]],['coffee brewing',texts[2][0]]]) {
     await page.getByLabel('Your interests').fill(query);await page.getByRole('heading',{name:'Hot feed',exact:true}).click();
     await page.goto('/t/hot-ai');await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible({timeout:30_000});
-    await expect(page.locator('article h2').first()).toHaveText(title);
+    await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(title);
     await page.goto('/settings');
   }
   await page.goto('/t/hot-ai');
@@ -101,8 +101,8 @@ test('local AI improves a specific interest over social-only ranking and preserv
   await context.addCookies([{name:'nostreddit_offline_fixture',value:'1',url:page.url()}]);
   await context.setOffline(true);await page.reload();
   await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible();
-  await expect(page.locator('article h2').first()).toHaveText(texts[2][0]);
-  await expect(page.locator('article h2')).toHaveCount(texts.length);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(texts[2][0]);
+  await expect(page.locator('[data-route-active=\"true\"] article h2')).toHaveCount(texts.length);
 });
 
 test('a failed AI download keeps the social feed usable',async({browser,baseURL})=>{
@@ -112,9 +112,9 @@ test('a failed AI download keeps the social feed usable',async({browser,baseURL}
     await context.addInitScript(()=>localStorage.setItem('nostreddit.ui.hot',JSON.stringify({ai:true,interests:'photography'})));
     await context.route('**/*.onnx',route=>route.abort());
     const page=await context.newPage();await page.goto('/t/hot-ai');
-    await expect(page.locator('article')).toHaveCount(texts.length);
+    await expect(page.locator('[data-route-active=\"true\"] article')).toHaveCount(texts.length);
     await expect(page.getByText('AI unavailable · social ranking',{exact:true})).toBeVisible({timeout:20_000});
-    await page.locator('article h2 a').first().click();await expect(page).toHaveURL(/\/post\/note1/);
+    await page.locator('[data-route-active=\"true\"] article h2 a').first().click();await expect(page).toHaveURL(/\/post\/note1/);
   } finally {await context.close();}
 });
 
@@ -136,16 +136,16 @@ test('incoming activity does not shuffle the feed while reading; refresh applies
   const rows=Array.from({length:16},(_,i)=>record(generateSecretKey(),'Reading order '+i,[['t','reading-order'],['subject','Reading order '+i]],1,at-3600-i));
   await publish(rows);
   await page.goto('/t/reading-order');
-  await expect(page.locator('article h2').first()).toHaveText(rows[0].content);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(rows[0].content);
   await page.evaluate(()=>window.scrollTo(0,850));
   await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBeGreaterThan(160);
   const newer=record(generateSecretKey(),'A newly arriving discussion',[['t','reading-order'],['subject','A newly arriving discussion']]);
   await publish([newer]);
   const refresh=page.getByRole('button',{name:'Show updated posts',exact:true});
   await expect(refresh).toBeAttached();
-  await expect(page.locator('article h2').first()).toHaveText(rows[0].content);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(rows[0].content);
   await refresh.click();
-  await expect(page.locator('article h2').first()).toHaveText(newer.content);
+  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(newer.content);
   await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBe(0);
 });
 
@@ -178,4 +178,22 @@ test('hiding the page terminates AI work and returning resumes a bounded batch',
     expect(workers()).toBe(0);
     expect(page.workers().filter(worker=>worker.url().includes('/meaning.worker-')).length).toBe(1);
   } finally {await context.close();}
+});
+
+
+test('Refresh Hot requests fresh discussions and gives visible feedback',async({page})=>{
+  const requests:string[]=[];
+  page.on('websocket',socket=>socket.on('framesent',frame=>requests.push(String(frame.payload))));
+  await page.goto('/t/hot-lab');
+  await expect(page.locator('[data-route-active="true"] article h2').first()).toBeVisible();
+  const topicRequests=()=>requests.filter(payload=>{
+    try {const frame=JSON.parse(payload);return frame[0]==='REQ' && frame.slice(2).some((filter:any)=>filter['#t']?.includes('hot-lab'));}
+    catch {return false;}
+  }).length;
+  await expect.poll(topicRequests).toBeGreaterThan(0);
+  const before=topicRequests();
+  await page.getByRole('button',{name:'Refresh Hot',exact:true}).click();
+  await expect(page.getByText('Hot refreshed',{exact:true})).toBeVisible();
+  await expect.poll(topicRequests).toBeGreaterThan(before);
+  await page.screenshot({path:test.info().outputPath('hot-refreshed.png')});
 });

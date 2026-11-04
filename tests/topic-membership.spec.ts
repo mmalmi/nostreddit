@@ -23,14 +23,14 @@ test('multi-tag posts appear in each topic regardless of community addresses and
   await page.goto('/t/bitcoin');
   await expect(page.getByRole('link',{name:scoped.content,exact:true})).toBeVisible();
   await page.goto('/t/mostro');
-  const card=page.locator('article').filter({has:page.getByRole('heading',{name:mixed.content})});
+  const card=page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:mixed.content})});
   await expect(card.getByRole('link',{name:'t/mostro',exact:true})).toBeVisible();
   await expect(page.getByRole('link',{name:scoped.content,exact:true})).toBeVisible();
   await expect(page.getByRole('link',{name:addressOnly.content,exact:true})).toHaveCount(0);
-  await expect(page.locator('article .topic-link').filter({hasText:'t/bitcoin'})).toHaveCount(0);
+  await expect(page.locator('[data-route-active=\"true\"] article .topic-link').filter({hasText:'t/bitcoin'})).toHaveCount(0);
   await page.screenshot({path:info.outputPath('topic.png')});
   await card.getByRole('link',{name:mixed.content}).click();
   await expect(page).toHaveURL(url => url.pathname + url.search === postUrl(mixed.id,'mostro'));
   await expect(page.locator('a.back-link').first()).toHaveAttribute('href','/t/mostro');
-  await expect(page.locator('article .topic-link').first()).toHaveText('t/mostro');
+  await expect(page.locator('[data-route-active=\"true\"] article .topic-link').first()).toHaveText('t/mostro');
 });

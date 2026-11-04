@@ -61,8 +61,8 @@ async function setDistance(page: Page, value: string) {
 }
 async function expectFiltered(page: Page, path: string, content: string) {
   await page.goto(path);
-  await expect(page.locator('main a[href="/settings"]').first()).toBeVisible();
-  await expect(page.locator('main')).not.toContainText(content);
+  await expect(page.locator('[data-route-active=\"true\"] main a[href="/settings"]').first()).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(content);
   expect(await page.title()).not.toContain(content);
 }
 
@@ -71,25 +71,25 @@ test('guests can widen and restore the same graph limit across home, topic, save
   await expect(page.getByLabel('Maximum follow distance')).toHaveValue('5');
   await expect(page.getByLabel('Hide overmuted profiles')).toBeChecked();
   await page.getByRole('link',{name:'Home feed',exact:true}).click();
-  await expect(page.locator('article h2 a[href="'+postUrl(oneHop.id)+'"]')).toBeVisible();
-  const twoHopLink = page.locator('article h2 a[href="'+postUrl(twoHops.id)+'"]');
+  await expect(page.locator('[data-route-active=\"true\"] article h2 a[href="'+postUrl(oneHop.id)+'"]')).toBeVisible();
+  const twoHopLink = page.locator('[data-route-active=\"true\"] article h2 a[href="'+postUrl(twoHops.id)+'"]');
   await expect(twoHopLink).toBeVisible();
   await expect(page.getByRole('heading',{name:outsideTitle,exact:true})).toHaveCount(0);
 
   await setDistance(page,'1');
   await page.getByRole('link',{name:'Home feed',exact:true}).click();
-  await expect(page.locator('article h2 a[href="'+postUrl(oneHop.id)+'"]')).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] article h2 a[href="'+postUrl(oneHop.id)+'"]')).toBeVisible();
   await expect(twoHopLink).toHaveCount(0);
   await expectFiltered(page,'/post/'+outsidePost.id,outsideTitle);
   await expectFiltered(page,'/u/'+outsiderId,outsiderName);
-  await expect(page.locator('main')).not.toContainText(outsiderBio);
+  await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(outsiderBio);
   await expectFiltered(page,'/post/'+outsideReply.id,replyText);
 
   await page.goto('/post/'+oneHop.id);
-  const story = page.locator('article').first();
+  const story = page.locator('[data-route-active=\"true\"] article').first();
   await expect(story.getByRole('button',{name:'Like',exact:true})).toHaveText('0');
   await expect(story.getByRole('link',{name:'0 comments',exact:true})).toBeVisible();
-  await expect(page.locator('main')).not.toContainText(replyText);
+  await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(replyText);
 
   await setDistance(page,'unlimited');
   await page.getByLabel('Hide overmuted profiles').uncheck();
@@ -98,28 +98,28 @@ test('guests can widen and restore the same graph limit across home, topic, save
   await expect(page.getByLabel('Hide overmuted profiles')).not.toBeChecked();
   await page.getByRole('link',{name:'Home feed',exact:true}).click();
   await page.getByRole('link',{name:outsideTitle,exact:true}).click();
-  await page.locator('article').first().getByRole('button',{name:'Save post',exact:true}).click();
+  await page.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Save post',exact:true}).click();
   await page.getByRole('link',{name:'Saved posts',exact:true}).click();
   await expect(page.getByRole('heading',{name:outsideTitle,exact:true})).toBeVisible();
   await page.goto('/u/'+outsiderId);
   await expect(page.getByRole('heading',{name:outsiderName,exact:true})).toBeVisible();
-  await expect(page.locator('main')).toContainText(outsiderBio);
+  await expect(page.locator('[data-route-active=\"true\"] main')).toContainText(outsiderBio);
   await page.goto('/post/'+oneHop.id);
   await expect(story.getByRole('button',{name:'Like',exact:true})).toHaveText('1');
   await expect(story.getByRole('link',{name:/^1 comments?$/})).toBeVisible();
-  await expect(page.locator('li[data-comment-id="'+outsideReply.id+'"]')).toContainText(replyText);
+  await expect(page.locator('[data-route-active=\"true\"] li[data-comment-id="'+outsideReply.id+'"]')).toContainText(replyText);
 
   await setDistance(page,'5');
   await page.getByRole('link',{name:'Saved posts',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Saved posts',exact:true})).toBeVisible();
-  await expect(page.locator('main article')).toHaveCount(0);
-  await expect(page.locator('main')).not.toContainText(outsideTitle);
+  await expect(page.locator('[data-route-active=\"true\"] main article')).toHaveCount(0);
+  await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(outsideTitle);
   await page.goto('/topics');
   await expect(page.getByRole('heading',{name:'Topics',exact:true})).toBeVisible();
-  await expect(page.locator('main a[href="/t/unmapped-ephemera"]')).toHaveCount(0);
+  await expect(page.locator('[data-route-active=\"true\"] main a[href="/t/unmapped-ephemera"]')).toHaveCount(0);
   await page.goto('/t/unmapped-ephemera');
   await expect(page.getByRole('heading',{name:'t/unmapped-ephemera',exact:true})).toBeVisible();
-  await expect(page.locator('main')).not.toContainText(outsideTitle);
+  await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(outsideTitle);
   await page.goto('/search?q=ephemera');
   await page.getByRole('button',{name:'Search relays',exact:true}).click();
   await expect(page.locator('.relay-search small')).toContainText('No matches in this batch. Load more to search older discussions.');
@@ -139,7 +139,7 @@ test('signed-in readers see their own and followed identities; other notificatio
   await page.getByRole('button',{name:'Use an existing profile'}).click();
   await page.getByRole('button',{name:'Sign in with extension'}).click();
   await expect(page.getByText(friendMention,{exact:true})).toBeVisible();
-  await expect(page.locator('main')).not.toContainText(replyText);
+  await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(replyText);
   await page.goto('/post/'+mine.id);
   await expect(page.getByRole('heading',{name:mineTitle,exact:true})).toBeVisible();
   await page.goto('/post/'+fromFriend.id);
@@ -157,5 +157,5 @@ test('signed-in readers see their own and followed identities; other notificatio
   await expectFiltered(page,'/post/'+outsidePost.id,outsideTitle);
   await page.goto('/notifications');
   await expect(page.getByText(friendMention,{exact:true})).toBeVisible();
-  await expect(page.locator('main')).not.toContainText(replyText);
+  await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(replyText);
 });

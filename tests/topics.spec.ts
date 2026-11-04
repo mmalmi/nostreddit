@@ -23,11 +23,11 @@ test('a guest starts an open topic offline, publishes its first post and another
   await page.screenshot({path:info.outputPath('topic-composer-mobile.png')});
   await page.getByRole('button',{name:'Publish post',exact:true}).click();
   await expect(page.getByRole('heading',{name:'What are you growing this winter?',exact:true})).toBeVisible();
-  await expect(page.locator('article .queued').first()).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] article .queued').first()).toBeVisible();
   await page.reload();await expect(page.getByRole('heading',{name:'What are you growing this winter?',exact:true})).toBeVisible();
   const owner=await page.evaluate(()=>JSON.parse(localStorage.getItem('nostreddit.account.v1')!).pubkey as string);
   await context.addCookies([{name:'nostreddit_offline_fixture',value:'0',url:'http://127.0.0.1:43164'}]);
-  await context.setOffline(false);await expect(page.locator('article .queued')).toHaveCount(0,{timeout:20000});
+  await context.setOffline(false);await expect(page.locator('[data-route-active=\"true\"] article .queued')).toHaveCount(0,{timeout:20000});
   const socket=new WebSocket('ws://127.0.0.1:43164');
   try{
     await once(socket,'open');

@@ -97,15 +97,15 @@ test('offline posts, replies and reaction changes survive reload and reach the r
   expect(id).toMatch(/^[0-9a-f]{64}$/);
   await page.getByLabel('Your reply',{exact:true}).fill(reply);
   await page.getByRole('button',{name:'Post reply',exact:true}).click();
-  await expect(page.locator('li[data-comment-id]').filter({hasText:reply})).toBeVisible();
-  const root = page.locator('article').first();
+  await expect(page.locator('[data-route-active=\"true\"] li[data-comment-id]').filter({hasText:reply})).toBeVisible();
+  const root = page.locator('[data-route-active=\"true\"] article').first();
   await root.getByRole('button',{name:'Like',exact:true}).click();
   await expect(root.getByRole('button',{name:'Liked',exact:true})).toHaveText('1');
   await root.getByRole('button',{name:'Liked',exact:true}).click();
   await expect(root.getByRole('button',{name:'Like',exact:true})).toHaveText('0');
   await page.reload();
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
-  await expect(page.locator('li[data-comment-id]').filter({hasText:reply})).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] li[data-comment-id]').filter({hasText:reply})).toBeVisible();
   await root.getByRole('button',{name:'Like',exact:true}).click();
   await expect(root.getByRole('button',{name:'Liked',exact:true})).toHaveText('1');
   await page.reload();
@@ -128,8 +128,8 @@ test('offline posts, replies and reaction changes survive reload and reach the r
     const fresh = await guest.newPage();
     await fresh.goto(permalink);
     await expect(fresh.getByRole('heading',{name:title,exact:true})).toBeVisible();
-    await expect(fresh.locator('li[data-comment-id]').filter({hasText:reply})).toBeVisible();
-    await expect(fresh.locator('article').first().getByRole('button',{name:'Like',exact:true})).toHaveText('1');
+    await expect(fresh.locator('[data-route-active=\"true\"] li[data-comment-id]').filter({hasText:reply})).toBeVisible();
+    await expect(fresh.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Like',exact:true})).toHaveText('1');
   } finally {await guest.close();}
   const events = await authoredBy(pubkey);
   const deletions = new Set(events.filter(e=>e.kind===5).flatMap(e=>e.tags.filter(t=>t[0]==='e').map(t=>t[1])));
