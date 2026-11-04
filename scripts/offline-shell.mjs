@@ -11,10 +11,10 @@ export async function writeOfflineShell(directory) {
     digest.update(file);
     digest.update(await readFile(path.join(directory, file)));
   }
-  const cacheName = 'nostreddit-shell-' + digest.digest('hex').slice(0,20);
+  const cacheName = 'nostreddit-shell-v2-' + digest.digest('hex').slice(0,20);
   const script = `
 const cacheName = ${JSON.stringify(cacheName)};
-const shell = new Set(${JSON.stringify(files.map(file => '/' + file))});
+const shell = new Set(${JSON.stringify(files.map(file => file === 'index.html' ? '/' : '/' + file))});
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(cacheName).then(cache => cache.addAll([...shell].map(url => new Request(url, {cache:'reload'})))));
 });
@@ -30,7 +30,7 @@ self.addEventListener('fetch', event => {
   const {request} = event, url = new URL(request.url);
   if (url.origin !== self.location.origin || request.method !== 'GET') return;
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(() => caches.open(cacheName).then(cache => cache.match('/index.html'))));
+    event.respondWith(fetch(request).catch(() => caches.open(cacheName).then(cache => cache.match('/'))));
   } else if (shell.has(url.pathname)) {
     event.respondWith(caches.open(cacheName).then(async cache => (await cache.match(url.pathname)) || fetch(request)));
   }
