@@ -664,6 +664,29 @@ export function observeNotificationAuthors() {
   });
   return () => { stopNames(); clearTimeout(timer); stopAuthors(); };
 }
+// Quoted posts need only the referenced records and names, never a live thread
+// subscription. Keep this separate from loadThread's active-page ownership.
+export function observeReferences(eventIds:string[], people:string[]) {
+  const ids = [...new Set(eventIds)].filter(id=>hexKey.test(id)).slice(0,4);
+  const named = [...new Set(people)].filter(key=>hexKey.test(key)).slice(0,24);
+  if (!ids.length && !named.length) return noop;
+  observeEventAuthors(named);
+  const missing = ids.filter(id=>!roots.has(id) && !replies.has(id));
+  const stops = [missing.length ? watch([{ids:missing,limit:missing.length}]) : noop];
+  const requested = new Set<string>();
+  function names() {
+    const allowed = get(canSeeAuthor);
+    const authors = [...new Set([...named,...ids.flatMap(id=>{
+      const post = roots.get(id) || replies.get(id);
+      return post ? [post.pubkey] : [];
+    })])].filter(key=>allowed(key) && !metadata.has(key) && !requested.has(key));
+    if (!authors.length) return;
+    authors.forEach(key=>requested.add(key));
+    stops.push(watch([{kinds:[0],authors,limit:authors.length}]));
+  }
+  const stopPosts = rawPosts.subscribe(names), stopReplies = rawComments.subscribe(names), stopPolicy = canSeeAuthor.subscribe(names);
+  return () => { stopPosts(); stopReplies(); stopPolicy(); stops.forEach(stop=>stop()); };
+}
 export function observe(ids:string[]) {
   const visibleIds = [...new Set(ids)].filter(id => hexKey.test(id)).slice(0,60);
   if (!visibleIds.length) return noop;

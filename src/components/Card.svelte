@@ -62,7 +62,9 @@
     !post.event.tags.some((t) => t[0] === 'subject' || t[0] === 'title') &&
     rawHeading.endsWith('…') &&
     body.startsWith(rawHeading.slice(0, -1));
-  $: chosenHeading = autoShortened && full ? body.split('\n')[0] : rawHeading;
+  $: firstLine = body.split('\n')[0];
+  $: referenceHeading = autoShortened && noteParts(firstLine,post.event.tags).some(part=>part.event || part.person);
+  $: chosenHeading = autoShortened && (full || referenceHeading) ? firstLine : rawHeading;
   $: strippedHeading = stripAttachments(chosenHeading,attachments);
   $: heading = comment || (full && post.parent) ? '' :
     strippedHeading === link && link ? new URL(link).hostname :
@@ -73,6 +75,7 @@
   $: visibleBody = full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
   $: headingParts = noteParts(heading, post.event.tags);
   $: taggedHeading = headingParts.some(part=>part.topic);
+  $: hasReferences = headingParts.some(part=>part.event || part.person);
   $: renderedHeading = headingParts.map(part => partText(part,$profiles)).join('');
   $: picture = safeURL(author?.picture);
 </script>
@@ -101,13 +104,16 @@
     {#if queued}<small class="queued" title="Saved on this device, waiting to sync">Queued</small>{/if}
   </div>
   {#if heading}<h2>
-      {#if taggedHeading}
+      {#if full}
+        <NoteText text={heading} tags={post.event.tags} inline />
+      {:else if taggedHeading}
         {#each headingParts as part}
-          {#if part.topic}<a class="hashtag" href={topicPath(part.topic)}>{part.text}</a>{:else if full}{partText(part,$profiles)}{:else}<a href={permalink}>{partText(part,$profiles)}</a>{/if}
+          {#if part.topic}<a class="hashtag" href={topicPath(part.topic)}>{part.text}</a>{:else}<a href={permalink}>{partText(part,$profiles)}</a>{/if}
         {/each}
-      {:else if full}{renderedHeading}{:else}<a href={permalink}>{renderedHeading}</a>{/if}
+      {:else}<a href={permalink}>{renderedHeading}</a>{/if}
     </h2>{/if}
-  {#if visibleBody}<NoteText text={visibleBody} tags={post.event.tags} full={full || comment} />{/if}
+  {#if hasReferences}<NoteText text={heading} tags={post.event.tags} previewsOnly showPreviews={renderEmbeds} />{/if}
+  {#if visibleBody}<NoteText text={visibleBody} tags={post.event.tags} full={full || comment} showPreviews={renderEmbeds} />{/if}
   {#if renderEmbeds && (media.length || trees.length)}
     <div class="media-gallery" class:photos={media.length > 1 && !trees.length && media.every(item=>item.kind==='image')}>
       {#each media as item (item.url)}<MediaEmbed {item} compact={!full}/>{/each}
