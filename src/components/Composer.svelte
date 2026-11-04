@@ -81,7 +81,6 @@
       >Topic<input
         bind:value={topic}
         list="composer-topics"
-        aria-describedby="topic-hint"
         required
         maxlength="50"
         placeholder="nostr"
@@ -90,7 +89,6 @@
           >{/each}</datalist
       ></label
     >
-    <small id="topic-hint">No #hashtag needed in your post text.</small>
     <label
       >Title<input
         bind:value={title}
