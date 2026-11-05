@@ -2,7 +2,7 @@ import { derived, get, readable, writable, type Writable } from 'svelte/store';
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type EventTemplate } from 'nostr-tools/pure';
 import { decode, nsecEncode } from 'nostr-tools/nip19';
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
-import { graphViewer, graphInfo, graphStatus, observeEventAuthors, observeGraphEvent, observeDirectoryLists, observeProfile, profileRelations, setPendingEdges, setGraphPeers, setGraphRoot } from './graph';
+import { graphViewer, graphInfo, graphStatus, observeEventAuthors, observeGraphEvent, observeDirectoryLists, observeProfile, profileRelations, setPendingEdges, setGraphPeers, setGraphRoot, setGraphRelays } from './graph';
 import { asPost, discussionKinds, commentDraft, hexKey, postDraft, resolveCommunityThreads, topicSlug, type Post } from './posts';
 import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
@@ -35,6 +35,7 @@ function savedRelays() {
   catch { return relayUrls; }
 }
 export const configuredRelays = writable(savedRelays());
+configuredRelays.subscribe(setGraphRelays);
 export function saveRelays(input: string) {
   const urls = validateRelayUrls(input);
   localStorage.setItem(relayStorageKey, urls.join('\n'));
