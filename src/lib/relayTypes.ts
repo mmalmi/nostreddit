@@ -4,8 +4,9 @@ import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
 
 const override = import.meta.env?.VITE_NOSTR_RELAYS?.trim();
 export const testRelays = Boolean(override);
+export const previousRelayUrls = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net', 'wss://temp.iris.to'];
 export const relayUrls = override ? [...new Set<string>(override.split(/[\s,]+/))].slice(0, 8) :
-  ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net', 'wss://temp.iris.to'];
+  ['wss://relay.ditto.pub', ...previousRelayUrls];
 export const searchRelayUrls = testRelays ? relayUrls : ['wss://relay.ditto.pub', 'wss://search.nos.today'];
 export type ContactQuery = { type:'contacts'; subject:string; mode:'followers'|'following'|'mutual'|'check'; authors?: string[]; cacheOnly?: boolean };
 export type Request =

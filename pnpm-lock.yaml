@@ -30,8 +30,8 @@ importers:
         specifier: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.24/nostr-pubsub-0.5.24.tgz
         version: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.24/nostr-pubsub-0.5.24.tgz(nostr-tools@2.25.2(typescript@5.9.3))
       nostr-social-graph:
-        specifier: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.2/nostr-social-graph-4.0.2.tgz
-        version: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.2/nostr-social-graph-4.0.2.tgz(typescript@5.9.3)
+        specifier: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.3/nostr-social-graph-4.0.3.tgz
+        version: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.3/nostr-social-graph-4.0.3.tgz(typescript@5.9.3)
       nostr-tools:
         specifier: 2.25.2
         version: 2.25.2(typescript@5.9.3)
@@ -2151,9 +2151,9 @@ packages:
     peerDependencies:
       nostr-tools: '>=2.23.3 <3'
 
-  nostr-social-graph@https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.2/nostr-social-graph-4.0.2.tgz:
-    resolution: {integrity: sha512-F2EKjnxS58WPOF3UmhM13xwjFDmMMkz/XFctv//efPk/cfxViPfhmQl1PlxI9G8+mULKNPxY39vC1Dka3g0Ykw==, tarball: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.2/nostr-social-graph-4.0.2.tgz}
-    version: 4.0.2
+  nostr-social-graph@https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.3/nostr-social-graph-4.0.3.tgz:
+    resolution: {integrity: sha512-8IJtPhoDrWZvCrNiq5/Z2A+70oZZP8xFYasXt76FwmPspTuO8edEuqDH7kbPq83Vwm+1m1s8Vwpl/lF7JbXL7w==, tarball: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.3/nostr-social-graph-4.0.3.tgz}
+    version: 4.0.3
 
   nostr-tools@2.25.2:
     resolution: {integrity: sha512-7JAx+brEPmqGz1yzaK9MOxvis/Nl1B38j9hVsBSRDMRmxk5XSc0+5LlPEYbzeiUyk41RURBDcfuMzmaT754HAg==}
@@ -4762,7 +4762,7 @@ snapshots:
       nostr-pubsub-reconcile: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-reconcile-ts-v0.1.1/nostr-pubsub-reconcile-0.1.1.tgz
       nostr-tools: 2.25.2(typescript@5.9.3)
 
-  nostr-social-graph@https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.2/nostr-social-graph-4.0.2.tgz(typescript@5.9.3):
+  nostr-social-graph@https://github.com/mmalmi/nostr-social-graph/releases/download/v4.0.3/nostr-social-graph-4.0.3.tgz(typescript@5.9.3):
     dependencies:
       '@msgpack/msgpack': 3.1.3
       '@noble/hashes': 2.4.0

@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { test, expect } from '@playwright/test';
+import { test, expect, assertWorkerNetworkBlocked } from './helpers/isolatedBrowser';
 import { WebSocketServer } from 'ws';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools/pure';
 import { matchFilters } from 'nostr-tools/filter';
@@ -31,7 +31,8 @@ async function fixture(query: string) {
   return { state, async close() { for (const socket of server.clients) socket.terminate(); await new Promise<void>(resolve => server.close(() => resolve())); } };
 }
 
-test('custom relays contain keyword search on startup, live switch and reload', async ({ page, context }, testInfo) => {
+test('custom relays contain keyword search on startup, live switch and reload', async ({ page, context, networkBoundary }, testInfo) => {
+  await assertWorkerNetworkBlocked(page, networkBoundary);
   const first = await fixture('firstprivacysearchfixture'), second = await fixture('secondprivacysearchfixture');
   const socketAttempts: string[] = [];
   try {

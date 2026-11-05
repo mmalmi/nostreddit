@@ -12,27 +12,16 @@ import { cacheOwnEvents, type Change } from './local-writes';
 import { noExpansion, type Expansion } from './discovery/discussions';
 import type { SearchCursors } from './discovery/relay-search';
 import { relayUrls, type ContactQuery, type Request, type Response } from './relayTypes';
+import { readStoredRelayUrls, validateRelayUrls } from './relay-settings';
 import { readLocal, writeLocal } from './ui';
 import { startTopicCatalog } from './topic-catalog-store';
 import type { HotSignal } from './hot';
 export { relayUrls, pendingWrites, outboxReady, outboxError, syncing, type Post };
+export { validateRelayUrls } from './relay-settings';
 
 const relayStorageKey = 'nostreddit.relays.v1';
-export function validateRelayUrls(input: string): string[] {
-  const urls = [...new Set(input.split(/[\s,]+/).filter(Boolean).map(value => {
-    let url: URL;
-    try { url = new URL(value); } catch { throw new Error('Enter valid wss:// relay addresses.'); }
-    if (!['wss:', 'ws:'].includes(url.protocol) || url.username || url.password || url.hash ||
-        (url.protocol === 'ws:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
-      throw new Error('Use wss:// addresses (ws:// is allowed for local relays).');
-    return url.href.replace(/\/$/, '');
-  }))];
-  if (!urls.length || urls.length > 8) throw new Error('Choose between 1 and 8 relays.');
-  return urls;
-}
 function savedRelays() {
-  try { const saved = localStorage.getItem(relayStorageKey); return saved ? validateRelayUrls(saved) : relayUrls; }
-  catch { return relayUrls; }
+  return readStoredRelayUrls(() => localStorage.getItem(relayStorageKey), relayUrls);
 }
 export const configuredRelays = writable(savedRelays());
 configuredRelays.subscribe(setGraphRelays);
