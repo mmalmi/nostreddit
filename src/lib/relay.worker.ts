@@ -9,9 +9,12 @@ import { checkSearch } from './search';
 import { relayUrls, searchRelayUrls, testRelays, type Request, type Response } from './relayTypes';
 
 const runtime = new NostrRuntime({
-  relays: relayUrls, store: new MemoryEventStore(2300), batchWindowMs: 50,
+  relays: [], store: new MemoryEventStore(2300), batchWindowMs: 50,
   historyTimeoutMs: 6500, publishTimeoutMs: 8500, maxSubscriptions: 80,
 });
+let configuredRelayUrls = [...relayUrls];
+let configuredSearchRelayUrls = [...searchRelayUrls];
+let searchController = new AbortController();
 const reply = (data: Response) => self.postMessage(data);
 const watches = new Map<number, RuntimeSubscription>();
 const queue = new Map<string, NostrEvent>();
@@ -106,7 +109,17 @@ if (!testRelays) void fetch(new URL('starter-feed.json', self.location.origin), 
 
 self.onmessage = async (message: MessageEvent<Request>) => {
   const req = message.data;
-  if (req.type === 'configure') { relayUrls.splice(0, relayUrls.length, ...req.urls); runtime.setRelays(req.urls); return; }
+  if (req.type === 'configure') {
+    searchController.abort();
+    searchController = new AbortController();
+    configuredRelayUrls = [...req.urls];
+    const defaults = new Set(relayUrls.map(url => url.replace(/\/$/, '')));
+    const selected = new Set(req.urls.map(url => url.replace(/\/$/, '')));
+    const usingDefaults = defaults.size === selected.size && [...defaults].every(url => selected.has(url));
+    configuredSearchRelayUrls = usingDefaults ? [...searchRelayUrls] : [...req.urls];
+    runtime.setRelays(req.urls);
+    return;
+  }
   try {
     if (req.type === 'close') { visited.close(req.id); watches.get(req.id)?.close(); watches.delete(req.id); return; }
     if (req.type === 'watch') {
@@ -148,8 +161,8 @@ self.onmessage = async (message: MessageEvent<Request>) => {
       const filters = relayFilters(planPostSearch(query), req.expansion);
       if (!filters.length) { reply({type:'result', id:req.id, events:[], cursors:[]}); return; }
       const page = await readSearchPage(filters, req.cursors ?? [], filter => runtime.query([filter], {
-        cache: 'network-only', relays: filter.search ? searchRelayUrls : relayUrls,
-        deadline: Date.now() + 6500, limit: filter.limit,
+        cache: 'network-only', relays: filter.search ? configuredSearchRelayUrls : configuredRelayUrls,
+        deadline: Date.now() + 6500, limit: filter.limit, signal: searchController.signal,
       }));
       reply({type:'result', id:req.id, ...page});
       return;
