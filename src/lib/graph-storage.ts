@@ -10,8 +10,24 @@ async function open() {
 export async function readGraph():Promise<Uint8Array|undefined> {
   const db=await open();try{return await new Promise((resolve,reject)=>{const request=db.transaction('snapshots').objectStore('snapshots').get('current');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}finally{db.close();}
 }
-export async function saveGraph(bytes:Uint8Array):Promise<void> {
-  const db=await open();try{await new Promise<void>((resolve,reject)=>{const tx=db.transaction('snapshots','readwrite');tx.objectStore('snapshots').put(bytes,'current');tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}finally{db.close();}
+function sameGraph(current:unknown,expected:Uint8Array|undefined):boolean {
+  if(expected===undefined)return current===undefined;
+  if(!(current instanceof Uint8Array)||current.length!==expected.length)return false;
+  for(let index=0;index<expected.length;index++)if(current[index]!==expected[index])return false;
+  return true;
+}
+export async function saveGraph(bytes:Uint8Array,expected:Uint8Array|undefined):Promise<boolean> {
+  const db=await open();try{return await new Promise<boolean>((resolve,reject)=>{
+    const tx=db.transaction('snapshots','readwrite'),store=tx.objectStore('snapshots');
+    let saved=false;
+    const read=store.get('current');
+    read.onsuccess=()=>{
+      // The comparison and write share a transaction: a delayed bootstrap must
+      // never replace a personal graph that another tab saved in the meantime.
+      if(sameGraph(read.result,expected)){store.put(bytes,'current');saved=true;}
+    };
+    tx.oncomplete=()=>resolve(saved);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+  });}finally{db.close();}
 }
 export async function boundedGraphResponse(response:Response,limit=4*1024*1024):Promise<Uint8Array<ArrayBuffer>> {
   if(!response.ok||!response.body)throw new Error('Graph unavailable');

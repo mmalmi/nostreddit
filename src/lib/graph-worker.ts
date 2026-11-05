@@ -8,14 +8,21 @@ let authoritative:SocialGraph|undefined, authoritativeVersion=0, renderedVersion
 let stopSync:(()=>void)|undefined, syncActive=true;
 let saveTimer:ReturnType<typeof setTimeout>|undefined;
 let bootstrapMerge:Promise<void>=Promise.resolve();
+let persistedGraph:Uint8Array|undefined,canPersist=true;
+let saving:Promise<void>=Promise.resolve();
 function persistChange() {
   authoritativeVersion++;
   clearTimeout(saveTimer);
-  saveTimer=setTimeout(async()=>{
-    if(!authoritative)return;
-    await bootstrapMerge;
-    const version=authoritativeVersion, bytes=await authoritative.toBinary();
-    if(version===authoritativeVersion)await saveGraph(bytes).catch(()=>{});
+  saveTimer=setTimeout(()=>{
+    saving=saving.then(async()=>{
+      if(!authoritative||!canPersist)return;
+      await bootstrapMerge;
+      const version=authoritativeVersion, bytes=await authoritative.toBinary();
+      if(version!==authoritativeVersion)return;
+      if(await saveGraph(bytes,persistedGraph))persistedGraph=bytes;
+      // Keep the other tab's graph, including on all later debounced saves.
+      else canPersist=false;
+    }).catch(()=>{});
   },1500);
 }
 function sync() {
@@ -29,9 +36,12 @@ import { createGraphRanker } from './graph-ranking';
 import { badgesFor, discoveryRoot, profileRelationsFor, snapshotRoot, snapshotHash, type GraphRequest, type GraphReply } from './graph-model';
 
 async function load() {
-  const local=await readGraph().catch(()=>undefined);
-  if(local)try{authoritative=await SocialGraph.fromBinary(snapshotRoot,local);}catch{/* unreadable local state cannot initialize a graph */}
-  const refreshBootstrap=!authoritative&&relayPolicy.bootstrap;
+  const local=await readGraph().catch(()=>{canPersist=false;return undefined;});
+  persistedGraph=local;
+  if(local)try{authoritative=await SocialGraph.fromBinary(snapshotRoot,local);}catch{canPersist=false;}
+  // An unreadable personal cache remains recoverable; only an absent cache is
+  // eligible for a server seed. The bundled graph can still render in memory.
+  const refreshBootstrap=local===undefined&&canPersist&&relayPolicy.bootstrap;
   if(!authoritative){
     const response=await fetch('/socialGraph.bin?v='+snapshotHash.slice(0,16));
     const bytes=await boundedGraphResponse(response);
