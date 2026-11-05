@@ -21,6 +21,7 @@
     mute,
     unlike,
     loadTopic,
+    loadFeed,
     refreshFeed,
     loadThread,
     searchRelays,
@@ -60,6 +61,8 @@
   import { createHotSession } from './lib/hot-session';
   import { createFeedPresentation } from './lib/feed-presentation';
   import FeedComposer from './components/FeedComposer.svelte';
+  import { feedPreferences, saveFeed } from './lib/feed-preferences';
+  import { defaultFeeds, feedPath, feedIcon, feedSummary, feedRelayFilters, matchesFeed, type Feed, type FeedOrder } from './lib/feeds';
   const feedPresentation = createFeedPresentation();
   export let active = true;
   export let returnTo: string | undefined = undefined;
@@ -70,6 +73,7 @@
       .replace(/^\/+|\/+$/g, '')
       .split('/');
     if (!base) return { page: 'home', value: '' };
+    if (base === 'feeds' && /^[a-z0-9-]{1,64}$/.test(value) && !section) return { page: 'custom', value };
     if ((base==='t' || base==='r') && !section) {
       let slug='';
       try {slug=topicSlug(decodeURIComponent(value));} catch { /* Invalid escaped topic. */ }
@@ -120,23 +124,6 @@
       value: '',
     };
   }
-  const nav = [
-    { path: '/', page: 'home', title: 'Home feed', icon: 'home' },
-    {
-      path: '/following',
-      page: 'following',
-      title: 'Following',
-      icon: 'users',
-    },
-    { path: '/network', page: 'network', title: 'In network', icon: 'globe' },
-    {
-      path: '/notifications',
-      page: 'notifications',
-      title: 'Notifications',
-      icon: 'bell',
-    },
-    { path: '/saved', page: 'saved', title: 'Saved posts', icon: 'save' },
-  ];
   const orders = [
     { name: 'Hot', icon: 'hot' },
     { name: 'New', icon: 'clock' },
@@ -159,6 +146,8 @@
   let limit = 24,
     showAccountAfter = '';
   let composeMode:'text'|'link'|undefined;
+  let editingFeed: Feed | undefined;
+  function customize(feed?: Feed) { editingFeed = feed; showModal('feeds'); }
   let searchInput: HTMLInputElement;
   let activeCleanup: (() => void) | undefined,
     observedCleanup: (() => void) | undefined,
@@ -239,10 +228,12 @@
     });
   }
   function closeModal() {
+    const removedFeed = modal === 'feeds' && route.page === 'custom' && !$feedPreferences.some(feed => feed.id === route.value);
     modal = '';
     zapPost = undefined;
     dialog?.close();
     tick().then(() => dialogPrev?.focus());
+    if (removedFeed && active) go('/');
   }
   function accountDone() {
     closeModal();
@@ -285,7 +276,7 @@
     }
     if (e.key === 'Escape' && menu) menu = false;
   }
-  function subscribeRoute(page: string, value: string, connections?: Relationship) {
+  function subscribeRoute(page: string, value: string, connections: Relationship | undefined, feedFilters: string) {
     activeCleanup?.();
     activeCleanup =
       page === 'topic'
@@ -294,7 +285,7 @@
           ? loadThread(value)
           : page === 'profile'
             ? loadProfile(value, connections)
-            : undefined;
+            : page && feedFilters ? loadFeed(JSON.parse(feedFilters)) : undefined;
   }
   function watch(ids: string) {
     observedCleanup?.();
@@ -317,7 +308,13 @@
       document.removeEventListener('keydown', keypress);
     };
   });
-  $: if (mounted) subscribeRoute(active ? route.page : '', route.value, route.connections);
+  $: selectedFeed = $feedPreferences.find(feed => feed.id === (route.page === 'custom' ? route.value : route.page))
+    ?? (route.page !== 'custom' ? defaultFeeds().find(feed => feed.id === route.page) : undefined);
+  $: feedFilters = selectedFeed && selectedFeed.id !== 'home' ? JSON.stringify(feedRelayFilters(selectedFeed)) : '';
+  $: feedScope = selectedFeed ? JSON.stringify(selectedFeed) : '';
+  $: followingFeed = route.page === 'following' || selectedFeed?.source === 'following';
+  $: savedFeed = route.page === 'saved' || selectedFeed?.source === 'saved';
+  $: if (mounted) subscribeRoute(active ? route.page : '', route.value, route.connections, feedFilters);
   $: if (!active) {
     menu = false;
     if (modal) closeModal();
@@ -340,7 +337,7 @@
   $: threadTopic = thread && route.fromTopic && matchesTopic(thread,route.fromTopic) ? route.fromTopic : thread?.topic;
   $: profile = $profiles[route.value];
   $: profName = route.page === 'profile' ? ($canSeeAuthor(route.value) ? displayName(route.value,profile) : 'Profile') : '';
-  $: source = route.page === 'saved' ? visibleSaved : route.page === 'topic'
+  $: source = savedFeed ? visibleSaved : route.page === 'topic'
     ? [...$posts,...$comments.filter(reply=>mentionsTopic(reply,route.value))] : $posts;
   $: plan = route.page === 'search' && route.value ? planPostSearch(route.value) : undefined;
   $: lexical = new Map(plan ? source.map(p => [p.id, keywordScore(plan!, p, displayName(p.pubkey, $profiles[p.pubkey]))] as const) : []);
@@ -350,10 +347,11 @@
   $: minimum = semanticFloor(plan, $assistance.scores);
   $: matchScores = new Map([...lexical].map(([id, score]) => [id, relevance(score, $assistance.scores.get(id), minimum)]));
   $: relayMatchCount = visibleSearch.filter(p => (matchScores.get(p.id) ?? 0) > 0).length;
-  $: activeOrder = route.page === 'search' ? searchOrder : sorting;
+  $: activeOrder = route.page === 'search' ? searchOrder : selectedFeed?.order ?? sorting;
   $: candidates = source.filter((p) => {
     if (route.page === 'topic') return matchesTopic(p,route.value);
-    if (route.page === 'following') return $follows.includes(p.pubkey);
+    if (selectedFeed) return matchesFeed(p, selectedFeed, $follows, $graphInfo[p.pubkey]?.distance);
+    if (route.page === 'custom') return false;
     if (route.page === 'profile') return p.pubkey === route.value;
     if (route.page === 'search') return (matchScores.get(p.id) ?? 0) > 0;
     return true;
@@ -365,8 +363,8 @@
   $: allowedCandidates = candidates.filter(p =>
     (route.page === 'profile' || (!$graphInfo[p.pubkey]?.muted && !$mutes.includes(p.pubkey))) &&
     (route.page !== 'network' || ($graphInfo[p.pubkey]?.distance ?? 99) <= 2));
-  $: hotActive = activeOrder === 'Hot' && ['home','topic','following','network','saved','profile','search'].includes(route.page) && !route.connections;
-  $: hotScope = hotActive ? `${route.page}:${route.value}:${$account?.pubkey || 'guest'}:${hotRefresh}` : '';
+  $: hotActive = activeOrder === 'Hot' && ['home','topic','following','network','saved','custom','profile','search'].includes(route.page) && !route.connections;
+  $: hotScope = hotActive ? `${route.page}:${route.value}:${feedScope}:${$account?.pubkey || 'guest'}:${hotRefresh}` : '';
   $: if(mounted && active)setGraphRanking(hotActive && $hotPreferences.connectionStrength);
   $: hotOptions = {now:Date.now()/1000,signals:$hotSignals,follows:new Set($follows),saved:visibleSaved,
     topic:route.page === 'topic' ? route.value : '', seen:new Set(seenHot),
@@ -386,8 +384,8 @@
       return score(b)-score(a) || b.created_at-a.created_at || a.id.localeCompare(b.id);
     });
   $: rankedById = new Map(ranked.map(p=>[p.id,p]));
-  $: stableFeed = ['home','topic','following','network','saved','profile'].includes(route.page) && !route.connections;
-  $: if (mounted) feedPresentation.update(`${activeOrder}:${$account?.pubkey || 'guest'}`,
+  $: stableFeed = ['home','topic','following','network','saved','custom','profile'].includes(route.page) && !route.connections;
+  $: if (mounted) feedPresentation.update(`${activeOrder}:${feedScope}:${$account?.pubkey || 'guest'}`,
     ranked.map(p=>p.id), stableFeed && pageVisible);
   $: ordered = stableFeed ? $feedPresentation.map(id=>rankedById.get(id)).filter((p):p is Post=>Boolean(p)) : ranked;
   $: feedChanged = stableFeed && ordered.length > 0 && ranked.slice(0,limit).some((p,i)=>ordered[i]?.id !== p.id);
@@ -427,7 +425,7 @@
   $: title =
     route.page === 'home'
       ? 'Home'
-      : route.page === 'topic'
+      : selectedFeed ? selectedFeed.name : route.page === 'topic'
         ? 't/' + route.value
         : route.page === 'following'
           ? 'Following'
@@ -449,7 +447,7 @@
                         ? 'Discussion'
                         : 'Page not found';
   $: subtitle =
-    route.page === 'following'
+    route.page === 'custom' && selectedFeed ? feedSummary(selectedFeed) : route.page === 'following'
           ? 'Conversations from people you follow.'
           : route.page === 'network'
             ? 'People within two steps of your social graph.'
@@ -546,6 +544,10 @@
     }
   }
   function changeOrder(name: string) {
+    if (selectedFeed && selectedFeed.id !== 'home' && $feedPreferences.some(feed => feed.id === selectedFeed.id)) {
+      saveFeed({ ...selectedFeed, order: name as FeedOrder });
+      return;
+    }
     sorting = name;
     writeLocal('sort', name);
   }
@@ -623,12 +625,13 @@
     ></button>{/if}
   <aside class="left-nav" class:shown={menu} aria-label="Main navigation">
     <div class="nav-group">
-      <div class="side-label">FEEDS</div>
-      {#each nav as item}<a
+      <div class="feed-nav-heading"><div class="side-label">FEEDS</div><button aria-label="Customize feeds" title="Customize feeds" onclick={() => customize()}><Icon name="settings" size={15}/></button></div>
+      {#each $feedPreferences as item (item.id)}<a
           class="nav-row"
-          class:active={route.page === item.page}
-          href={item.path}><Icon name={item.icon} size={18} />{item.title}
-          {#if item.page === 'notifications' && $unreadNotificationIds.size}
+          class:active={selectedFeed?.id === item.id}
+          aria-current={selectedFeed?.id === item.id ? 'page' : undefined}
+          href={feedPath(item)}><Icon name={feedIcon(item)} size={18} />{item.name}
+          {#if item.id === 'notifications' && $unreadNotificationIds.size}
             <span class="unread-count" aria-label={$unreadNotificationIds.size + ' unread'}>{$unreadNotificationIds.size}</span>
           {/if}</a
         >{/each}
@@ -660,7 +663,7 @@
       <div class="mobile-topic-intro">
         <TopicIntro {title}/>
       </div>
-    {:else if ['following', 'network', 'saved'].includes(route.page)}
+    {:else if ['following', 'network', 'saved', 'custom'].includes(route.page) && selectedFeed}
       <section class="hero">
         <div class="hero-content">
           <div class="hero-kicker">
@@ -668,6 +671,7 @@
           </div>
           <h1>{title}</h1>
           <p>{subtitle}</p>
+          <button class="edit-feed" onclick={() => customize(selectedFeed)}><Icon name="edit" size={13}/>Edit feed</button>
         </div>
       </section>
     {:else if ['topics', 'search', 'notifications'].includes(route.page)}
@@ -785,9 +789,10 @@
           <p>Posts appear when a connected relay has a copy.</p>
           <a href="/">Back to the feed</a>
         </div>{/if}
-    {:else if route.page === 'missing'}<div class="empty">
+    {:else if route.page === 'missing' || (route.page === 'custom' && !selectedFeed)}<div class="empty">
         <Icon name="compass" size={32} />
-        <h1>Page not found</h1>
+        <h1>{route.page === 'custom' ? 'Feed not found' : 'Page not found'}</h1>
+        {#if route.page === 'custom'}<p>This feed isn’t saved in this browser.</p>{/if}
         <a class="primary" href="/">Back to the feed</a>
       </div>
     {:else}
@@ -832,7 +837,7 @@
               >{/each}
           </div>{/if}
       {/if}
-      {#if ['home','topic','following','network'].includes(route.page)}<FeedComposer oncreate={compose}/>{/if}
+      {#if ['home','topic','following','network','custom'].includes(route.page)}<FeedComposer oncreate={compose}/>{/if}
       <div class="feed-heading">
         {#if route.page === 'home'}<h1 class="visually-hidden">Home feed</h1>{/if}
         {#if route.page === 'search'}
@@ -842,8 +847,8 @@
         {:else}
         <div class="sort-bar" role="group" aria-label="Sort discussions">
           {#each orders as o}<button
-              class:selected={sorting === o.name}
-              aria-pressed={sorting === o.name}
+              class:selected={activeOrder === o.name}
+              aria-pressed={activeOrder === o.name}
               onclick={() => changeOrder(o.name)}
               ><Icon name={o.icon} size={14} />{o.name}</button
             >{/each}
@@ -882,22 +887,22 @@
           />{:else}
           <!-- A connected relay can still be waiting for posts. Keep the delay
                for the entire empty interval, including loading/status changes. -->
-          <div class="empty" class:loading-state={route.page === 'saved' ? saved.length > 0 :
-            route.page !== 'following' || !!$account}>
+          <div class="empty" class:loading-state={savedFeed ? saved.length > 0 :
+            !followingFeed || !!$account}>
             <span class="empty-icon"
               ><Icon
-                name={route.page === 'saved'
+                name={savedFeed
                   ? 'save'
-                  : route.page === 'following'
+                  : followingFeed
                     ? 'users'
                     : 'wave'}
                 size={24}
               /></span
             >
-            {#if route.page === 'saved'}<h2>No saved posts yet</h2>
+            {#if savedFeed && !saved.length}<h2>No saved posts yet</h2>
               <p>Use the bookmark on any post to keep it here.</p>
               <a href="/">Browse the feed</a>
-            {:else if route.page === 'following' && !$account}<h2>
+            {:else if followingFeed && !$account}<h2>
                 Your following feed
               </h2>
               <p>Sign in to read posts from the people you follow.</p>
@@ -905,12 +910,14 @@
                 class="primary compact"
                 onclick={() => showModal('account')}>Sign in</button
               >
-            {:else if route.page === 'following'}<h2>
+            {:else if followingFeed && !$follows.length}<h2>You aren’t following anyone yet</h2>
+              <p>Follow people from their profiles to see their posts here.</p>
+              <a href="/">Explore the feed</a>
+            {:else if followingFeed}<h2>
                 No posts from follows yet
               </h2>
               <p>
-                Open an author’s profile and follow them to add their posts
-                here.
+                Posts from people you follow will appear here as they load. Your filters may also hide some posts.
               </p>
               <a href="/">Explore the feed</a>
             {:else if route.page === 'search'}<h2>{['loading','ranking'].includes($assistance.status) ? 'Looking for matches…' : 'No matching posts'}</h2>
@@ -927,6 +934,9 @@
                 Tuning in…
               </h2>
               <p>Loading discussions from the network.</p>
+            {:else if selectedFeed && (route.page === 'custom' || selectedFeed.topics.length || selectedFeed.keywords.length || selectedFeed.exclude.length || selectedFeed.authors.length)}
+              <h2>No posts match this feed yet</h2><p>Try adjusting your filters or check back for new discussions.</p>
+              <button class="outline compact" onclick={() => customize(selectedFeed)}>Edit feed</button>
             {:else}<h2>
                 {route.page === 'topic'
                   ? 'No discussions here yet'
@@ -993,7 +1003,7 @@
     bind:this={dialog}
     class="modal"
     class:post-modal={modal==='compose'}
-    aria-label={modal === 'account'
+    aria-label={modal === 'feeds' ? 'Customize feeds' : modal === 'account'
       ? 'Nostr profile'
       : modal === 'compose'
         ? 'Create post'
@@ -1020,7 +1030,13 @@
     <button class="modal-close" aria-label="Close dialog" onclick={closeModal}
       ><Icon name="close" size={18} /></button
     >
-    {#if modal === 'account'}      {#await import('./components/AccountPanel.svelte')}
+    {#if modal === 'feeds'}
+      {#await import('./components/FeedManager.svelte')}
+        <p class="state loading-state" role="status">Loading…</p>
+      {:then {default: FeedManager}}
+        <FeedManager initialFeed={editingFeed} ondone={closeModal}/>
+      {:catch}{@render componentError()}{/await}
+    {:else if modal === 'account'}      {#await import('./components/AccountPanel.svelte')}
         <p class="state loading-state" role="status">Loading…</p>
       {:then {default: AccountPanel}}
         <AccountPanel onclose={accountDone} {notify} />
@@ -1083,6 +1099,11 @@
   </div>{/if}
 
 <style>
+  .feed-nav-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .feed-nav-heading .side-label{margin-bottom:0}
+  .feed-nav-heading button{display:flex;align-items:center;justify-content:center;width:28px;height:28px;color:var(--muted);border-radius:5px}
+  .feed-nav-heading button:hover{background:var(--light);color:var(--accent)}
+  .edit-feed{display:flex;align-items:center;gap:5px;margin-top:12px;font-size:12px;color:inherit;text-decoration:underline;text-underline-offset:3px}
   /* Match the header's reserved desktop/mobile layout while its code loads. */
   .profile-loading{box-sizing:border-box;border:1px solid var(--line);border-radius:13px;background:var(--paper)}
   .profile-loading::before{content:'';display:block;width:100%;aspect-ratio:4/1;min-height:96px;max-height:180px}

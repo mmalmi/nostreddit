@@ -457,6 +457,9 @@ export function loadTopic(topic:string) {
   const stop = watch([{kinds:discussionKinds,'#t':[slug],limit:90}], true);
   return () => { stop(); if (pinnedTopic === slug) pinnedTopic = ''; };
 }
+export function loadFeed(filters: NostrFilter[]) {
+  return filters.length ? watch(filters, true) : noop;
+}
 const directoryProgress = writable({loading:false,coverage:false});
 let checkDirectoryMembers: ((keys: string[])=>void) | undefined;
 const pageStarts = new Map<number,string>();

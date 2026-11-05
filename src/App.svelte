@@ -4,6 +4,7 @@
   import { start, clearRelaySearch } from './lib/network';
   import { watchAppearance } from './lib/appearance';
   import { watchHotPreferences } from './lib/hot-preferences';
+  import { watchFeedPreferences } from './lib/feed-preferences';
 
   type Entry = { id: string; url: string; scroll: number; focus?: HTMLElement;
     from?: string; anchor?: { node: HTMLElement; top: number } };
@@ -86,6 +87,7 @@
     const stop = start();
     const stopAppearance = watchAppearance();
     const stopHot = watchHotPreferences();
+    const stopFeeds = watchFeedPreferences();
     const pop = () => {
       let id = history.state?.nostredditView;
       if (typeof id !== 'string') {
@@ -99,7 +101,7 @@
       window.removeEventListener('popstate', pop);
       stopRestoring();
       history.scrollRestoration = previousRestoration;
-      stopHot(); stopAppearance(); stop();
+      stopFeeds(); stopHot(); stopAppearance(); stop();
     };
   });
 </script>
