@@ -50,7 +50,9 @@ export function readLocal<T>(key: string, fallback: T): T {
 export function writeLocal(key: string, value: unknown) {
   try {
     localStorage.setItem('nostreddit.ui.' + key, JSON.stringify(value));
+    return true;
   } catch {
     /* Private browsing may disable storage. */
+    return false;
   }
 }
