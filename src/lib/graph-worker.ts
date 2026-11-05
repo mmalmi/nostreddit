@@ -5,18 +5,20 @@ import { relayUrls, testRelays } from './relayTypes';
 let authoritative:SocialGraph|undefined, authoritativeVersion=0, renderedVersion=-1;
 let stopSync:(()=>void)|undefined, syncActive=true;
 let saveTimer:ReturnType<typeof setTimeout>|undefined;
+let bootstrapMerge:Promise<void>=Promise.resolve();
 function persistChange() {
   authoritativeVersion++;
   clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
     if(!authoritative)return;
+    await bootstrapMerge;
     const version=authoritativeVersion, bytes=await authoritative.toBinary();
     if(version===authoritativeVersion)await saveGraph(bytes).catch(()=>{});
   },1500);
 }
 function sync() {
   stopSync?.();stopSync=undefined;
-  if(syncActive&&authoritative&&!testRelays)stopSync=startGraphSync({getGraph:()=>authoritative!,relays:relayUrls,
+  if(syncActive&&authoritative&&!testRelays)stopSync=startGraphSync({getGraph:()=>authoritative!,relays:['wss://graph-relay.iris.to',...relayUrls],
     onEvent:()=>{authoritativeVersion++;},
     onChange:()=>{persistChange();self.postMessage({refresh:true});}});
 }
@@ -27,9 +29,7 @@ import { badgesFor, discoveryRoot, profileRelationsFor, snapshotRoot, snapshotHa
 async function load() {
   const local=await readGraph().catch(()=>undefined);
   if(local)try{authoritative=await SocialGraph.fromBinary(snapshotRoot,local);}catch{/* unreadable local state cannot initialize a graph */}
-  if(!authoritative&&!testRelays)try{
-    authoritative=await loadGraphBootstrap({root:snapshotRoot});
-  }catch{/* verified bundled bootstrap remains available offline */}
+  const refreshBootstrap=!authoritative&&!testRelays;
   if(!authoritative){
     const response=await fetch('/socialGraph.bin?v='+snapshotHash.slice(0,16));
     const bytes=await boundedGraphResponse(response);
@@ -38,6 +38,15 @@ async function load() {
     authoritative=await SocialGraph.fromBinary(snapshotRoot,bytes);
   }
   persistChange();sync();
+  if(refreshBootstrap)void loadGraphBootstrap({root:snapshotRoot}).then(async fresh=>{
+    const current=authoritative!;
+    // The merge preserves complete/newer personal lists received during fetch.
+    authoritativeVersion++;
+    const merging=current.merge(fresh);
+    bootstrapMerge=merging.catch(()=>{});
+    await merging;
+    persistChange();self.postMessage({refresh:true});
+  }).catch(()=>{/* local discovery remains ready when the server is unavailable */});
   return authoritative;
 }
 
@@ -64,7 +73,7 @@ async function render(data:GraphRequest) {
     if(data.events.length&&source.handleEvent(data.events,true))persistChange();
     if(!displayGraph||renderedVersion!==authoritativeVersion){
       let revision:number, bytes:Uint8Array;
-      do { revision=authoritativeVersion;bytes=await source.toBinary(); } while(revision!==authoritativeVersion);
+      do { await bootstrapMerge;revision=authoritativeVersion;bytes=await source.toBinary(); } while(revision!==authoritativeVersion);
       displayGraph=await SocialGraph.fromBinary(data.root,bytes);
       renderedVersion=revision;overlayOwner='';overlayKey='';undo={};graphRevision++;
     }
