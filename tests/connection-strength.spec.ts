@@ -20,14 +20,23 @@ test.beforeAll(async()=>{
 test('independent connections outweigh many keys behind one follow; switching modes and offline reload work',async({page,context},info)=>{
   await context.addInitScript(session=>localStorage.setItem('nostreddit.account.v1',JSON.stringify(session)),{pubkey:getPublicKey(viewer),method:'local',nsec:nsecEncode(viewer)});
   await page.goto('/t/connection-check');
-  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText('Independent recommendations');
   const flood=page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:'Repeated promotion',exact:true})});
   await expect(flood.getByRole('button',{name:'Like',exact:true})).toHaveText('40');
+  const independent=page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:'Independent recommendations',exact:true})});
+  await expect(independent.getByRole('button',{name:'Like',exact:true})).toHaveText('2');
+  const expectRankedFirst=async(title:string)=>{
+    const first=page.locator('[data-route-active=\"true\"] article h2').first();
+    await expect(first).toBeVisible();
+    // Graph and reaction updates preserve painted rows until the reader applies them.
+    if(await first.textContent()!==title)await page.getByRole('button',{name:'Show updated posts',exact:true}).click();
+    await expect(first).toHaveText(title);
+  };
+  await expectRankedFirst('Independent recommendations');
   await page.screenshot({path:info.outputPath('connection-strength.png')});
   await page.goto('/settings');await page.getByLabel('Weight reactions by connection strength').uncheck();
-  await page.goto('/t/connection-check');await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText('Repeated promotion');
+  await page.goto('/t/connection-check');await expectRankedFirst('Repeated promotion');
   await page.goto('/settings');await page.getByLabel('Weight reactions by connection strength').check();
-  await page.goto('/t/connection-check');await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText('Independent recommendations');
+  await page.goto('/t/connection-check');await expectRankedFirst('Independent recommendations');
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
   // The bounded feed snapshot is written in a batch; wait for its durable
   // records before testing a fresh offline page (not merely the DOM cache).
@@ -39,7 +48,7 @@ test('independent connections outweigh many keys behind one follow; switching mo
   }),posts.map(post=>post.id)),{timeout:10000}).toBe(true);
   await context.addCookies([{name:'nostreddit_offline_fixture',value:'1',url:'http://127.0.0.1:43164'}]);await context.setOffline(true);
   await page.reload();
-  await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText('Independent recommendations');
+  await expectRankedFirst('Independent recommendations');
   expect(await page.evaluate(()=>Object.keys(localStorage).filter(k=>/rank|pagerank/i.test(k)))).toEqual([]);
 });
 test('ordinary settings and distance mode do not import the optional ranking module',async({browser,baseURL})=>{
