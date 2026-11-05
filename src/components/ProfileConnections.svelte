@@ -26,8 +26,10 @@
     {/each}
   </nav>
   {#if !permitted}
-    {#if !$graphInfo[pubkey] && $graphStatus === 'loading'}<p class="state loading-state">Checking your social graph…</p>
-    {:else}<p class="state">Your <a href="/settings">graph settings</a> hide this profile.</p>{/if}
+    <p class="state loading-state">
+      {#if !$graphInfo[pubkey] && $graphStatus === 'loading'}Checking your social graph…
+      {:else}Your <a href="/settings">graph settings</a> hide this profile.{/if}
+    </p>
   {:else if $page.keys.length}
     <ul aria-label={title}>
       {#each $page.keys as key (key)}
@@ -41,10 +43,12 @@
         </a></li>
       {/each}
     </ul>
-  {:else if $page.loading}<p class="state loading-state" role="status">Loading profiles…</p>
-  {:else if $page.status === 'filtered'}<p class="state">No profiles are visible with your <a href="/settings">graph settings</a>.</p>
-  {:else if $page.status === 'unknown'}<p class="state">No public list has been found for this profile yet.</p>
-  {:else if $page.status !== 'limited'}<p class="state">{direction === 'followers' ? 'No known followers on this page.' : 'No public follows on this page.'}</p>{/if}
+  {:else if $page.status !== 'limited'}<p class="state loading-state" role="status">
+    {#if $page.loading}Loading profiles…
+    {:else if $page.status === 'filtered'}No profiles are visible with your <a href="/settings">graph settings</a>.
+    {:else if $page.status === 'unknown'}No public list has been found for this profile yet.
+    {:else}{direction === 'followers' ? 'No known followers on this page.' : 'No public follows on this page.'}{/if}
+  </p>{/if}
   {#if permitted && $page.status === 'limited'}<button class="outline compact" onclick={$page.scanMore}>Check more profiles</button>{/if}
   {#if permitted && (pageIndex > 0 || $page.hasNext)}
     <div class="paging"><button class="outline compact" disabled={!pageIndex} onclick={() => pageIndex -= 1}>Previous</button>

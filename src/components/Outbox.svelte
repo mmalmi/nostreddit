@@ -9,7 +9,7 @@
 </script>
 <section class="preferences outbox" aria-labelledby="outbox-heading" data-pending-count={$pendingWrites.length}>
   <h2 id="outbox-heading">Outbox</h2>
-  <p aria-live="polite">{$outboxError || (!$outboxReady ? 'Checking saved changes…' : $pendingWrites.length ? $pendingWrites.length + ' pending ' + ($pendingWrites.length===1 ? 'change' : 'changes') : 'All changes synced.')}</p>
+  <p aria-live="polite" class:loading-state={!$outboxReady && !$outboxError}>{$outboxError || (!$outboxReady ? 'Checking saved changes…' : $pendingWrites.length ? $pendingWrites.length + ' pending ' + ($pendingWrites.length===1 ? 'change' : 'changes') : 'All changes synced.')}</p>
   {#each problems.slice(0,3) as message}<p class="issue">{message}</p>{/each}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if $pendingWrites.length}<button class="outline compact" onclick={retry} disabled={$syncing}>{$syncing ? 'Syncing…' : 'Retry sync'}</button>{/if}

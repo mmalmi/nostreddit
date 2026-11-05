@@ -538,8 +538,7 @@ main > .feed-heading:first-child { margin-top: 0; }
 .section-title,
 .composer-foot,
 .search-topics a,
-.rail-footer,
-.rail-footer > span:first-child {
+.rail-footer {
   display: flex;
   align-items: center;
 }
@@ -792,13 +791,8 @@ main > .feed-heading:first-child { margin-top: 0; }
   font-size: 10px;
   padding: 3px 2px;
 }
-.rail-footer > span:first-child {
-  gap: 5px;
-  font: 700 14px var(--serif);
-  color: var(--body-text);
-}
-.rail-footer svg {
-  opacity: 0.72;
+.rail-footer a:hover {
+  text-decoration: underline;
 }
 .primary,
 .outline {

@@ -71,6 +71,12 @@ test('proxy settings reroute open tabs, profile images and posters and preserve 
   await expect(page.getByRole('heading',{name:'Cloud Heron'})).toBeVisible();
   await expect.poll(()=>proxyHits.some(url=>url.includes('/rs:fill:68:68/dpr:2/') && url.endsWith(Buffer.from(avatar).toString('base64url')))).toBe(true);
   await expect.poll(()=>proxyHits.some(url=>url.includes('/rs:fit:655:655/dpr:2/') && url.endsWith(Buffer.from(banner).toString('base64url')))).toBe(true);
+  await page.getByRole('button',{name:'Expand profile banner'}).click();
+  await expect(viewer.locator('img')).toHaveAttribute('src',/^https:\/\/proxy\.example\/images\/.+\/dpr:2\//);
+  await expect(viewer.locator('img')).not.toHaveAttribute('src',/\/rs:fit:655:655\//);
+  await expect(viewer.getByRole('link',{name:'Open original'})).toHaveAttribute('href',banner);
+  expect(originalHits).toEqual([]);
+  await viewer.getByRole('button',{name:'Close image'}).click();
   // Force a fresh failing proxy URL, and verify disabled and enabled fallbacks against actual origin requests.
   breakUnopened=true;
   await settings.getByLabel('Image proxy URL',{exact:true}).fill('https://proxy.example/fail');

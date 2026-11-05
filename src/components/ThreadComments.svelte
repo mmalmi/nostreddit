@@ -142,7 +142,7 @@
       </li>
     {/each}
   </ol>
-  {#if !rows.length}<p class="quiet">No comments loaded yet.</p>{/if}
+  {#if !rows.length}<p class="quiet loading-state">No comments loaded yet.</p>{/if}
   {#if expanded.length > limit}<button class="outline wide" onclick={() => limit += 48}>More comments</button>{/if}
 </section>
 

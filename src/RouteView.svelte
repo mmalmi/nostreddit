@@ -421,7 +421,6 @@
       ...topics.map((t) => t.slug),
     ]),
   ].filter(validTopic);
-  $: topicPopularity = new Map($seenTopics.map(t=>[t.slug,t.authors]));
   $: directoryTopic = topicSlug(directoryFilter.trim().replace(/^[tr]\//i,''));
   $: topicMatches = plan ? discovered.filter(slug => plan.hashtags.includes(slug) ||
     plan.terms.some(term => slug === term || (term.length >= 3 && slug.startsWith(term)))).slice(0,5) : [];
@@ -721,7 +720,6 @@
           aria-label="Find or open a topic"
         /></label
       >
-      <p class="catalog-note">Ranked by distinct authors seen in the last 30 days. A local sample, filtered by your settings.</p>
       <section class="directory">
         {#each discovered
           .filter((s) => s.includes(directoryFilter
@@ -734,7 +732,6 @@
               ><TopicIcon {slug} />
               <div>
                 <strong>{slug}</strong>
-                {#if topicPopularity.has(slug)}<small class="topic-popularity">{topicPopularity.get(slug)}{topicPopularity.get(slug) === 64 ? '+' : ''} {topicPopularity.get(slug) === 1 ? 'author' : 'authors'} seen</small>{/if}
               </div></a
             >
           </div>
@@ -776,7 +773,7 @@
       {/await}
         {/key}
       {:else if $hiddenPostIds.has(route.value) || saved.some(p => p.id === route.value && !$canSeeAuthor(p.pubkey))}
-        <div class="empty" class:loading-state={$graphStatus === 'loading'}><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
+        <div class="empty loading-state"><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
           <p>Visibility depends on the author’s follow distance and mutes.</p><a href="/settings">Graph settings</a></div>
       {:else}<div class="empty loading-state">
           <Icon name="comment" size={28} />
@@ -883,9 +880,10 @@
             saved={saved.some((s) => s.id === p.id)}
             onaction={action}
           />{:else}
-          <div class="empty" class:loading-state={route.page !== 'saved' && route.page !== 'following' &&
-            (route.page === 'search' ? ['loading','ranking'].includes($assistance.status) :
-              preparingFeed || $status === 'loading' || (route.page === 'network' && $graphStatus === 'loading'))}>
+          <!-- A connected relay can still be waiting for posts. Keep the delay
+               for the entire empty interval, including loading/status changes. -->
+          <div class="empty" class:loading-state={route.page === 'saved' ? saved.length > 0 :
+            route.page !== 'following' || !!$account}>
             <span class="empty-icon"
               ><Icon
                 name={route.page === 'saved'
@@ -985,7 +983,8 @@
       >
     </section>
     <div class="rail-footer">
-      <span><Mark size={18} /> Nostreddit</span><span>Powered by Nostr</span>
+      <a href="https://git.iris.to/#/npub1xdhnr9mrv47kkrn95k6cwecearydeh8e895990n3acntwvmgk2dsdeeycm/nostreddit">git.iris.to</a>
+      <a href="https://github.com/mmalmi/nostreddit">GitHub</a>
     </div>
   </aside>
 </div>
@@ -1084,10 +1083,10 @@
   </div>{/if}
 
 <style>
-  .catalog-note{font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0}
   /* Match the header's reserved desktop/mobile layout while its code loads. */
-  .profile-loading{min-height:452.75px;box-sizing:border-box;border:1px solid var(--line);border-radius:13px;background:var(--paper);padding:20px}
-  @media(max-width:520px){.profile-loading{min-height:436.75px}}
+  .profile-loading{box-sizing:border-box;border:1px solid var(--line);border-radius:13px;background:var(--paper)}
+  .profile-loading::before{content:'';display:block;width:100%;aspect-ratio:4/1;min-height:96px;max-height:180px}
+  .profile-loading > .state{box-sizing:border-box;min-height:372.75px;margin:0;padding:20px}
 
   .hot-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:24px;margin:-4px 0 12px;font-size:12px;color:var(--muted)}
   .hot-status{color:var(--muted)}

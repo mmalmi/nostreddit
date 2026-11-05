@@ -113,7 +113,30 @@ test('guest relationship pages resolve legacy URLs, paginate nonmutual followers
 });
 
 for (const width of [390, 1440]) {
-  test(`profile reserves space for delayed metadata and images at ${width}px`, async ({page, context}, testInfo) => {
+  test(`profile loading placeholder matches the header at ${width}px`, async ({page, context}) => {
+    await page.setViewportSize({width, height:960});
+    await allowFixtureAuthors(context);
+    let releaseHeader!: () => void;
+    const headerReady = new Promise<void>(resolve => { releaseHeader = resolve; });
+    await page.route('**/ProfileHeader-*.js', async route => {
+      await headerReady;
+      await route.continue();
+    });
+    try {
+      await page.goto('/u/'+getPublicKey(generateSecretKey()), {waitUntil:'domcontentloaded'});
+      const placeholder=page.locator('.profile-loading');
+      await expect(placeholder).toBeAttached();
+      const reserved=await placeholder.evaluate(node => node.getBoundingClientRect().height);
+      releaseHeader();
+      const header=page.getByRole('region',{name:'Profile',exact:true});
+      await expect(header.locator('.avatar')).toBeVisible();
+      await expect(placeholder).toHaveCount(0);
+      const loaded=await header.boundingBox();
+      expect(Math.abs(loaded!.height-reserved)).toBeLessThanOrEqual(1);
+    } finally { releaseHeader(); }
+  });
+
+  test(`profile reserves image space and expands its banner at ${width}px`, async ({page, context}, testInfo) => {
     await page.setViewportSize({width, height:960});
     await allowFixtureAuthors(context);
     await context.addInitScript(() => localStorage.setItem('nostreddit.ui.imageProxy', JSON.stringify({enabled:false})));
@@ -127,6 +150,8 @@ for (const width of [390, 1440]) {
     await page.goto('/u/'+pubkey);
     const header=page.getByRole('region',{name:'Profile',exact:true});
     await expect(header.locator('.avatar')).toBeVisible();
+    const banner=header.getByRole('button',{name:'Expand profile banner'});
+    await expect(banner).toHaveCount(0);
     const before=await header.boundingBox();
     const event=finalizeEvent({kind:0,tags:[],created_at:Math.floor(Date.now()/1000),content:JSON.stringify({
       name:'A long profile name that should stay on one line even on a small phone',
@@ -147,6 +172,32 @@ for (const width of [390, 1440]) {
     await expect.poll(() => header.locator('img').evaluateAll(images => images.every(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth>0))).toBe(true);
     const loaded=await header.boundingBox();
     expect(Math.abs(loaded!.height-metadata!.height)).toBeLessThanOrEqual(1);
+    const bannerBox=await banner.boundingBox();
+    expect(Math.abs(bannerBox!.width-(loaded!.width-2))).toBeLessThanOrEqual(1);
     await page.screenshot({path:testInfo.outputPath('profile-loaded.png')});
+    await banner.click();
+    const viewer=page.getByRole('dialog',{name:'Expanded image'});
+    const fullImage=viewer.getByRole('img',{name:/Profile banner for/});
+    await expect(fullImage).toBeVisible();
+    await expect.poll(() => fullImage.evaluate((image:HTMLImageElement) => image.complete && image.naturalWidth>0)).toBe(true);
+    await expect(viewer.getByRole('link',{name:'Open original'})).toHaveAttribute('href','https://profile-images.test/banner.svg');
+    const imageBox=await fullImage.boundingBox();
+    expect(imageBox!.width).toBeLessThanOrEqual(width);
+    expect(imageBox!.width/imageBox!.height).toBeCloseTo(1.5,1);
+    await page.screenshot({path:testInfo.outputPath('profile-banner-expanded.png')});
+    await fullImage.click();
+    await expect(viewer).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(viewer).toHaveCount(0);
+    await expect(banner).toBeFocused();
+    await banner.press('Enter');
+    await expect(viewer).toBeVisible();
+    await viewer.getByRole('button',{name:'Close image'}).click();
+    await expect(viewer).toHaveCount(0);
+    await expect(banner).toBeFocused();
+    await banner.press('Space');
+    await expect(viewer).toBeVisible();
+    await page.mouse.click(5,5);
+    await expect(viewer).toHaveCount(0);
   });
 }

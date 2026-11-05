@@ -4,6 +4,7 @@
   import { imageProxySettings, type ImageProxySettings } from '../lib/image-proxy';
   import type { MediaItem } from '../lib/media';
   import Icon from './Icon.svelte';
+  import ImageViewer from './ImageViewer.svelte';
 
   export let item: MediaItem;
   export let compact = false;
@@ -23,17 +24,6 @@
     if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || typeof HTMLDialogElement === 'undefined' || !HTMLDialogElement.prototype.showModal) return;
     e.preventDefault();
     enlargedUrl = item.url;
-  }
-  function showImageDialog(node: HTMLDialogElement) {
-    function closeOnBackdrop(event: MouseEvent) {
-      if (event.target !== node) return;
-      const bounds = node.getBoundingClientRect();
-      if (event.clientX < bounds.left || event.clientX > bounds.right ||
-          event.clientY < bounds.top || event.clientY > bounds.bottom) node.close();
-    }
-    node.addEventListener('click', closeOnBackdrop);
-    node.showModal();
-    return { destroy() { node.removeEventListener('click', closeOnBackdrop); } };
   }
   async function loadPlayer() {
     openedUrl = item.url;
@@ -77,13 +67,7 @@
       </span>
     </a>
     {#if enlargedUrl === item.url}
-      <dialog class="viewer" aria-label="Expanded image" use:showImageDialog onclose={() => enlargedUrl = ''}>
-        <div class="viewer-tools">
-          <a href={item.url} target="_blank" rel="noopener noreferrer">Open original <Icon name="external" size={14}/></a>
-          <form method="dialog"><button aria-label="Close image"><Icon name="close" size={20}/></button></form>
-        </div>
-        <img use:proxyImage={{url:item.url,offline:true,remember:true}} alt={item.alt || 'Photo from ' + host} referrerpolicy="no-referrer"/>
-      </dialog>
+      <ImageViewer url={item.url} alt={item.alt || 'Photo from ' + host} onclose={() => enlargedUrl = ''}/>
     {/if}
   {:else}
     {#if (compact || provider || item.clickToLoad) && !expanded}
@@ -121,12 +105,6 @@
   .image-link img {display:block;width:auto;height:auto;max-width:100%;max-height:min(70vh,550px);object-fit:contain}
   .compact .image-link img {max-height:clamp(220px,36vw,340px)}
   .expand-icon {position:absolute;right:7px;bottom:7px;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#12211ddd;color:white;pointer-events:none}
-  .viewer {max-width:96vw;max-height:96vh;border:0;border-radius:10px;background:#15211b;color:white;padding:8px}
-  .viewer::backdrop {background:#0b1510dd}
-  .viewer > img {display:block;max-width:90vw;max-height:79vh;object-fit:contain;margin:auto}
-  .viewer-tools {display:flex;align-items:center;justify-content:flex-end;gap:14px;padding:0 3px 6px}
-  .viewer-tools a,.viewer-tools button {display:inline-flex;align-items:center;gap:5px;color:inherit;font-size:13px}
-  .viewer-tools button {padding:4px}
   .media video,.media iframe {display:block;width:100%;aspect-ratio:16/9;max-height:440px;background:#17271f;border:0;border-radius:8px}
   .media audio {display:block;width:min(100%,380px)}
   .load {display:inline-flex;align-items:center;gap:.5rem;border:1px solid var(--line);border-radius:7px;padding:.4rem .65rem;background:var(--light);color:var(--green);font-weight:650;font-size:.84rem}

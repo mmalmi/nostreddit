@@ -12,6 +12,7 @@
   import Icon from './Icon.svelte';
   import SocialBadge from './SocialBadge.svelte';
   import SocialContext from './SocialContext.svelte';
+  import ImageViewer from './ImageViewer.svelte';
 
   export let pubkey: string;
   export let active = true;
@@ -22,6 +23,7 @@
   export let onEdit: () => void;
 
   let expandedFor = '';
+  let enlargedBanner = '';
   $: profile = $profiles[pubkey];
   $: mine = pubkey === $account?.pubkey;
   $: following = $follows.includes(pubkey);
@@ -33,6 +35,7 @@
     ? $profileRelations : null;
   $: if (active) observeEventAuthors([pubkey, ...(social?.mutuals ?? [])]);
   $: allowed = $canSeeAuthor(pubkey);
+  $: if (!active || !allowed || enlargedBanner !== banner) enlargedBanner = '';
   $: allowedPeople = social?.mutuals.filter($canSeeAuthor) ?? [];
   $: people = allowedPeople.slice(0, expandedFor === pubkey ? 12 : 3);
 </script>
@@ -41,8 +44,9 @@
   {#if !allowed}
     <div class="restricted">
       <h1>Profile</h1>
+      <div class="loading-state">
       {#if !muted && !$graphInfo[pubkey] && $graphStatus !== 'unavailable'}
-        <p class="loading-state">Checking your social graph…</p>
+        <p>Checking your social graph…</p>
       {:else}
         <p>Your <a href="/settings">visibility settings</a> hide this profile.</p>
         <div class="actions">
@@ -50,11 +54,19 @@
           {#if $account && muted}<button class="outline compact" disabled={muteBusy || (!!$account && !$outboxReady)} onclick={onMute}>Unmute</button>{/if}
         </div>
       {/if}
+      </div>
     </div>
   {:else}
   <div class="cover">
-    {#if banner}{#key banner}<img width="655" height="78" use:proxyImage={{url:banner,width:655}} alt="" referrerpolicy="no-referrer"/>{/key}{/if}
+    {#if banner}
+      <button class="banner" aria-label="Expand profile banner" onclick={() => enlargedBanner = banner}>
+        {#key banner}<img width="655" height="164" use:proxyImage={{url:banner,width:655}} alt="" referrerpolicy="no-referrer"/>{/key}
+      </button>
+    {/if}
   </div>
+  {#if enlargedBanner}
+    <ImageViewer url={enlargedBanner} alt={'Profile banner for ' + displayName(pubkey,profile)} onclose={() => enlargedBanner = ''}/>
+  {/if}
   <div class="bio">
     <div class="identity-row">
       <div class="avatar"><ProxyAvatar {pubkey} {profile} size={68}/></div>
@@ -82,10 +94,10 @@
     </div>
     <div class="stats">
       <a class="stat-link" href={profileUrl(pubkey,'following')} aria-label="View following">
-        <strong>{social?.following != null ? social.following.toLocaleString() : ""}</strong> Following
+        <strong title={social?.following == null ? 'Follow list not found' : undefined}>{social?.following != null ? social.following.toLocaleString() : '—'}</strong> Following
       </a>
       <a class="stat-link" href={profileUrl(pubkey,'followers')} aria-label="View followers">
-        <strong>{social?.followers != null ? social.followers.toLocaleString() : ""}</strong> Followers
+        <strong title={social?.followers == null ? 'Follower count unavailable' : undefined}>{social?.followers != null ? social.followers.toLocaleString() : '—'}</strong> Followers
       </a>
       {#if !mine && $account && social?.followsViewer}<span class="badge">Follows you</span>{/if}
     </div>
@@ -115,7 +127,9 @@
   .restricted a {color:var(--green);text-decoration:underline}
   .restricted .actions {justify-content:flex-start;margin-top:10px}
   .identity {border:1px solid var(--line);border-radius:13px;background:var(--paper);overflow:hidden}
-  .cover {height:78px;background:repeating-linear-gradient(135deg,transparent 0 15px,#ffffff12 15px 16px),linear-gradient(120deg,var(--deep),color-mix(in srgb,var(--deep) 40%,#f5ebc8))}
+  .cover {width:100%;aspect-ratio:4/1;min-height:96px;max-height:180px;background:repeating-linear-gradient(135deg,transparent 0 15px,#ffffff12 15px 16px),linear-gradient(120deg,var(--deep),color-mix(in srgb,var(--deep) 40%,#f5ebc8))}
+  .banner {display:block;width:100%;height:100%;cursor:zoom-in}
+  .banner:focus-visible {outline:3px solid var(--green);outline-offset:-3px}
   .cover img {display:block;width:100%;height:100%;object-fit:cover}
   .bio {padding:0 20px 17px}
   .identity-row {display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:-29px;position:relative}
@@ -151,5 +165,5 @@
   .faces {flex:none}
   .faces span {border:2px solid var(--paper);border-radius:50%;overflow:hidden;background:var(--light)}
   .faces span + span {margin-left:-8px}
-  @media(max-width:520px) {.bio {padding-inline:14px}.cover {height:62px}.actions {gap:4px}}
+  @media(max-width:520px) {.bio {padding-inline:14px}.actions {gap:4px}}
 </style>

@@ -9,11 +9,11 @@
   $: distance=badge?.distance;
   $: people=badge?.followedByFriends===1?'person':'people';
   $: explanation=mine?'This is your profile.':distance===1?(publicGraph?'A direct connection in the public social graph.':'You follow this profile.')
-    :distance===2?`Followed by ${badge?.followedByFriends ?? 0} ${people} ${publicGraph?'in the public graph':'you follow'}.`
+    :distance===2?(publicGraph?'Two follow steps away in the public graph.':`Followed by ${badge?.followedByFriends ?? 0} ${people} you follow.`)
     :distance===0?'Center of the public social graph.':distance!=null?`${distance} follow steps away${publicGraph?' in the public graph':''}.`
     :$graphStatus==='loading'?'Checking connections…':'No known follow path in this graph.';
 </script>
-<details class="social-context" class:loading-state={!mine && distance == null && $graphStatus === 'loading'}>
+<details class="social-context" class:loading-state={!mine && distance == null}>
   <summary><SocialBadge {pubkey}/><span>{explanation}</span></summary>
   <p>{publicGraph?'Discovery uses the public social graph until you follow people.':'Distance is the shortest chain of follows from your profile.'}</p>
   <ul>
