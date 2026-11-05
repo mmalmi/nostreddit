@@ -43,8 +43,19 @@ test('shared badges distinguish self, follows and familiar neighbors; profile ex
   await page.screenshot({path:info.outputPath('profile-explainer-mobile.png')});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
+  // Wait for the signed graph to be durable, then prove reload uses it offline.
+  await expect.poll(()=>page.evaluate(()=>new Promise<boolean>(resolve=>{
+    const request=indexedDB.open('nostreddit-social-graph',1);
+    request.onsuccess=()=>{const db=request.result;if(!db.objectStoreNames.contains('snapshots')){db.close();resolve(false);return;}
+      const read=db.transaction('snapshots').objectStore('snapshots').get('current');read.onsuccess=()=>{db.close();resolve(read.result instanceof Uint8Array);};read.onerror=()=>{db.close();resolve(false);};};
+    request.onerror=()=>resolve(false);
+  }))).toBe(true);
+
   await context.addCookies([{name:'nostreddit_offline_fixture',value:'1',url:'http://127.0.0.1:43164'}]);
   await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator('h1').getByTestId('social-distance-badge')).toHaveClass(/trusted/);
+  await explanation.locator('summary').click();
   await page.getByRole('button',{name:'Follow',exact:true}).click();
   await expect(page.locator('h1').getByTestId('social-distance-badge')).toHaveClass(/following/);
   await expect(explanation.locator('summary')).toHaveText('You follow this profile.');

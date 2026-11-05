@@ -48,7 +48,8 @@ function schedule() {
       if (!worker) {
         worker = new Worker(new URL('./graph-worker.ts', import.meta.url), {type:'module'});
         worker.onerror = unavailable;
-        worker.onmessage = ({data}: MessageEvent<GraphReply>) => {
+        worker.onmessage = ({data}: MessageEvent<GraphReply|{refresh:true}>) => {
+          if ('refresh' in data) { invalidate(); return; }
           busy = false;
           if ('error' in data) return unavailable();
           if (data.version === version) {
@@ -182,7 +183,7 @@ export function observeGraphEvent(event: NostrEvent) {
 }
 
 if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(); });
+  document.addEventListener('visibilitychange', () => { worker?.postMessage({syncActive:!document.hidden}); if (!document.hidden) schedule(); });
   window.addEventListener('online', () => {
     if (!failed) return;
     failed = false;

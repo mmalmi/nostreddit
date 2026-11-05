@@ -1,18 +1,50 @@
 import { SocialGraph } from 'nostr-social-graph';
+import { startGraphSync, loadGraphBootstrap } from 'nostr-social-graph/publicGraphSync';
+import { readGraph, saveGraph, boundedGraphResponse } from './graph-storage';
+import { relayUrls, testRelays } from './relayTypes';
+let authoritative:SocialGraph|undefined, authoritativeVersion=0, renderedVersion=-1;
+let stopSync:(()=>void)|undefined, syncActive=true;
+let saveTimer:ReturnType<typeof setTimeout>|undefined;
+function persistChange() {
+  authoritativeVersion++;
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async()=>{
+    if(!authoritative)return;
+    const version=authoritativeVersion, bytes=await authoritative.toBinary();
+    if(version===authoritativeVersion)await saveGraph(bytes).catch(()=>{});
+  },1500);
+}
+function sync() {
+  stopSync?.();stopSync=undefined;
+  if(syncActive&&authoritative&&!testRelays)stopSync=startGraphSync({getGraph:()=>authoritative!,relays:relayUrls,
+    onEvent:()=>{authoritativeVersion++;},
+    onChange:()=>{persistChange();self.postMessage({refresh:true});}});
+}
+
 import { createGraphRanker } from './graph-ranking';
 import { badgesFor, discoveryRoot, profileRelationsFor, snapshotRoot, snapshotHash, type GraphRequest, type GraphReply } from './graph-model';
 
 async function load() {
-  const response = await fetch('/socialGraph.bin?v=' + snapshotHash.slice(0, 16));
-  if (!response.ok) throw new Error('Graph unavailable');
-  const bytes = await response.arrayBuffer();
-  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), n => n.toString(16).padStart(2, '0')).join('');
-  if (digest !== snapshotHash) throw new Error('Graph snapshot failed verification');
-  return SocialGraph.fromBinary(snapshotRoot, new Uint8Array(bytes));
+  const local=await readGraph().catch(()=>undefined);
+  if(local)try{authoritative=await SocialGraph.fromBinary(snapshotRoot,local);}catch{/* unreadable local state cannot initialize a graph */}
+  if(!authoritative&&!testRelays)try{
+    authoritative=await loadGraphBootstrap({root:snapshotRoot});
+  }catch{/* verified bundled bootstrap remains available offline */}
+  if(!authoritative){
+    const response=await fetch('/socialGraph.bin?v='+snapshotHash.slice(0,16));
+    const bytes=await boundedGraphResponse(response);
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
+    if(digest!==snapshotHash)throw new Error('Graph snapshot failed verification');
+    authoritative=await SocialGraph.fromBinary(snapshotRoot,bytes);
+  }
+  persistChange();sync();
+  return authoritative;
 }
 
 // Main sends one request at a time. Full graph traversals occur only on root or edge changes.
 let loaded: Promise<SocialGraph> | undefined;
+let displayGraph:SocialGraph|undefined;
+let processing=Promise.resolve();
 const ranker=createGraphRanker();
 let graphRevision=0;
 // Keep unsigned local edges separate from the verified graph. Undo the previous
@@ -21,9 +53,22 @@ let overlayOwner='', overlayKey='', undo:Record<string,boolean>={};
 function setEdge(graph:SocialGraph, owner:string, person:string, followed:boolean) {
   if (followed) graph.addFollower(owner,person); else graph.removeFollower(owner,person);
 }
-self.onmessage = async ({ data }: MessageEvent<GraphRequest>) => {
+self.onmessage = ({data}:MessageEvent<GraphRequest|{syncActive:boolean}>)=>{
+  if('syncActive' in data){syncActive=data.syncActive;sync();return;}
+  processing=processing.then(()=>render(data));
+};
+async function render(data:GraphRequest) {
   try {
-    const graph = await (loaded ??= load());
+    const source=await (loaded??=load());
+    await source.setRoot(data.root);
+    if(data.events.length&&source.handleEvent(data.events,true))persistChange();
+    if(!displayGraph||renderedVersion!==authoritativeVersion){
+      let revision:number, bytes:Uint8Array;
+      do { revision=authoritativeVersion;bytes=await source.toBinary(); } while(revision!==authoritativeVersion);
+      displayGraph=await SocialGraph.fromBinary(data.root,bytes);
+      renderedVersion=revision;overlayOwner='';overlayKey='';undo={};graphRevision++;
+    }
+    const graph=displayGraph;
     let changed = false;
     const nextKey=JSON.stringify(data.edges.follows);
     const updateEdges=data.root!==overlayOwner || nextKey!==overlayKey || data.events.some(e=>e.pubkey===data.root && e.kind===3);
