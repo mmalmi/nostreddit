@@ -559,21 +559,25 @@ main > .feed-heading:first-child { margin-top: 0; }
   overflow-wrap: anywhere;
 }
 .author {
-  gap: 6px;
+  gap: 5px;
+  min-width: 0;
+  max-width: 40%;
+}
+.author-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  display: block;
-  max-width: 40%;
 }
 .author img {
   height: 18px;
   width: 18px;
   border-radius: 50%;
-  vertical-align: text-bottom;
-  display: inline-block;
-  margin-right: 5px;
+  flex: none;
   object-fit: cover;
+}
+.iris-social-distance-badge {
+  vertical-align: -2px;
 }
 .sep {
   color: var(--muted);
@@ -1348,7 +1352,16 @@ main > .feed-heading:first-child { margin-top: 0; }
     height: 22px;
   }
 }
+/* Reserve the layout, but keep short waits invisible and out of accessibility trees. */
+.loading-state {
+  animation: loading-reveal 180ms ease-out 2s both;
+}
+@keyframes loading-reveal {
+  from { opacity: 0; visibility: hidden; }
+  to { opacity: 1; visibility: visible; }
+}
 @media (prefers-reduced-motion: reduce) {
+  .loading-state { animation-duration: 1ms; }
   *,
   *:before,
   *:after {

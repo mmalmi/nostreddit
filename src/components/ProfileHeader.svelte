@@ -42,7 +42,7 @@
     <div class="restricted">
       <h1>Profile</h1>
       {#if !muted && !$graphInfo[pubkey] && $graphStatus !== 'unavailable'}
-        <p>Checking your social graph…</p>
+        <p class="loading-state">Checking your social graph…</p>
       {:else}
         <p>Your <a href="/settings">visibility settings</a> hide this profile.</p>
         <div class="actions">
@@ -66,7 +66,7 @@
         {/if}
       </div>
     </div>
-    <h1 aria-label={displayName(pubkey,profile)}><Name {pubkey} {profile} name={displayName(pubkey,profile)}/><SocialBadge {pubkey} size={19}/></h1>
+    <h1 aria-label={displayName(pubkey,profile)}><SocialBadge {pubkey} size={19}/><Name {pubkey} {profile} name={displayName(pubkey,profile)}/></h1>
     <div class="identifiers">
       {#if profile?.nip05}<span title="Nostr address listed by this profile">{profile.nip05}</span>{/if}
       <CopyButton class="profile-copy" text={npub} label="Copy public key" ariaLabel="Copy public key" title="Copy public key" promptLabel="Public key"/>

@@ -13,7 +13,7 @@
     :distance===0?'Center of the public social graph.':distance!=null?`${distance} follow steps away${publicGraph?' in the public graph':''}.`
     :$graphStatus==='loading'?'Checking connections…':'No known follow path in this graph.';
 </script>
-<details class="social-context">
+<details class="social-context" class:loading-state={!mine && distance == null && $graphStatus === 'loading'}>
   <summary><SocialBadge {pubkey}/><span>{explanation}</span></summary>
   <p>{publicGraph?'Discovery uses the public social graph until you follow people.':'Distance is the shortest chain of follows from your profile.'}</p>
   <ul>

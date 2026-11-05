@@ -30,7 +30,7 @@ test('opening a post reads only its activity and keeps newer activity unread aft
   await allowFixtureAuthors(page.context());
   await page.addInitScript((key) => localStorage.setItem('nostreddit.account.v1',JSON.stringify({pubkey:key, method:'extension'})),pubkey);
   await page.goto('/notifications');
-  const badge = page.locator('.nav-row[href="/notifications"] .unread-count');
+  const badge = page.locator('[data-route-active="true"] .nav-row[href="/notifications"] .unread-count');
   const activity = page.locator('[data-route-active=\"true\"] article.activity');
   await expect(badge).toHaveText('3');
   await expect(activity.filter({hasText:'Unread'})).toHaveCount(3);

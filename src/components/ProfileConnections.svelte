@@ -26,7 +26,7 @@
     {/each}
   </nav>
   {#if !permitted}
-    {#if !$graphInfo[pubkey] && $graphStatus === 'loading'}<p class="state">Checking your social graph…</p>
+    {#if !$graphInfo[pubkey] && $graphStatus === 'loading'}<p class="state loading-state">Checking your social graph…</p>
     {:else}<p class="state">Your <a href="/settings">graph settings</a> hide this profile.</p>{/if}
   {:else if $page.keys.length}
     <ul aria-label={title}>
@@ -34,13 +34,14 @@
         {@const person = $profiles[key]}
         {@const name = displayName(key, person)}
         <li><a class="person" href={profileUrl(key)} aria-label={name}>
+          <SocialBadge pubkey={key}/>
           <ProxyAvatar pubkey={key} profile={person} size={38}/>
-          <span class="details"><strong><span class="person-name">{name}</span><SocialBadge pubkey={key}/></strong>{#if person?.about}<small>{person.about}</small>{/if}</span>
+          <span class="details"><strong><span class="person-name">{name}</span></strong>{#if person?.about}<small>{person.about}</small>{/if}</span>
           {#if $account && $follows.includes(key)}<span class="followed">You follow</span>{/if}<Icon name="next" size={14}/>
         </a></li>
       {/each}
     </ul>
-  {:else if $page.loading}<p class="state" role="status">Loading profiles…</p>
+  {:else if $page.loading}<p class="state loading-state" role="status">Loading profiles…</p>
   {:else if $page.status === 'filtered'}<p class="state">No profiles are visible with your <a href="/settings">graph settings</a>.</p>
   {:else if $page.status === 'unknown'}<p class="state">No public list has been found for this profile yet.</p>
   {:else if $page.status !== 'limited'}<p class="state">{direction === 'followers' ? 'No known followers on this page.' : 'No public follows on this page.'}</p>{/if}

@@ -7,6 +7,8 @@
   import { readLocal, displayName, writeLocal } from '../lib/ui';
   import Card from './Card.svelte';
   import Icon from './Icon.svelte';
+  import AttachmentPicker from './AttachmentPicker.svelte';
+  let uploading: Record<string,boolean> = {};
 
   const replyPrefix = 'reply-' + crypto.randomUUID() + '-';
   export let routeActive = true;
@@ -67,7 +69,7 @@
   async function send(parent: Post) {
     const text = (drafts[parent.id] ?? '').trim();
     if (!$account) { onSignIn(); return; }
-    if (!text || sending.has(parent.id)) return;
+    if (!text || sending.has(parent.id) || uploading[parent.id]) return;
     const owner = $account.pubkey;
     sending = new Set(sending).add(parent.id);
     errors = {...errors, [parent.id]: ''};
@@ -95,9 +97,9 @@
       onfocus={() => active = parent.id}
       rows={editing ? 3 : 1} maxlength="20000" disabled={sending.has(parent.id)}></textarea>
     {#if errors[parent.id]}<p class="error" role="alert">{errors[parent.id]}</p>{/if}
-    {#if editing}<div class="form-actions">
-      <button type="button" class="cancel" disabled={sending.has(parent.id)} onclick={() => active = ''}>Cancel</button>
-      <button class="primary compact" disabled={!drafts[parent.id]?.trim() || sending.has(parent.id)}>{sending.has(parent.id) ? 'Publishing…' : 'Post reply'}</button>
+    {#if editing}<AttachmentPicker disabled={sending.has(parent.id)} onbusy={(value) => uploading = {...uploading,[parent.id]:value}} onattach={(link) => drafts = {...drafts,[parent.id]:[drafts[parent.id]?.trim(),link].filter(Boolean).join('\n\n')}}/><div class="form-actions">
+      <button type="button" class="cancel" disabled={sending.has(parent.id) || uploading[parent.id]} onclick={() => active = ''}>Cancel</button>
+      <button class="primary compact" disabled={!drafts[parent.id]?.trim() || sending.has(parent.id) || uploading[parent.id]}>{sending.has(parent.id) ? 'Publishing…' : 'Post reply'}</button>
     </div>{/if}
   </form>
 {/snippet}

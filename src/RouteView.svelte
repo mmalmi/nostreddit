@@ -647,7 +647,7 @@
     </div>
     <a class="nav-row" class:active={route.page === 'settings'} aria-current={route.page === 'settings' ? 'page' : undefined} href="/settings"><Icon name="settings" size={18} />Settings</a>
     {#if $pendingWrites.length}<a class="sync-link" href="/settings">{$pendingWrites.length} pending {$pendingWrites.length === 1 ? 'change' : 'changes'}</a>{/if}
-    <div class="left-foot">
+    <div class="left-foot" class:loading-state={$status === 'loading'}>
       <span class="signal-dot" class:offline={$status === 'offline'}
       ></span>{$status === 'live'
         ? 'Relays connected'
@@ -689,7 +689,7 @@
     {#if route.connections}
       {#key route.value + route.connections}
               {#await import('./components/ProfileConnections.svelte')}
-        <p class="state" role="status">Loading…</p>
+        <p class="state loading-state" role="status">Loading…</p>
       {:then {default: ProfileConnections}}
         <ProfileConnections pubkey={route.value} direction={route.connections}/>
       {:catch}
@@ -698,7 +698,7 @@
       {/key}
     {:else if route.page === 'settings'}
             {#await import('./components/SettingsPage.svelte')}
-        <p class="state" role="status">Loading…</p>
+        <p class="state loading-state" role="status">Loading…</p>
       {:then {default: SettingsPage}}
         <SettingsPage {sorting} {showPreviews} onOrderChange={changeOrder}
         onPreviewsChange={(value) => { showPreviews = value; writeLocal('showPreviews', value); }} />
@@ -707,7 +707,7 @@
       {/await}
     {:else if route.page === 'notifications'}
             {#await import('./components/Notifications.svelte')}
-        <p class="state" role="status">Loading…</p>
+        <p class="state loading-state" role="status">Loading…</p>
       {:then {default: Notifications}}
         <Notifications {active} onSignIn={() => showModal('account')} />
       {:catch}
@@ -768,7 +768,7 @@
         />
         {#key thread.id}
                 {#await import('./components/ThreadComments.svelte')}
-        <p class="state" role="status">Loading…</p>
+        <p class="state loading-state" role="status">Loading…</p>
       {:then {default: ThreadComments}}
         <ThreadComments routeActive={active} {thread} {saved} onaction={action} onSignIn={() => showModal('account')} {notify}/>
       {:catch}
@@ -776,9 +776,9 @@
       {/await}
         {/key}
       {:else if $hiddenPostIds.has(route.value) || saved.some(p => p.id === route.value && !$canSeeAuthor(p.pubkey))}
-        <div class="empty"><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
+        <div class="empty" class:loading-state={$graphStatus === 'loading'}><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
           <p>Visibility depends on the author’s follow distance and mutes.</p><a href="/settings">Graph settings</a></div>
-      {:else}<div class="empty">
+      {:else}<div class="empty loading-state">
           <Icon name="comment" size={28} />
           <h2>
             {$status === 'loading'
@@ -798,7 +798,7 @@
           ><Icon name="back" size={15} />Home feed</a
         >
               {#await import('./components/ProfileHeader.svelte')}
-        <div class="profile-loading" role="status"><p class="state">Loading profile…</p></div>
+        <div class="profile-loading loading-state" role="status"><p class="state">Loading profile…</p></div>
       {:then {default: ProfileHeader}}
         <ProfileHeader {active} pubkey={route.value} followBusy={busy.has('follow')} muteBusy={busy.has('mute')}
           onFollow={() => toggleFollow(route.value)} onMute={() => toggleMute(route.value)}
@@ -812,7 +812,7 @@
           <label><input type="checkbox" checked={related} onchange={e => {
             related = e.currentTarget.checked; writeLocal('relatedSearch', related);
           }}/> Match related meanings</label>
-          <small role="status">{$assistance.status === 'loading' ? 'Preparing on-device search…' :
+          <small role="status" class:loading-state={['loading','ranking'].includes($assistance.status)}>{$assistance.status === 'loading' ? 'Preparing on-device search…' :
             $assistance.status === 'ranking' ? 'Finding related discussions…' :
             $assistance.status === 'ready' ? 'Ranked on this device' :
             $assistance.status === 'unavailable' ? 'On-device model unavailable. Showing keyword matches.' : 'Keyword matches'}</small>
@@ -883,7 +883,9 @@
             saved={saved.some((s) => s.id === p.id)}
             onaction={action}
           />{:else}
-          <div class="empty">
+          <div class="empty" class:loading-state={route.page !== 'saved' && route.page !== 'following' &&
+            (route.page === 'search' ? ['loading','ranking'].includes($assistance.status) :
+              preparingFeed || $status === 'loading' || (route.page === 'network' && $graphStatus === 'loading'))}>
             <span class="empty-icon"
               ><Icon
                 name={route.page === 'saved'
@@ -1020,14 +1022,14 @@
       ><Icon name="close" size={18} /></button
     >
     {#if modal === 'account'}      {#await import('./components/AccountPanel.svelte')}
-        <p class="state" role="status">Loading…</p>
+        <p class="state loading-state" role="status">Loading…</p>
       {:then {default: AccountPanel}}
         <AccountPanel onclose={accountDone} {notify} />
       {:catch}
         {@render componentError()}
       {/await}
     {:else if modal === 'compose' && $account}      {#await import('./components/Composer.svelte')}
-        <p class="state" role="status">Loading…</p>
+        <p class="state loading-state" role="status">Loading…</p>
       {:then {default: Composer}}
         <Composer
         initialTopic={route.page === 'topic' ? route.value : ''}
@@ -1044,7 +1046,7 @@
         {@render componentError()}
       {/await}
     {:else if modal === 'profile' && $account}      {#await import('./components/EditProfile.svelte')}
-        <p class="state" role="status">Loading…</p>
+        <p class="state loading-state" role="status">Loading…</p>
       {:then {default: EditProfile}}
         <EditProfile
         profile={$profiles[$account.pubkey]}
@@ -1060,7 +1062,7 @@
         class="dialog-content zap-content"
       >
               {#await import('./lib/ZapPanel.svelte')}
-        <p class="state" role="status">Loading…</p>
+        <p class="state loading-state" role="status">Loading…</p>
       {:then {default: ZapPanel}}
         <ZapPanel
           event={zapPost.event}

@@ -80,3 +80,87 @@ test('the feed link shortcut requires a topic and publishes a link post',async({
   await expect(page.locator('[data-route-active=\"true\"] main article').first().getByRole('link',{name:'t/field-guides',exact:true})).toBeVisible();
   await expect(page.locator('[data-route-active=\"true\"] main article a[href="https://example.org/field-guide"]').first()).toBeVisible();
 });
+
+test('attachments upload, publish and open from the post',async({page},info)=>{
+  const blocks=new Map<string,Buffer>();
+  await page.route(/^https:\/\/(upload|cdn)\.iris\.to\//,async route=>{
+    const request=route.request();
+    if(request.method()==='PUT') {
+      const bytes=request.postDataBuffer()!;
+      const {createHash}=await import('node:crypto');
+      const hash=createHash('sha256').update(bytes).digest('hex');
+      blocks.set(hash,bytes);
+      await route.fulfill({json:{sha256:hash,size:bytes.length,url:`https://upload.iris.to/${hash}.bin`}});
+    } else {
+      const hash=new URL(request.url()).pathname.slice(1).split('.')[0];
+      const bytes=blocks.get(hash);
+      await route.fulfill({status:bytes?200:404,body:bytes??''});
+    }
+  });
+  await page.goto('/t/photography');
+  await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).first().click();
+  await page.getByRole('button',{name:'Create profile',exact:true}).click();
+  const editor=page.getByRole('dialog',{name:'Create post',exact:true});
+  await editor.getByLabel('Title',{exact:true}).fill('Attached field notes');
+  await editor.getByLabel('Attach files',{exact:true}).setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('Notes from the shore')});
+  await expect(editor.getByLabel('Body (optional)',{exact:true})).toHaveValue(/htree:\/\/nhash1.*\/notes.txt/);
+  await editor.getByRole('button',{name:'Preview',exact:true}).click();
+  const attachmentPreview=editor.getByRole('region',{name:'Post preview'});
+  await expect(attachmentPreview).toContainText('notes.txt');
+  await attachmentPreview.getByRole('button',{name:'Load file',exact:true}).click();
+  await expect(attachmentPreview.getByRole('link',{name:'Download file',exact:true})).toBeVisible();
+  await expect(editor).toBeVisible();
+  await expect(page.getByRole('main').getByRole('heading',{name:'Attached field notes',exact:true})).toHaveCount(0);
+  await page.screenshot({path:info.outputPath('attachment-ready.png')});
+  await editor.getByRole('button',{name:'Publish post',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Attached field notes',exact:true})).toBeVisible();
+  await expect(page.locator('[data-route-active="true"] main article').first()).toContainText('notes.txt');
+  await page.getByRole('button',{name:'Load file',exact:true}).first().click();
+  const download=page.getByRole('link',{name:'Download file',exact:true}).first();
+  await expect(download).toBeVisible();
+  const downloaded=page.waitForEvent('download');
+  await download.click();
+  const file=await downloaded;
+  expect(file.suggestedFilename()).toBe('notes.txt');
+  const stream=await file.createReadStream();
+  const chunks:Buffer[]=[];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(chunks).toString()).toBe('Notes from the shore');
+  await page.screenshot({path:info.outputPath('attachment-published.png')});
+  expect(blocks.size).toBeGreaterThan(0);
+});
+
+for (const width of [1440,390,320]) {
+  test(`post preview preserves edits and publishes only on request at ${width}px`,async({page},info)=>{
+    await page.setViewportSize({width,height:900});
+    await page.goto('/t/photography');
+    await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).first().click();
+    await page.getByRole('button',{name:'Create profile',exact:true}).click();
+    const editor=page.getByRole('dialog',{name:'Create post',exact:true});
+    await expect(editor.getByRole('button',{name:'Preview',exact:true})).toBeDisabled();
+    await editor.getByLabel('Title',{exact:true}).fill('Preview from the coast');
+    await editor.getByLabel('Body (optional)',{exact:true}).fill('First line\nSecond line #photography');
+    await editor.getByRole('tab',{name:'Link',exact:true}).click();
+    await editor.getByRole('textbox',{name:'Link',exact:true}).fill('https://example.org/coast');
+    await editor.getByRole('button',{name:'Preview',exact:true}).click();
+    const preview=editor.getByRole('region',{name:'Post preview',exact:true});
+    await expect(preview.getByRole('heading',{name:'Preview from the coast',exact:true})).toBeVisible();
+    await expect(preview).toContainText('Second line');
+    await expect(preview.locator('a[href="https://example.org/coast"]').first()).toBeVisible();
+    await expect(preview.getByRole('button',{name:'Like',exact:true})).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('heading',{name:'Preview from the coast',exact:true})).toHaveCount(0);
+    await page.screenshot({path:info.outputPath(`post-preview-${width}.png`)});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await editor.getByRole('button',{name:'Edit post',exact:true}).click();
+    await expect(editor.getByLabel('Body (optional)',{exact:true})).toHaveValue('First line\nSecond line #photography');
+    await editor.getByLabel('Title',{exact:true}).fill('Updated coast preview');
+    await editor.getByRole('button',{name:'Preview',exact:true}).click();
+    await expect(preview.getByRole('heading',{name:'Updated coast preview',exact:true})).toBeVisible();
+    await editor.getByRole('button',{name:'Cancel',exact:true}).click();
+    await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).first().click();
+    await expect(editor.getByLabel('Title',{exact:true})).toHaveValue('Updated coast preview');
+    await editor.getByRole('button',{name:'Preview',exact:true}).click();
+    await editor.getByRole('button',{name:'Publish post',exact:true}).click();
+    await expect(page.getByRole('main').getByRole('heading',{name:'Updated coast preview',exact:true})).toBeVisible();
+  });
+}

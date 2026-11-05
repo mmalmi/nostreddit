@@ -28,6 +28,7 @@
   import SocialBadge from './SocialBadge.svelte';
   export let post: Post;
   export let saved = false;
+  export let preview = false;
   export let showPreviews = true;
   export let contextTopic: string | undefined = undefined;
   export let full = false;
@@ -85,19 +86,20 @@
 </script>
 
 <article class="post-card" class:detail={full} class:comment-card={comment}>
-  <div class="byline">
+  {#if preview}<div class="byline"><span class="topic-link"><TopicIcon slug={topic} small />t/{topic}</span><span class="sep">·</span><span>{name}</span><span class="sep">·</span><span>Draft</span></div>
+  {:else}<div class="byline">
     {#if !comment}<a
         class="topic-link"
         href={topicPath(topic)}
         ><TopicIcon slug={topic} small />t/{topic}</a
       ><span class="sep">·</span>{/if}
     <a class="author" href={profileUrl(post.pubkey)} aria-label={name}
-      >{#if comment && picture}<img
+      ><SocialBadge pubkey={post.pubkey}/>{#if comment && picture}<img
           use:proxyImage={{url:picture,width:18,square:true}}
           alt=""
           loading="lazy"
           referrerpolicy="no-referrer"
-        />{/if}{name} <SocialBadge pubkey={post.pubkey}/></a
+        />{/if}<span class="author-name">{name}</span></a
     ><span class="sep">·</span>
     <a class="stamp" href={permalink}
       ><time datetime={new Date(post.created_at * 1000).toISOString()}
@@ -107,6 +109,7 @@
     {#if isEventId(post.parent) && !full && !comment}<a class="stamp" href={postUrl(post.parent)}>Reply to discussion</a>{/if}
     {#if queued}<small class="queued" title="Saved on this device, waiting to sync">Queued</small>{/if}
   </div>
+  {/if}
   {#if renderedHeading}<h2>
       {#if full}
         <NoteText text={heading} tags={post.event.tags} inline embeddedIds={embeddedHeadingIds} />
@@ -136,7 +139,7 @@
         size={12}
       /></a
     >{/if}
-  <div class="post-actions">
+  {#if !preview}<div class="post-actions">
     <button
       class="like"
       disabled={!!$account && !$outboxReady}
@@ -180,7 +183,7 @@
       onclick={() => onaction('share', post)}
       ><Icon name="share" size={15} /></button
     >
-  </div>
+  </div>{/if}
 </article>
 
 <style>
