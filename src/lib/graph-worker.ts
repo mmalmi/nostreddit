@@ -1,7 +1,9 @@
 import { SocialGraph } from 'nostr-social-graph';
 import { startGraphSync, loadGraphBootstrap } from 'nostr-social-graph/publicGraphSync';
 import { readGraph, saveGraph, boundedGraphResponse } from './graph-storage';
-import { relayUrls, testRelays } from './relayTypes';
+import { graphRelayPolicy } from './graph-relays';
+let relayPolicy=graphRelayPolicy([]);
+let bootstrapAbort:AbortController|undefined;
 let authoritative:SocialGraph|undefined, authoritativeVersion=0, renderedVersion=-1;
 let stopSync:(()=>void)|undefined, syncActive=true;
 let saveTimer:ReturnType<typeof setTimeout>|undefined;
@@ -18,7 +20,7 @@ function persistChange() {
 }
 function sync() {
   stopSync?.();stopSync=undefined;
-  if(syncActive&&authoritative&&!testRelays)stopSync=startGraphSync({getGraph:()=>authoritative!,relays:['wss://graph-relay.iris.to',...relayUrls],
+  if(syncActive&&authoritative&&relayPolicy.relays.length)stopSync=startGraphSync({getGraph:()=>authoritative!,relays:relayPolicy.relays,
     onEvent:()=>{authoritativeVersion++;},
     onChange:()=>{persistChange();self.postMessage({refresh:true});}});
 }
@@ -29,7 +31,7 @@ import { badgesFor, discoveryRoot, profileRelationsFor, snapshotRoot, snapshotHa
 async function load() {
   const local=await readGraph().catch(()=>undefined);
   if(local)try{authoritative=await SocialGraph.fromBinary(snapshotRoot,local);}catch{/* unreadable local state cannot initialize a graph */}
-  const refreshBootstrap=!authoritative&&!testRelays;
+  const refreshBootstrap=!authoritative&&relayPolicy.bootstrap;
   if(!authoritative){
     const response=await fetch('/socialGraph.bin?v='+snapshotHash.slice(0,16));
     const bytes=await boundedGraphResponse(response);
@@ -38,15 +40,20 @@ async function load() {
     authoritative=await SocialGraph.fromBinary(snapshotRoot,bytes);
   }
   persistChange();sync();
-  if(refreshBootstrap)void loadGraphBootstrap({root:snapshotRoot}).then(async fresh=>{
-    const current=authoritative!;
-    // The merge preserves complete/newer personal lists received during fetch.
-    authoritativeVersion++;
-    const merging=current.merge(fresh);
-    bootstrapMerge=merging.catch(()=>{});
-    await merging;
-    persistChange();self.postMessage({refresh:true});
-  }).catch(()=>{/* local discovery remains ready when the server is unavailable */});
+  if(refreshBootstrap&&relayPolicy.bootstrap){
+    const controller=new AbortController();bootstrapAbort=controller;
+    void loadGraphBootstrap({root:snapshotRoot,signal:controller.signal}).then(async fresh=>{
+      if(controller.signal.aborted)return;
+      const current=authoritative!;
+      // The merge preserves complete/newer personal lists received during fetch.
+      authoritativeVersion++;
+      const merging=current.merge(fresh);
+      bootstrapMerge=merging.catch(()=>{});
+      await merging;
+      persistChange();self.postMessage({refresh:true});
+    }).catch(()=>{/* local discovery remains ready when the server is unavailable */})
+      .finally(()=>{if(bootstrapAbort===controller)bootstrapAbort=undefined;});
+  }
   return authoritative;
 }
 
@@ -62,7 +69,8 @@ let overlayOwner='', overlayKey='', undo:Record<string,boolean>={};
 function setEdge(graph:SocialGraph, owner:string, person:string, followed:boolean) {
   if (followed) graph.addFollower(owner,person); else graph.removeFollower(owner,person);
 }
-self.onmessage = ({data}:MessageEvent<GraphRequest|{syncActive:boolean}>)=>{
+self.onmessage = ({data}:MessageEvent<GraphRequest|{syncActive:boolean}|{relays:string[]}>)=>{
+  if('relays' in data){bootstrapAbort?.abort();relayPolicy=graphRelayPolicy(data.relays);sync();return;}
   if('syncActive' in data){syncActive=data.syncActive;sync();return;}
   processing=processing.then(()=>render(data));
 };

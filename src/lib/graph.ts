@@ -28,6 +28,11 @@ let busy = false, scheduled = false, failed = false;
 let ranking=false;
 let worker: Worker | undefined;
 let sentProfileVersion = -1;
+let configuredGraphRelays:string[]=[];
+export function setGraphRelays(urls:readonly string[]) {
+  configuredGraphRelays=[...urls];
+  worker?.postMessage({relays:configuredGraphRelays});
+}
 
 function unavailable() {
   failed = true;
@@ -47,6 +52,7 @@ function schedule() {
     try {
       if (!worker) {
         worker = new Worker(new URL('./graph-worker.ts', import.meta.url), {type:'module'});
+        worker.postMessage({relays:configuredGraphRelays});
         worker.onerror = unavailable;
         worker.onmessage = ({data}: MessageEvent<GraphReply|{refresh:true}>) => {
           if ('refresh' in data) { invalidate(); return; }
