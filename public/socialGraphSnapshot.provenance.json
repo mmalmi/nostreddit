@@ -1,39 +1,43 @@
 {
-  "format": "iris-social/public-social-graph-snapshot@1",
+  "format": "nostreddit/public-social-graph-snapshot@2",
   "root": "4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0",
   "source": {
-    "sha256": "da775fc4a0a827740b0746716d8734c6b33b6448fd157b89ee94cc8f2f79fb0e",
-    "bytes": 7902582,
-    "censusReportSha256": "79f2656f0b6076b0774138b15ae5ce7adadaeb272d2c6f75eb48a8d3d62e1cd9",
-    "censusFormat": "iris-social/social-graph-crawl-census@2",
-    "reachableUsers": 102162,
-    "eligibleUsers": 101267,
-    "overmutedUsers": 895,
-    "maxDistance": 4,
-    "overmuteThreshold": 1
+    "url": "https://graph-api.iris.to/social-graph/mobile?root=4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0",
+    "fetchedAt": "2026-11-05T14:03:57.045Z",
+    "serverSource": "d9de304ff644483840d68d7e1691aabb1da72f5f",
+    "etag": "\"4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0:2795a4289d718374e1ea1f47916295284569113d9691b47160351330847f62b8\""
   },
   "projection": {
-    "maxNodes": null,
-    "maxEdges": 300000,
-    "maxDistance": 4,
-    "maxEdgesPerNode": 1000
+    "maxNodes": 30000,
+    "maxEdges": 180000,
+    "maxEdgesPerList": 500,
+    "maxBytes": 4194304
   },
   "snapshot": {
-    "sha256": "085ba69fa37725c98c5c8e214bccf2cb4d748c542df5396830e122604c00577e",
-    "bytes": 1941939,
-    "users": 34912,
-    "follows": 295568,
-    "mutes": 4432,
+    "binaryVersion": 4,
+    "sha256": "2795a4289d718374e1ea1f47916295284569113d9691b47160351330847f62b8",
+    "bytes": 1416042,
+    "users": 25832,
+    "follows": 177683,
+    "mutes": 2317,
     "sizeByDistance": {
       "0": 1,
-      "1": 406,
-      "2": 21191,
-      "3": 13314
+      "1": 410,
+      "2": 20936,
+      "3": 4485
+    },
+    "revisions": 2119,
+    "completeRevisions": 19,
+    "rootFollow": {
+      "id": "86e3e8da9ed3fe18285761b0126782a8c1631df3139f6de94f3020a8eac8dee8",
+      "created_at": 1793669408,
+      "complete": false
+    },
+    "rootMute": {
+      "id": "62717839b5b4b72e42ff673be6422062dfba633b201625db4df2cc6c045f751e",
+      "created_at": 1775817519,
+      "complete": false
     }
   },
-  "frontier": {
-    "sha256": "59fe1f6d6382b715aa4f980923ffefb902fee301fedf0c7520ae95c305d5c4fa",
-    "bytes": 12992,
-    "authors": 406
-  }
+  "completeness": "Incomplete list revisions are retained for freshness ordering but excluded from Negentropy known-event IDs, so missing or truncated lists are fetched."
 }
