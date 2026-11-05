@@ -10,6 +10,7 @@ export const searchRelayUrls = testRelays ? relayUrls : ['wss://relay.ditto.pub'
 export type ContactQuery = { type:'contacts'; subject:string; mode:'followers'|'following'|'mutual'|'check'; authors?: string[]; cacheOnly?: boolean };
 export type Request =
   | { type: 'watch'; id: number; filters: NostrFilter[]; live: boolean }
+  | { type: 'configure'; urls: string[] }
   | { type: 'close'; id: number }
   | { type: 'publish'; id: number; event: NostrEvent }
   | (ContactQuery & {id:number})

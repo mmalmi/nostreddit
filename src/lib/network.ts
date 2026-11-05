@@ -17,6 +17,31 @@ import { startTopicCatalog } from './topic-catalog-store';
 import type { HotSignal } from './hot';
 export { relayUrls, pendingWrites, outboxReady, outboxError, syncing, type Post };
 
+const relayStorageKey = 'nostreddit.relays.v1';
+export function validateRelayUrls(input: string): string[] {
+  const urls = [...new Set(input.split(/[\s,]+/).filter(Boolean).map(value => {
+    let url: URL;
+    try { url = new URL(value); } catch { throw new Error('Enter valid wss:// relay addresses.'); }
+    if (!['wss:', 'ws:'].includes(url.protocol) || url.username || url.password || url.hash ||
+        (url.protocol === 'ws:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))
+      throw new Error('Use wss:// addresses (ws:// is allowed for local relays).');
+    return url.href.replace(/\/$/, '');
+  }))];
+  if (!urls.length || urls.length > 8) throw new Error('Choose between 1 and 8 relays.');
+  return urls;
+}
+function savedRelays() {
+  try { const saved = localStorage.getItem(relayStorageKey); return saved ? validateRelayUrls(saved) : relayUrls; }
+  catch { return relayUrls; }
+}
+export const configuredRelays = writable(savedRelays());
+export function saveRelays(input: string) {
+  const urls = validateRelayUrls(input);
+  localStorage.setItem(relayStorageKey, urls.join('\n'));
+  configuredRelays.set(urls);
+  worker?.postMessage({type:'configure',urls} satisfies Request);
+}
+
 export interface Profile {name:string; about:string; picture:string; banner:string; website:string; lud16:string; lud06:string; nip05:string; display_name:string}
 export interface Account {pubkey:string; method:'local'|'extension'}
 export const account = writable<Account|null>(null);
@@ -289,6 +314,7 @@ function connect() {
   if (worker) return worker;
   const next = new Worker(new URL('./relay.worker.ts', import.meta.url), {type:'module'});
   worker = next;
+  next.postMessage({type:'configure',urls:get(configuredRelays)} satisfies Request);
   next.onmessage = ({data}:MessageEvent<Response>) => {
     if (worker !== next) return;
     if (data.type === 'events') apply(data.events);

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { account } from '../lib/network';
   import Icon from './Icon.svelte';
+  import RelaySettings from './RelaySettings.svelte';
   import AppearanceSettings from './AppearanceSettings.svelte';
   import HotSettings from './HotSettings.svelte';
   import ImageProxySettings from './ImageProxySettings.svelte';
@@ -29,6 +30,7 @@
 <HotSettings/>
 <ImageProxySettings/>
 <GraphSettings/>
+<RelaySettings/>
 {#if $account}<Outbox/>{/if}
 {#if $account}
   {#key $account.pubkey + ':' + $account.method}<ProfileBackup method={$account.method}/>{/key}

@@ -106,6 +106,7 @@ if (!testRelays) void fetch(new URL('starter-feed.json', self.location.origin), 
 
 self.onmessage = async (message: MessageEvent<Request>) => {
   const req = message.data;
+  if (req.type === 'configure') { relayUrls.splice(0, relayUrls.length, ...req.urls); runtime.setRelays(req.urls); return; }
   try {
     if (req.type === 'close') { visited.close(req.id); watches.get(req.id)?.close(); watches.delete(req.id); return; }
     if (req.type === 'watch') {
