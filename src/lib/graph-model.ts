@@ -2,7 +2,7 @@ import type { Event as NostrEvent } from 'nostr-tools';
 import type { SocialGraph } from 'nostr-social-graph';
 
 export const snapshotRoot = '4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0';
-export const snapshotHash = '2795a4289d718374e1ea1f47916295284569113d9691b47160351330847f62b8';
+export const snapshotHash = '19b490ce9c8715cc5c8dc24b73719051ce932febaec4ec369ab1ed9f7c575d20';
 export type GraphBadge = { distance: number | null; muted: boolean; overmuted: boolean; followedByFriends?:number; influence?:number };
 export type RelationshipKind = 'following' | 'followers';
 export type ProfileList = {

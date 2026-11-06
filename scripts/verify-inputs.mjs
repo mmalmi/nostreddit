@@ -15,7 +15,7 @@ if (createHash('sha256').update(irisUi).digest('hex') !== '888f94c1422f07db33bc4
   throw new Error('Unexpected Iris Kit UI archive');
 }
 const graph = readFileSync('public/socialGraph.bin');
-if (createHash('sha256').update(graph).digest('hex') !== '2795a4289d718374e1ea1f47916295284569113d9691b47160351330847f62b8') {
+if (createHash('sha256').update(graph).digest('hex') !== '19b490ce9c8715cc5c8dc24b73719051ce932febaec4ec369ab1ed9f7c575d20') {
   throw new Error('Unexpected social graph snapshot');
 }
 const modelInputs = {
