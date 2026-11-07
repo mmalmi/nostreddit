@@ -66,6 +66,51 @@ async function expectFiltered(page: Page, path: string, content: string) {
   expect(await page.title()).not.toContain(content);
 }
 
+test('Home Hot mixes later authors into unread cards while preserving the reading position', async ({page}, info) => {
+  const reader = generateSecretKey(), followed = generateSecretKey();
+  const others = [generateSecretKey(), generateSecretKey()];
+  const note = (key: Uint8Array, title: string, time: number) =>
+    record(key, 1, title, [['subject', title], ['t', 'photography']], time);
+  await publish([
+    record(reader, 3, '', [['p', getPublicKey(followed)]]),
+    record(followed, 3, '', others.map(key => ['p', getPublicKey(key)])),
+    ...Array.from({length:32}, (_, i) => note(followed, `Early discussion ${i}`, at - 86400 - i)),
+  ]);
+  await page.addInitScript(pubkey => localStorage.setItem('nostreddit.account.v1',
+    JSON.stringify({pubkey, method:'extension'})), getPublicKey(reader));
+  await page.setViewportSize({width:390, height:844});
+  await page.goto('/');
+  const links = page.locator('[data-route-active="true"] .feed-list article h2 a');
+  await expect(links.filter({hasText:'Early discussion'})).toHaveCount(24);
+  const current = links.nth(5);
+  await current.evaluate(node => scrollTo(0, scrollY + node.getBoundingClientRect().top - 120));
+  await current.focus();
+  const original = await current.elementHandle();
+  const before = await current.evaluate(node => ({top:node.getBoundingClientRect().top, scroll:scrollY}));
+  // Preserve the part already read, including cards visited before scrolling back up.
+  const read = await links.evaluateAll(nodes => nodes.filter(node => node.closest('article')!.getBoundingClientRect().top < innerHeight)
+    .map(node => node.getAttribute('href')));
+  await page.evaluate(() => scrollTo(0, 0));
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
+  await publish(others.map((key, i) => note(key, `Later author ${i}`, at - i)));
+  await expect(links.filter({hasText:'Later author'})).toHaveCount(2);
+  expect((await links.evaluateAll(nodes => nodes.map(node => node.getAttribute('href')))).slice(0,read.length)).toEqual(read);
+  expect(await current.evaluate((node, old) => node === old, original)).toBe(true);
+  await expect(current).toBeFocused();
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+  await page.evaluate(y => scrollTo(0, y), before.scroll);
+  expect(await current.evaluate(node => node.getBoundingClientRect().top)).toBeCloseTo(before.top, 0);
+  const updates = page.getByRole('button', {name:'Show updated posts',exact:true});
+  await updates.scrollIntoViewIfNeeded();
+  await expect(updates).toHaveCSS('font-weight','700');
+  await page.screenshot({path:info.outputPath('hot-updates.png')});
+  await updates.click();
+  await expect(links.first()).toContainText('Later author');
+  await page.goto('/following');
+  await expect(links.filter({hasText:'Early discussion'})).toHaveCount(24);
+  await expect(links.filter({hasText:'Later author'})).toHaveCount(0);
+});
+
 test('background graph updates preserve the card a reader is focused on', async ({page}) => {
   await page.goto('/');
   const link = page.locator('article h2 a[href="' + postUrl(twoHops.id) + '"]');

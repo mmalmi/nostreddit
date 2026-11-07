@@ -21,6 +21,7 @@
     mute,
     unlike,
     loadTopic,
+    loadHome,
     loadFeed,
     refreshFeed,
     loadThread,
@@ -63,7 +64,21 @@
   import FeedComposer from './components/FeedComposer.svelte';
   import { feedPreferences, saveFeed } from './lib/feed-preferences';
   import { defaultFeeds, feedPath, feedIcon, feedSummary, feedRelayFilters, matchesFeed, type Feed, type FeedOrder } from './lib/feeds';
-  const feedPresentation = createFeedPresentation();
+  let feedList: HTMLElement;
+  function viewportCount() {
+    if (!pageVisible || !feedList) return 0;
+    const cards = feedList.children;
+    // Cards are in vertical reading order. Find the first one below the fold.
+    let start = 0, end = cards.length;
+    while (start < end) {
+      const middle = Math.floor((start + end) / 2);
+      if (cards[middle].getBoundingClientRect().top < innerHeight) start = middle + 1;
+      else end = middle;
+    }
+    const focused = document.activeElement?.closest('article');
+    return focused?.parentElement === feedList ? Math.max(start, Array.prototype.indexOf.call(cards, focused) + 1) : start;
+  }
+  const feedPresentation = createFeedPresentation(viewportCount);
   export let active = true;
   export let returnTo: string | undefined = undefined;
   export let navigate: (path: string) => void;
@@ -279,7 +294,8 @@
   function subscribeRoute(page: string, value: string, connections: Relationship | undefined, feedFilters: string) {
     activeCleanup?.();
     activeCleanup =
-      page === 'topic'
+      page === 'home' ? loadHome()
+      : page === 'topic'
         ? loadTopic(value)
         : page === 'thread'
           ? loadThread(value)
@@ -386,7 +402,7 @@
   $: rankedById = new Map(ranked.map(p=>[p.id,p]));
   $: stableFeed = ['home','topic','following','network','saved','custom','profile'].includes(route.page) && !route.connections;
   $: if (mounted) feedPresentation.update(`${activeOrder}:${feedScope}:${$account?.pubkey || 'guest'}`,
-    ranked.map(p=>p.id), stableFeed && pageVisible);
+    ranked.map(p=>p.id), stableFeed && pageVisible, route.page === 'home' && hotActive);
   $: ordered = stableFeed ? $feedPresentation.map(id=>rankedById.get(id)).filter((p):p is Post=>Boolean(p)) : ranked;
   $: feedChanged = stableFeed && ordered.length > 0 && ranked.slice(0,limit).some((p,i)=>ordered[i]?.id !== p.id);
   $: preparingFeed = stableFeed && !ordered.length && ranked.length > 0;
@@ -568,6 +584,7 @@
 {/snippet}
 
 <svelte:document onvisibilitychange={() => documentVisible = document.visibilityState === 'visible'} />
+<svelte:window onscroll={feedPresentation.markRead} onresize={feedPresentation.markRead} />
 
 <header class="topbar">
   <div class="bar-inner">
@@ -873,11 +890,11 @@
               : $hotAssistance.status === 'unavailable' ? 'AI unavailable · social ranking' : 'Hot preferences'
             : 'Hot preferences'}</a>
           {:else}<span></span>{/if}
-          {#if feedChanged}<button onclick={showUpdatedPosts}>Show updated posts</button>
+          {#if feedChanged}<button class="pending-updates" onclick={showUpdatedPosts}>Show updated posts</button>
           {:else if hotActive && (route.page === 'home' || route.page === 'topic')}<button onclick={refreshHot}>Refresh Hot</button>{/if}
         </div>
       {/if}
-      <section class="feed-list" aria-label="Discussions">
+      <section bind:this={feedList} class="feed-list" aria-label="Discussions">
         {#each visible as p (p.id)}<Card
             contextTopic={route.page === 'topic' ? route.value : undefined}
             {showPreviews}
@@ -1112,4 +1129,6 @@
   .hot-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:24px;margin:-4px 0 12px;font-size:12px;color:var(--muted)}
   .hot-status{color:var(--muted)}
   .hot-controls button{font-size:12px;color:var(--accent)}
+  .pending-updates{display:inline-flex;align-items:center;gap:6px;font-weight:700}
+  .pending-updates::before{content:'';width:7px;height:7px;border-radius:50%;background:light-dark(#bc3932,#ff8980)}
 </style>

@@ -84,7 +84,7 @@
   }
 
   onMount(() => {
-    const stop = start();
+    const stop = start(location.pathname !== '/');
     const stopAppearance = watchAppearance();
     const stopHot = watchHotPreferences();
     const stopFeeds = watchFeedPreferences();

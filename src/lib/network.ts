@@ -366,7 +366,10 @@ export async function searchRelays(query: string, expansion = noExpansion, curso
 }
 
 export const homeTopics = ['nostr','bitcoin','technology','art','photography','music','science','gaming','books','asknostr','memes','general'];
-export function start() {
+export function loadHome(live = true) {
+  return watch([{kinds:discussionKinds, '#t':homeTopics, limit:80}], live);
+}
+export function start(preloadHome = true) {
   active = true;
   const stopTopicCatalog = startTopicCatalog(posts,comments,canSeeAuthor,observeEventAuthors);
   const stopOutbox = localSync.start();
@@ -375,7 +378,7 @@ export function start() {
     syncKeys(follows, get(account) ? lists.follows : new Set());
     syncKeys(mutes, lists.mutes);
   });
-  const home = watch([{kinds:discussionKinds, '#t':homeTopics, limit:80}]);
+  const home = preloadHome ? loadHome(false) : noop;
   const unsub = account.subscribe(current => {
     setGraphRoot(current?.pubkey ?? null);
     localSync.setOwner(current?.pubkey ?? '');
