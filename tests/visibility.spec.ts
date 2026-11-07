@@ -66,6 +66,31 @@ async function expectFiltered(page: Page, path: string, content: string) {
   expect(await page.title()).not.toContain(content);
 }
 
+test('background graph updates preserve the card a reader is focused on', async ({page}) => {
+  await page.goto('/');
+  const link = page.locator('article h2 a[href="' + postUrl(twoHops.id) + '"]');
+  await expect(link).toBeVisible();
+  await link.focus();
+  const original = await link.elementHandle();
+  const graph = page.workers().find(worker => worker.url().includes('/graph-worker-'))!;
+
+  // Use the real worker and wait for the app to request fresh badges each time.
+  for (let i = 0; i < 2; i++) {
+    await graph.evaluate(() => new Promise<void>(resolve => {
+      function received(event: MessageEvent) {
+        if (!Array.isArray(event.data.authors)) return;
+        self.removeEventListener('message', received);
+        resolve();
+      }
+      self.addEventListener('message', received);
+      self.postMessage({refresh:true});
+    }));
+    await expect(link).toBeVisible();
+    expect(await link.evaluate((node, previous) => node === previous, original)).toBe(true);
+    await expect(link).toBeFocused();
+  }
+});
+
 test('guests can widen and restore the same graph limit across home, topic, saved, search and direct links', async ({page}) => {
   await page.goto('/settings');
   await expect(page.getByLabel('Maximum follow distance')).toHaveValue('5');

@@ -55,7 +55,7 @@ function schedule() {
         worker.postMessage({relays:configuredGraphRelays});
         worker.onerror = unavailable;
         worker.onmessage = ({data}: MessageEvent<GraphReply|{refresh:true}>) => {
-          if ('refresh' in data) { invalidate(); return; }
+          if ('refresh' in data) { refreshBadges(); return; }
           busy = false;
           if ('error' in data) return unavailable();
           if (data.version === version) {
@@ -87,12 +87,12 @@ function schedule() {
   }, 24);
 }
 
-function invalidate() {
+// Keep this viewer's last checked badges visible until each replacement batch
+// arrives. Clearing them here makes every background sync unmount feed cards.
+function refreshBadges() {
   version++;
-  if (Object.keys(cached).length) { cached = {}; graphInfo.set(cached); }
   for (const key of interested) missing.add(key);
   if (selectedProfile) profileDirty = true;
-  graphStatus.set(failed ? 'unavailable' : 'loading');
   schedule();
 }
 
@@ -120,7 +120,7 @@ export function observeAuthors(keys: readonly string[]) { observeEventAuthors(ke
 
 export function setGraphRanking(enabled:boolean) {
   if(ranking===enabled)return;
-  ranking=enabled;invalidate();
+  ranking=enabled;refreshBadges();
 }
 
 export function setGraphRoot(pubkey: string | null) {
@@ -130,7 +130,10 @@ export function setGraphRoot(pubkey: string | null) {
   edges={follows:{},mutes:{}}; edgeKey=JSON.stringify(edges);
   pending.clear(); latestLists.clear(); profileLists.clear(); graphPeers.clear();
   profileRelations.set(null);
-  invalidate();
+  cached = {};
+  graphInfo.set(cached);
+  graphStatus.set(failed ? 'unavailable' : 'loading');
+  refreshBadges();
   graphViewer.set(next);
 }
 
@@ -138,7 +141,7 @@ export function setPendingEdges(next:PendingEdges) {
   const key=JSON.stringify(next);
   if (key===edgeKey) return;
   edges=next; edgeKey=key;
-  invalidate();
+  refreshBadges();
 }
 
 export function setGraphPeers(peers: readonly string[]) {
@@ -185,7 +188,7 @@ export function observeGraphEvent(event: NostrEvent) {
   const prev = latestLists.get(key);
   if (prev && (prev.created_at > event.created_at || (prev.created_at === event.created_at && prev.id <= event.id))) return;
   latestLists.set(key,event); pending.set(key,event);
-  invalidate();
+  refreshBadges();
 }
 
 if (typeof document !== 'undefined') {
@@ -194,6 +197,7 @@ if (typeof document !== 'undefined') {
     if (!failed) return;
     failed = false;
     for (const [key,event] of latestLists) pending.set(key,event);
-    invalidate();
+    graphStatus.set('loading');
+    refreshBadges();
   });
 }
