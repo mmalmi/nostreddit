@@ -87,18 +87,15 @@ test('Home Hot mixes later authors into unread cards while preserving the readin
   await current.focus();
   const original = await current.elementHandle();
   const before = await current.evaluate(node => ({top:node.getBoundingClientRect().top, scroll:scrollY}));
-  // Preserve the part already read, including cards visited before scrolling back up.
+  // Keep every card above or within this viewport in place, including the focused link.
   const read = await links.evaluateAll(nodes => nodes.filter(node => node.closest('article')!.getBoundingClientRect().top < innerHeight)
     .map(node => node.getAttribute('href')));
-  await page.evaluate(() => scrollTo(0, 0));
-  await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
   await publish(others.map((key, i) => note(key, `Later author ${i}`, at - i)));
   await expect(links.filter({hasText:'Later author'})).toHaveCount(2);
   expect((await links.evaluateAll(nodes => nodes.map(node => node.getAttribute('href')))).slice(0,read.length)).toEqual(read);
   expect(await current.evaluate((node, old) => node === old, original)).toBe(true);
   await expect(current).toBeFocused();
-  expect(await page.evaluate(() => scrollY)).toBe(0);
-  await page.evaluate(y => scrollTo(0, y), before.scroll);
+  expect(await page.evaluate(() => scrollY)).toBe(before.scroll);
   expect(await current.evaluate(node => node.getBoundingClientRect().top)).toBeCloseTo(before.top, 0);
   const updates = page.getByRole('button', {name:'Show updated posts',exact:true});
   await updates.scrollIntoViewIfNeeded();

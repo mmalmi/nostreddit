@@ -34,13 +34,16 @@ async function controlledWorkers(page: Page, options: { content?: 'feed' | 'comm
     };
   ` }));
   await page.route('**/graph-worker-*.js', route => route.fulfill({ contentType: 'text/javascript', body: `
-    self.onmessage = ({data}) => self.postMessage({version:data.version,
+    self.onmessage = ({data}) => {
+      if ('relays' in data || 'syncActive' in data) return;
+      self.postMessage({version:data.version,
       discoveryRoot:'4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0',
       badges:Object.fromEntries(data.authors.map(key => [key,{distance:2,muted:false,overmuted:false,followedByFriends:1}])),
       profile:data.profile ? {subject:data.profile,viewer:data.root,followers:6,following:${options.following ?? 'null'},
         followingFromList:${options.following != null},followsViewer:false,mutuals:[],mutualCount:0,
         directory:data.directory ? {kind:data.directory,keys:data.directory === 'followers' ? ${JSON.stringify(followers)} : [],
           known:data.directory === 'followers' || ${options.following != null}} : null} : null});
+    };
   ` }));
 }
 

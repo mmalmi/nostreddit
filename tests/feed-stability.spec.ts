@@ -35,7 +35,9 @@ for (const order of ['Hot', 'New', 'Top']) {
     await page.getByRole('button', { name: order, exact: true }).click();
     const titles = page.locator(`${active} .feed-list article h2`);
     await expect(titles).toHaveCount(rows.length);
-    const before = await titles.allTextContents();
+    const before = await titles.evaluateAll(nodes => nodes
+      .filter(node => node.closest('article')!.getBoundingClientRect().top < innerHeight)
+      .map(node => node.textContent));
     const first = await titles.first().elementHandle();
     const incoming = note(`Incoming ${order}`, topic, -5);
     const likes = Array.from({ length: 5 }, () => finalizeEvent({ kind: 7, content: '+',
@@ -54,6 +56,48 @@ for (const order of ['Hot', 'New', 'Top']) {
 }
 
 for (const width of [390, 1440]) {
+  test(`New applies below-viewport arrivals without prompting or moving the reader at ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 800 });
+    const topic = `viewport-${width}`;
+    const rows = Array.from({ length: 28 }, (_, i) => note(`Field note ${i}`, topic, -1200 - i * 10));
+    await publish(rows);
+    await page.goto(`/t/${topic}`);
+    await page.getByRole('button', { name: 'New', exact: true }).click();
+    const cards = page.locator(`${active} .feed-list article`);
+    const titles = cards.locator('h2');
+    const update = page.getByRole('button', { name: 'Show updated posts' });
+    await expect(titles).toHaveCount(24);
+    const anchor = cards.nth(8).locator('h2 a');
+    await anchor.evaluate(node => scrollTo(0, scrollY + node.getBoundingClientRect().top - 120));
+    const before = await anchor.boundingBox();
+    expect((await cards.nth(17).boundingBox())!.y).toBeGreaterThan(800);
+    const notices = await page.evaluateHandle(() => {
+      const added: string[] = [];
+      new MutationObserver(records => {
+        for (const record of records) for (const node of record.addedNodes) {
+          if (node.textContent?.includes('Show updated posts')) added.push(node.textContent);
+        }
+      }).observe(document.querySelector('.hot-controls')!, { childList: true, subtree: true });
+      return added;
+    });
+    await publish([note('Quiet insertion', topic, -1365)]);
+    await expect(titles.nth(17)).toHaveText('Quiet insertion');
+    expect(await notices.jsonValue()).toEqual([]);
+    await expect(update).toHaveCount(0);
+    expect((await anchor.boundingBox())!.y).toBe(before!.y);
+
+    await publish([note('Before the reader', topic, -1275), note('Another quiet insertion', topic, -1395)]);
+    await expect(update).toBeAttached();
+    await expect(titles.nth(8)).toHaveText('Field note 8');
+    await expect(cards.filter({ hasText: 'Another quiet insertion' }).locator('+ article h2')).toHaveText('Field note 20');
+    expect((await anchor.boundingBox())!.y).toBe(before!.y);
+    await page.screenshot({ path: info.outputPath('stable-viewport.png') });
+
+    await page.evaluate(() => scrollTo(0, 0));
+    await expect(update).toHaveCount(0);
+    await expect(titles.nth(8)).toHaveText('Before the reader');
+  });
+
   test(`the post Back link returns to the original home feed and scroll at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await publish(Array.from({ length: 30 }, (_, i) => note(`Home return ${width} ${i}`, `home-return-${width}`, -1200 - i, ['photography'])));
@@ -134,3 +178,22 @@ for (const width of [390, 1440]) {
     });
   }
 }
+
+test('a short feed waits when an appended card would enter the viewport', async ({ page }) => {
+  const topic = 'viewport-short';
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await publish([note('Only card', topic, -40)]);
+  await page.goto(`/t/${topic}`);
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  const cards = page.locator(`${active} .feed-list article`);
+  await expect(cards).toHaveCount(1);
+  const bottom = await cards.first().evaluate(node => node.getBoundingClientRect().bottom);
+  expect(bottom).toBeLessThan(950);
+  await publish([note('Older card', topic, -80)]);
+  const update = page.getByRole('button', { name: 'Show updated posts' });
+  await expect(update).toBeVisible();
+  await expect(cards).toHaveCount(1);
+  await page.setViewportSize({ width: 1440, height: Math.floor(bottom) - 10 });
+  await expect(cards).toHaveCount(2);
+  await expect(update).toHaveCount(0);
+});

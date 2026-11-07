@@ -1,59 +1,76 @@
 import { writable } from 'svelte/store';
 
-/** Keep painted rows in place while relay history, graph scores and reactions
- * arrive independently. Store IDs only: visibility and content stay live. */
-export function createFeedPresentation(viewportCount: () => number) {
-  const store = writable<string[]>([]);
+function sameOrder(a: string[], b: string[]) {
+  return a === b || (a.length === b.length && a.every((id, i) => id === b[i]));
+}
+
+/** Store IDs only: visibility and card content stay live while ranked arrivals are batched. */
+export function createFeedPresentation(viewportSlots: () => number) {
   let shown: string[] = [], latest: string[] = [], scope: string | undefined;
-  let mixUnread = false, readCount = 0;
+  let pending = false, active = false;
+  const store = writable({ ids: shown, pending });
   let timer: ReturnType<typeof setTimeout> | undefined, started = 0;
-  const cancel = () => { clearTimeout(timer); timer = undefined; started = 0; };
-  const set = (ids: string[]) => { shown = ids; store.set(ids); };
-  function markRead() {
-    if (mixUnread) readCount = Math.max(readCount, Math.min(shown.length, viewportCount()));
+  function cancel() {
+    clearTimeout(timer);
+    timer = undefined;
+    started = 0;
+  }
+  function set(ids: string[], hasPending: boolean) {
+    if (sameOrder(ids, shown)) ids = shown;
+    if (ids === shown && hasPending === pending) return;
+    shown = ids;
+    pending = hasPending;
+    store.set({ ids, pending });
   }
   function flush() {
     cancel();
-    markRead();
-    const retained = mixUnread ? shown.slice(0, readCount) : shown;
-    const existing = new Set(retained);
-    const next = [...retained, ...latest.filter(id => !existing.has(id))];
-    if (next.length !== shown.length || next.some((id, i) => id !== shown[i])) set(next);
+    const slots = shown.length ? viewportSlots() : 0;
+    const retained = shown.slice(0, slots);
+    // If even the next empty slot is on screen, wait before extending a short feed.
+    const hasPending = retained.some((id, i) => latest[i] !== id)
+      || (slots > shown.length && latest.length > shown.length);
+    if (!hasPending) {
+      set(latest, false);
+    } else if (slots > shown.length) {
+      set(shown, true);
+    } else {
+      const existing = new Set(retained);
+      set([...retained, ...latest.filter(id => !existing.has(id))], true);
+    }
+  }
+  function schedule() {
+    started ||= performance.now();
+    clearTimeout(timer);
+    // A bounded burst window. Measure the viewport when the batch actually paints.
+    timer = setTimeout(flush, Math.max(0, Math.min(120, 480 - (performance.now() - started))));
   }
   return {
     subscribe: store.subscribe,
-    markRead,
-    update(nextScope: string, ids: string[], active: boolean, rankUnread: boolean) {
+    viewportChanged() {
+      if (active && pending && timer === undefined) schedule();
+    },
+    update(nextScope: string, ids: string[], isActive: boolean) {
       latest = ids;
-      mixUnread = rankUnread;
+      active = isActive;
       if (scope !== nextScope) {
-        const alreadyPainted = shown.length > 0;
-        cancel(); scope = nextScope; readCount = 0;
+        cancel();
+        scope = nextScope;
         // A deliberate sort/profile change applies once, without blanking cards.
-        set(alreadyPainted ? latest : []);
+        if (shown.length) set(latest, false);
       }
       const available = new Set(latest);
       const permitted = shown.filter(id => available.has(id));
-      if (permitted.length !== shown.length) {
-        markRead();
-        readCount = shown.slice(0, readCount).filter(id => available.has(id)).length;
-        set(permitted);
+      if (permitted.length !== shown.length) set(permitted, pending);
+      if (sameOrder(shown, latest)) {
+        cancel();
+        set(shown, false);
+      } else if (active) {
+        schedule();
+      } else {
+        cancel();
       }
-      if (!active) { cancel(); return; }
-      // All shown IDs are permitted. New IDs always need a flush; ranking
-      // changes alone only affect Home Hot below the reader's high-water mark.
-      if (latest.length === shown.length) {
-        const read = new Set(shown.slice(0, readCount));
-        if (!mixUnread || latest.filter(id => !read.has(id)).every((id, i) => id === shown[readCount + i])) {
-          cancel(); return;
-        }
-      }
-      started ||= performance.now();
-      clearTimeout(timer);
-      // A bounded burst window, never a background polling timer.
-      timer = setTimeout(flush, Math.max(0, Math.min(120, 480 - (performance.now() - started))));
     },
-    reveal() { cancel(); readCount = 0; set([...latest]); },
+    reveal() { cancel(); set(latest, false); },
     destroy: cancel,
   };
 }

@@ -70,6 +70,8 @@ test('local AI improves a specific interest over social-only ranking and preserv
   await page.goto('/t/hot-ai');
   await expect(page.locator('[data-route-active=\"true\"] article h2')).toHaveCount(texts.length);
   const social=await page.locator('[data-route-active=\"true\"] article h2').allTextContents();
+  const viewportCount=await page.locator('[data-route-active="true"] article').evaluateAll(cards =>
+    cards.filter(card => card.getBoundingClientRect().top < innerHeight).length);
   await page.goto('/settings');
   await page.getByLabel('Your interests').fill('taking photographs in low light without a flash');
   await page.getByLabel('Personalize Hot with AI').check();
@@ -77,9 +79,9 @@ test('local AI improves a specific interest over social-only ranking and preserv
   await page.goto('/t/hot-ai');
   await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible({timeout:30_000});
   const elapsed=performance.now()-started;
-  // Background AI updates the proposed order without moving painted cards.
+  // Background AI can reorder the tail while waiting to promote a post into view.
   await expect(page.getByRole('button',{name:'Show updated posts',exact:true})).toBeVisible();
-  expect(await page.locator('[data-route-active="true"] article h2').allTextContents()).toEqual(social);
+  expect((await page.locator('[data-route-active="true"] article h2').allTextContents()).slice(0,viewportCount)).toEqual(social.slice(0,viewportCount));
   await page.getByRole('button',{name:'Show updated posts',exact:true}).click();
   const ranked=await page.locator('[data-route-active=\"true\"] article h2').allTextContents();
   expect(ranked[0]).toBe(texts[0][0]);expect(new Set(ranked)).toEqual(new Set(texts.map(([title])=>title)));
