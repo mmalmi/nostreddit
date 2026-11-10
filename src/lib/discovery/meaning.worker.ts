@@ -23,15 +23,18 @@ async function load() {
   return {model, tokenizer: new Tokenizer(json, config), words: searchVocabulary(json.model.vocab), index};
 }
 let runtime: ReturnType<typeof load>;
+// Reading a post is the slow step. Remember enough posts for a few windows, and
+// keep the ones still being ranked: a busy feed must not push them out.
 const vectors = new Map<string, Float32Array>();
 async function vectorFor(text: string) {
   let vector = vectors.get(text);
-  if (!vector) {
+  if (vector) vectors.delete(text);
+  else {
     const {model, tokenizer} = await runtime;
     vector = await embed(model, tokenizer, text);
-    if (vectors.size >= 320) vectors.delete(vectors.keys().next().value!);
-    vectors.set(text, vector);
+    if (vectors.size >= 640) vectors.delete(vectors.keys().next().value!);
   }
+  vectors.set(text, vector);
   return vector;
 }
 const reply = (data: SearchReply) => self.postMessage(data);
@@ -54,7 +57,7 @@ async function score({run, plan, documents, hints}: SearchWork) {
   if (plan.terms.length === 2) {
     for (const term of plan.terms) facets.set(term, await vectorFor(term));
   }
-  let scores: [string, number][] = [];
+  let scores: [string, number][] = [], published = performance.now();
   for (const {id, text} of documents) {
     const vector = await vectorFor(text);
     if (run !== latest) return;
@@ -70,9 +73,13 @@ async function score({run, plan, documents, hints}: SearchWork) {
       }
     }
     scores.push([id, score]);
-    if (scores.length === 8) { reply({run,type:'scores',scores,done:false}); scores = []; }
+    // Posts read earlier score in microseconds. Publish those in one piece
+    // instead of reordering the list and yielding after every eight.
+    if (scores.length < 8 || performance.now() - published < 40) continue;
+    reply({run,type:'scores',scores,done:false}); scores = [];
     // Let a newer query interrupt a long window even when WASM executes synchronously.
-    if (scores.length === 0) await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    published = performance.now();
   }
   reply({run,type:'scores',scores,done:true});
 }

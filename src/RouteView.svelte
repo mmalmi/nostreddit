@@ -406,8 +406,9 @@
     ? [...$posts,...$comments.filter(reply=>mentionsTopic(reply,route.value))] : $posts;
   $: plan = route.page === 'search' && route.value ? planPostSearch(route.value) : undefined;
   $: lexical = new Map(plan ? source.map(p => [p.id, keywordScore(plan!, p, displayName(p.pubkey, $profiles[p.pubkey]))] as const) : []);
-  $: assistance.update(plan && related && pageVisible && allowModel(plan) ? plan : undefined,
-    plan ? [...visibleSearch, ...source.filter(p => !remoteIds.has(p.id))]
+  $: assisted = plan && related && allowModel(plan) ? plan : undefined;
+  $: if (assisted && !pageVisible) assistance.pause();
+    else assistance.update(assisted, assisted ? [...visibleSearch, ...source.filter(p => !remoteIds.has(p.id))]
       .filter(p => (lexical.get(p.id) ?? -1) >= 0) : []);
   $: minimum = semanticFloor(plan, $assistance.scores);
   $: matchScores = new Map([...lexical].map(([id, score]) => [id, relevance(score, $assistance.scores.get(id), minimum)]));
