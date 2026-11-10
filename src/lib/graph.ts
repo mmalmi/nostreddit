@@ -1,12 +1,14 @@
 import { writable } from 'svelte/store';
 import type { Event as NostrEvent } from 'nostr-tools';
-import { summarizeProfileList, snapshotRoot, type RelationshipKind, type ProfileList, type ProfileRelations, type GraphBadge, type GraphRequest, type PendingEdges, type GraphReply } from './graph-model';
+import { networkPostAuthors, summarizeProfileList, snapshotRoot, type RelationshipKind, type ProfileList, type ProfileRelations, type GraphBadge, type GraphRequest, type PendingEdges, type GraphReply } from './graph-model';
 
 export const graphInfo = writable<Record<string, GraphBadge>>({});
 export const graphViewer = writable(snapshotRoot);
 export const graphDiscoveryRoot = writable(snapshotRoot);
 export const graphStatus = writable<'loading' | 'ready' | 'unavailable'>('loading');
 export const profileRelations = writable<ProfileRelations | null>(null);
+export const networkAuthors = writable<string[]>([]);
+let networkKey = '';
 
 const hex = /^[a-f0-9]{64}$/;
 const batchSize = 256;
@@ -129,6 +131,7 @@ export function setGraphRoot(pubkey: string | null) {
   root = next;
   edges={follows:{},mutes:{}}; edgeKey=JSON.stringify(edges);
   pending.clear(); latestLists.clear(); profileLists.clear(); graphPeers.clear();
+  networkKey = ''; networkAuthors.set([]);
   profileRelations.set(null);
   cached = {};
   graphInfo.set(cached);
@@ -149,6 +152,16 @@ export function setGraphPeers(peers: readonly string[]) {
   for (const [key, event] of latestLists) {
     if (event.pubkey !== root && !graphPeers.has(event.pubkey)) { latestLists.delete(key); pending.delete(key); }
   }
+  refreshNetworkAuthors();
+}
+
+function refreshNetworkAuthors() {
+  const authors=networkPostAuthors(root,[...graphPeers],[...latestLists.values()]);
+  const key=authors.join(',');
+  if(key===networkKey)return;
+  networkKey=key;
+  observeEventAuthors(authors);
+  networkAuthors.set(authors);
 }
 
 export function observeProfile(subject: string, peers: readonly string[], directory: RelationshipKind | null = null) {
@@ -188,6 +201,7 @@ export function observeGraphEvent(event: NostrEvent) {
   const prev = latestLists.get(key);
   if (prev && (prev.created_at > event.created_at || (prev.created_at === event.created_at && prev.id <= event.id))) return;
   latestLists.set(key,event); pending.set(key,event);
+  if(event.kind===3)refreshNetworkAuthors();
   refreshBadges();
 }
 

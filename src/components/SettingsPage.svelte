@@ -9,6 +9,7 @@
   import Outbox from './Outbox.svelte';
   import ProfileBackup from './ProfileBackup.svelte';
   export let sorting: string;
+  export let active = true;
   export let showPreviews: boolean;
   export let onOrderChange: (value: string) => void;
   export let onPreviewsChange: (value: boolean) => void;
@@ -33,7 +34,7 @@
 <RelaySettings/>
 {#if $account}<Outbox/>{/if}
 {#if $account}
-  {#key $account.pubkey + ':' + $account.method}<ProfileBackup method={$account.method}/>{/key}
+  {#key $account.pubkey + ':' + $account.method}<ProfileBackup {active} method={$account.method}/>{/key}
 {/if}
 <section class="preferences source-section" aria-labelledby="source-links">
   <h2 id="source-links">Source</h2>

@@ -673,9 +673,6 @@ main > .feed-heading:first-child { margin-top: 0; }
 .post-actions .chosen svg {
   fill: var(--strong-line);
 }
-.post-actions .share-button {
-  margin-left: auto;
-}
 .topic-icon {
   display: grid;
   place-items: center;

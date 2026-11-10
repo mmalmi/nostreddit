@@ -21,6 +21,8 @@
     external: 'M13 4h7v7 M20 4l-11 11 M9 5H4v15h15v-5',
     settings: 'M4 6h7m4 0h5M4 12h2m4 0h10M4 18h10m4 0h2 M11 3v6 M7 9v6 M15 15v6',
     menu: 'M3 6h18 M3 12h18 M3 18h18',
+    more: 'M5 12h.01 M12 12h.01 M19 12h.01',
+    copy: 'M9 9h12v12H9z M5 15H3V3h12v2',
     close: 'M5 5l14 14 M19 5 5 19',
     next: 'm9 5 7 7-7 7',
     back: 'm15 5-7 7 7 7',

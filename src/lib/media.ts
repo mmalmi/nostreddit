@@ -15,6 +15,8 @@ export interface MediaItem {
 }
 
 type FileKind = 'image' | 'video' | 'audio';
+// Keep large albums bounded while allowing common 10–20 photo posts.
+export const MAX_MEDIA_ITEMS = 32;
 const extensions: Record<FileKind, readonly string[]> = {
   image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg'],
   video: ['mp4', 'm4v', 'mov', 'webm', 'ogv', 'm3u8'],
@@ -126,7 +128,7 @@ export function collectMedia(
   const seen = new Set<string>();
   const items: MediaItem[] = [];
   function add(rawUrl: string) {
-    if (items.length >= 8) return;
+    if (items.length >= MAX_MEDIA_ITEMS) return;
     const url = httpUrl(rawUrl);
     if (!url || seen.has(url.href)) return;
     seen.add(url.href);
@@ -135,11 +137,21 @@ export function collectMedia(
   }
   for (const match of content.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
     add(trimNoteUrl(match[0]));
-    if (items.length >= 8) break;
+    if (items.length >= MAX_MEDIA_ITEMS) break;
   }
   if (extraUrl) add(extraUrl);
   // Clients can leave obsolete upload metadata in ordinary notes. NIP-68
   // picture posts explicitly identify their attachments through imeta alone.
   if ([20,21,22].includes(eventKind)) for (const url of metadata.keys()) add(url);
   return items;
+}
+
+// Match complete URL tokens, including URLs normalized by the browser (for
+// example Unicode paths). Never remove a prefix from a different URL.
+export function stripMediaUrls(text: string, urls: readonly string[]): string {
+  const embedded = new Set(urls.map(raw => httpUrl(raw)?.href).filter(Boolean));
+  return text.replace(/https?:\/\/[^\s<>"']+/gi, raw => {
+    const token = trimNoteUrl(raw);
+    return embedded.has(httpUrl(token)?.href) ? raw.slice(token.length) : raw;
+  }).trim();
 }

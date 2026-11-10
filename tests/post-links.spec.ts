@@ -27,7 +27,8 @@ test('a shared hashtagged reply reopens at its canonical note URL and legacy lin
   await expect(card).toBeVisible();
   await expect(card.getByRole('link',{name:'Reply to discussion'})).toHaveAttribute('href',postPath);
   await expect(card.getByRole('time').locator('..')).toHaveAttribute('href',path+'?t=permalinks');
-  await card.getByRole('button',{name:'Copy post link'}).click();
+  await card.getByRole('button',{name:'Post options',exact:true}).click();
+  await card.getByRole('menuitem',{name:'Copy post link'}).click();
   const expected=new URL(path+'?t=permalinks',baseURL).href;
   await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(expected);
   const reopened=await context.newPage();

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectMedia } from '../src/lib/media';
+import { collectMedia, MAX_MEDIA_ITEMS, stripMediaUrls } from '../src/lib/media';
 
 test('extracts direct media from any position, applies imeta, deduplicates, and keeps authored order', () => {
   const video = 'https://files.example/blob?token=AbC';
@@ -51,6 +51,16 @@ test('supports video streams and audio, gates GIF and SVG, and bounds the media 
   const items = collectMedia(urls.map(s => 'https://media.example/' + s).join('\n'),[]);
   assert.deepEqual(items.map(i=>i.kind), ['video','video','audio','audio','audio','image','image']);
   assert.deepEqual(items.filter(i=>i.clickToLoad).map(i=>i.url), ['https://media.example/dusk.GIF','https://media.example/map.svg']);
-  const many = Array.from({length:30},(_,i) => 'https://media.example/'+i+'.webm').join(' ');
-  assert.equal(collectMedia(many,[]).length, 8);
+  const many = Array.from({length:40},(_,i) => 'https://media.example/'+i+'.webm').join(' ');
+  assert.equal(collectMedia(many,[]).length, MAX_MEDIA_ITEMS);
+});
+
+test('albums include twelve photos and remove complete normalized URLs without swallowing prose or other links', () => {
+  const photos = Array.from({length:12},(_,i) => `https://photo.example/café-${i}.jpg`);
+  const content = `A walk in Vienna. ${photos.join(' ')}\nMore at https://example.org/story`;
+  const items = collectMedia(content,[]);
+  assert.equal(items.length,12);
+  assert.equal(stripMediaUrls(content,items.map(i=>i.url)).replace(/ +\n/g,'\n'), 'A walk in Vienna.\nMore at https://example.org/story');
+  assert.equal(stripMediaUrls('(https://photo.example/one.jpg), next.', ['https://photo.example/one.jpg']), '(), next.');
+  assert.equal(stripMediaUrls('https://photo.example/one.jpg?different', ['https://photo.example/one.jpg']), 'https://photo.example/one.jpg?different');
 });

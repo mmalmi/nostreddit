@@ -2,7 +2,9 @@
   import { exportKey, type Account } from '../lib/network';
 
   export let method: Account['method'];
+  export let active = true;
   let secret = '', error = '';
+  $: if (!active) { secret = ''; error = ''; }
 
   function toggleKey() {
     error = '';

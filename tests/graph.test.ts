@@ -1,7 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SocialGraph } from 'nostr-social-graph';
-import { badgesFor } from '../src/lib/graph-model';
+import { badgesFor, networkPostAuthors } from '../src/lib/graph-model';
+import type { Event } from 'nostr-tools';
+
+test('network discovery fairly bounds verified friends’ lists and excludes direct follows and invalid keys', () => {
+  const key=(n:number)=>n.toString(16).padStart(64,'0');
+  const viewer=key(1),a=key(2),b=key(3),outsider=key(4);
+  const list=(pubkey:string,people:string[])=>({kind:3,pubkey,tags:people.map(person=>['p',person])} as Event);
+  const large=list(a,[viewer,a,b,'invalid',...Array.from({length:1500},(_,i)=>key(i+10))]);
+  const small=list(b,[key(2000)]);
+  const authors=networkPostAuthors(viewer,[a,b],[large,small,list(outsider,[key(3000)])]);
+  assert.equal(authors.length,256);
+  assert.equal(new Set(authors).size,256);
+  assert.ok(authors.includes(key(2000)));
+  for (const excluded of [viewer,a,b,'invalid',key(3000),key(1509)]) assert.ok(!authors.includes(excluded));
+  assert.deepEqual(networkPostAuthors(viewer,[b],[large,small]),[key(2000)]);
+});
 
 test('graph badges respect account roots, mutes and bounded read-only lookups', async () => {
   const [viewer, friend, neighbor, stranger] = [1, 2, 3, 4].map(n => n.toString(16).padStart(64, '0'));

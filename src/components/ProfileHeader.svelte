@@ -29,6 +29,7 @@
   $: following = $follows.includes(pubkey);
   $: muted = $mutes.includes(pubkey);
   $: npub = npubEncode(pubkey);
+  $: shareUrl = location.origin + profileUrl(pubkey);
   $: banner = safeURL(profile?.banner);
   $: website = safeURL(profile?.website);
   $: social = $profileRelations?.subject === pubkey && $profileRelations?.viewer === ($account?.pubkey || snapshotRoot)
@@ -49,6 +50,7 @@
         <p>Checking your social graph…</p>
       {:else}
         <p>Your <a href="/settings">visibility settings</a> hide this profile.</p>
+        {#if !muted}<p>Follow this profile to add them to your network and see their posts.</p>{/if}
         <div class="actions">
           <button class="outline compact" disabled={followBusy || (!!$account && !$outboxReady)} onclick={onFollow}>{following ? 'Following' : 'Follow'}</button>
           {#if $account && muted}<button class="outline compact" disabled={muteBusy || (!!$account && !$outboxReady)} onclick={onMute}>Unmute</button>{/if}
@@ -81,6 +83,7 @@
     <h1 aria-label={displayName(pubkey,profile)}><SocialBadge {pubkey} size={19}/><Name {pubkey} {profile} name={displayName(pubkey,profile)}/></h1>
     <div class="identifiers">
       {#if profile?.nip05}<span title="Nostr address listed by this profile">{profile.nip05}</span>{/if}
+      <CopyButton class="profile-copy" text={shareUrl} label="Copy link" ariaLabel="Copy profile link" title="Copy profile link" promptLabel="Profile link"/>
       <CopyButton class="profile-copy" text={npub} label="Copy public key" ariaLabel="Copy public key" title="Copy public key" promptLabel="Public key"/>
     </div>
     <div class="profile-details">

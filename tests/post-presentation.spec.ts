@@ -1,0 +1,102 @@
+import { once } from 'node:events';
+import { test, expect } from './helpers/isolatedBrowser';
+import { finalizeEvent, generateSecretKey, verifyEvent } from 'nostr-tools/pure';
+import { noteEncode } from 'nostr-tools/nip19';
+import { WebSocket } from 'ws';
+import { postUrl } from '../src/lib/post-url';
+import { allowFixtureAuthors } from './helpers/graphPreferences';
+
+for (const [device,width,height] of [['desktop',1440,1000],['mobile',390,844]] as const) {
+  test(`${device}: twelve-photo notes, long prose and post data remain readable`,async ({page,context,baseURL},info) => {
+    await allowFixtureAuthors(context);
+    await context.grantPermissions(['clipboard-read','clipboard-write']);
+    await page.setViewportSize({width,height});
+    await page.emulateMedia({colorScheme:device==='desktop' ? 'dark' : 'light'});
+    const topic='album-'+device;
+    const caption="Nostr, today I invite you for a walk in Vienna's city centre, through 12 pictures.";
+    const urls=Array.from({length:12},(_,i)=>`https://photos.example.test/${'a'.repeat(64)}-${i}.jpg`);
+    const secret=generateSecretKey(), created_at=Math.floor(Date.now()/1000);
+    const sign=(content:string,tags:string[][]=[])=>finalizeEvent({kind:1,created_at,content,tags},secret);
+    const album=sign(caption+' '+urls.join(' '),[['t',topic],...urls.map((url,i)=>['imeta','url '+url,'alt Vienna view '+(i+1),'dim 960x720'])]);
+    const prose='This is a long unstructured note about walking through the city. '.repeat(12)+'The final sentence must remain visible.';
+    const long=sign(prose,[['t',topic]]);
+    const only=sign(urls.join('\n'),[['t',topic]]);
+    const relay=new WebSocket(process.env.NOSTREDDIT_TEST_RELAY_URL || 'ws://127.0.0.1:43164');
+    try {
+      await once(relay,'open');
+      for (const event of [album,long,only]) {
+        const ack=once(relay,'message');relay.send(JSON.stringify(['EVENT',event]));
+        expect(JSON.parse(String((await ack)[0])).slice(0,3)).toEqual(['OK',event.id,true]);
+      }
+    } finally {relay.close();}
+    await context.route(/https:\/\/(photos\.example\.test|imgproxy\.iris\.to)\//,route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="960" height="720"><rect width="960" height="720" fill="#c4d7d1"/><path d="M0 470 220 200 430 470 620 300 960 620V720H0" fill="#4e7368"/><circle cx="760" cy="140" r="65" fill="#f1d9a7"/></svg>'}));
+    await page.goto('/t/'+topic);
+    const feed=page.locator('[data-route-active="true"] article').filter({has:page.getByRole('heading',{name:caption,exact:true})});
+    await expect(feed.locator('.image-link')).toHaveCount(4);
+    await expect(feed.locator('h2')).not.toContainText('https://');
+    await expect(feed.locator('.note-text')).toHaveCount(0);
+    await feed.getByRole('link',{name:'View all 12 photos',exact:true}).click();
+    const card=page.locator('[data-route-active="true"] article.detail').first();
+    await expect(card.locator('h2')).toHaveText(caption);
+    await expect(card.locator('.image-link')).toHaveCount(12);
+    await expect(card.locator('.note-text')).toHaveCount(0);
+    const headline=await card.locator('h2').boundingBox();
+    expect(headline!.height).toBeLessThan(width<600 ? 190 : 120);
+    await expect.poll(()=>card.locator('.image-link img').first().evaluate((img:HTMLImageElement)=>img.complete && img.naturalWidth>0)).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:info.outputPath('photo-album-'+device+'.png')});
+    await card.getByRole('link',{name:'Expand image: Vienna view 12',exact:true}).click();
+    await expect(page.getByRole('dialog',{name:'Expanded image'}).getByRole('link',{name:'Open original'})).toHaveAttribute('href',urls[11]);
+    await page.keyboard.press('Escape');
+
+    const options=card.getByRole('button',{name:'Post options',exact:true});
+    await options.click();
+    const menu=card.getByRole('menu',{name:'Post options'});
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem').first()).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(menu.getByRole('menuitem',{name:'Copy event JSON'})).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(menu).not.toBeVisible();
+    await expect(options).toBeFocused();
+    await options.click();
+    await menu.getByRole('menuitem',{name:'View raw event'}).click();
+    const dialog=page.getByRole('dialog',{name:'Raw Nostr event'});
+    await expect(dialog).toBeVisible();
+    expect(JSON.parse((await dialog.locator('pre').textContent())!)).toEqual(JSON.parse(JSON.stringify(album)));
+    await dialog.getByRole('button',{name:'Copy JSON',exact:true}).click();
+    await expect(dialog.getByRole('status')).toHaveText('Event JSON copied');
+    const copied=JSON.parse(await page.evaluate(()=>navigator.clipboard.readText()));
+    expect(copied).toEqual(JSON.parse(JSON.stringify(album)));expect(verifyEvent(copied)).toBe(true);
+    const dialogBox=await dialog.boundingBox();expect(dialogBox!.width).toBeLessThan(width);
+    await page.screenshot({path:info.outputPath('raw-event-'+device+'.png')});
+    await page.keyboard.press('Escape');
+    await expect(options).toBeFocused();
+    await options.click();
+    await menu.getByRole('menuitem',{name:'Copy note ID'}).click();
+    await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(noteEncode(album.id));
+    await options.click();
+    await menu.getByRole('menuitem',{name:'Save post',exact:true}).click();
+    await options.click();
+    await expect(menu.getByRole('menuitem',{name:'Remove bookmark'})).toBeVisible();
+    await page.mouse.click(2,2);
+    await expect(menu).not.toBeVisible();
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw new Error('Clipboard permission denied');}}}));
+    await options.click();
+    await menu.getByRole('menuitem',{name:'Copy event JSON'}).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('status')).toContainText('Select and copy the data below');
+    expect(JSON.parse((await dialog.locator('pre').textContent())!).id).toBe(album.id);
+    await dialog.getByRole('button',{name:'Close raw event'}).click();
+    await page.goto('/saved');
+    await expect(page.getByRole('heading',{name:caption,exact:true})).toBeVisible();
+    await page.goto(postUrl(long.id));
+    await expect(card.locator('h2')).toHaveCount(0);
+    await expect(card.locator('.note-text')).toHaveText(prose);
+    await page.goto(postUrl(only.id));
+    await expect(card.locator('h2')).toHaveText('Photo in t/'+topic);
+    await expect(card.locator('.image-link')).toHaveCount(12);
+    await expect(card.locator('.note-text')).toHaveCount(0);
+    expect(new URL(baseURL!).hostname).toBe('127.0.0.1');
+  });
+}

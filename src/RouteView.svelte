@@ -23,6 +23,7 @@
     loadTopic,
     loadHome,
     loadFeed,
+    loadNetwork,
     refreshFeed,
     loadThread,
     searchRelays,
@@ -252,6 +253,7 @@
   }
   function closeModal() {
     const removedFeed = modal === 'feeds' && route.page === 'custom' && !$feedPreferences.some(feed => feed.id === route.value);
+    showAccountAfter = '';
     modal = '';
     zapPost = undefined;
     dialog?.close();
@@ -259,11 +261,13 @@
     if (removedFeed && active) go('/');
   }
   function accountDone() {
+    const after = showAccountAfter;
     closeModal();
-    if ($account && showAccountAfter === 'compose') {
-      showAccountAfter = '';
+    if ($account && after === 'compose') {
       showModal('compose');
-    } else showAccountAfter = '';
+    } else if ($account && after.startsWith('follow:')) {
+      void toggleFollow(after.slice(7), true);
+    }
   }
   function notify(s: string) {
     toast = s;
@@ -299,9 +303,9 @@
     }
     if (e.key === 'Escape' && menu) menu = false;
   }
-  function subscribeRoute(page: string, value: string, connections: Relationship | undefined, feedFilters: string) {
+  function subscribeRoute(page: string, value: string, connections: Relationship | undefined, feedFilters: string, networkFeed: boolean) {
     activeCleanup?.();
-    activeCleanup =
+    const closeRoute =
       page === 'home' ? loadHome()
       : page === 'topic'
         ? loadTopic(value)
@@ -310,6 +314,8 @@
           : page === 'profile'
             ? loadProfile(value, connections)
             : page && feedFilters ? loadFeed(JSON.parse(feedFilters)) : undefined;
+    const closeNetwork = page && networkFeed ? loadNetwork() : undefined;
+    activeCleanup = () => { closeRoute?.(); closeNetwork?.(); };
   }
   function watch(ids: string) {
     observedCleanup?.();
@@ -337,8 +343,9 @@
   $: feedFilters = selectedFeed && selectedFeed.id !== 'home' ? JSON.stringify(feedRelayFilters(selectedFeed)) : '';
   $: feedScope = selectedFeed ? JSON.stringify(selectedFeed) : '';
   $: followingFeed = route.page === 'following' || selectedFeed?.source === 'following';
+  $: networkFeed = route.page === 'network' || selectedFeed?.source === 'network';
   $: savedFeed = route.page === 'saved' || selectedFeed?.source === 'saved';
-  $: if (mounted) subscribeRoute(active ? route.page : '', route.value, route.connections, feedFilters);
+  $: if (mounted) subscribeRoute(active ? route.page : '', route.value, route.connections, feedFilters, networkFeed);
   $: if (!active) {
     menu = false;
     if (modal) closeModal();
@@ -532,15 +539,16 @@
       busy = new Set(busy);
     }
   }
-  async function toggleFollow(key: string) {
+  async function toggleFollow(key: string, enabled = !$follows.includes(key)) {
     if (!$account) {
+      showAccountAfter = 'follow:' + key;
       showModal('account');
       return;
     }
     if (busy.has('follow')) return;
     busy = new Set([...busy, 'follow']);
     try {
-      await follow(key, !$follows.includes(key));
+      await follow(key, enabled);
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Could not update follows.');
     } finally {
@@ -727,7 +735,7 @@
             {#await import('./components/SettingsPage.svelte')}
         <p class="state loading-state" role="status">Loading…</p>
       {:then {default: SettingsPage}}
-        <SettingsPage {sorting} {showPreviews} onOrderChange={changeOrder}
+        <SettingsPage {active} {sorting} {showPreviews} onOrderChange={changeOrder}
         onPreviewsChange={(value) => { showPreviews = value; writeLocal('showPreviews', value); }} />
       {:catch}
         {@render componentError()}

@@ -2,7 +2,7 @@ import { derived, get, readable, writable, type Writable } from 'svelte/store';
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type EventTemplate } from 'nostr-tools/pure';
 import { decode, nsecEncode } from 'nostr-tools/nip19';
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
-import { graphViewer, graphInfo, graphStatus, observeEventAuthors, observeGraphEvent, observeDirectoryLists, observeProfile, profileRelations, setPendingEdges, setGraphPeers, setGraphRoot, setGraphRelays } from './graph';
+import { graphViewer, graphInfo, graphStatus, networkAuthors, observeEventAuthors, observeGraphEvent, observeDirectoryLists, observeProfile, profileRelations, setPendingEdges, setGraphPeers, setGraphRoot, setGraphRelays } from './graph';
 import { asPost, discussionKinds, commentDraft, hexKey, postDraft, resolveCommunityThreads, topicSlug, type Post } from './posts';
 import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
@@ -453,6 +453,16 @@ export function loadTopic(topic:string) {
 export function loadFeed(filters: NostrFilter[]) {
   return filters.length ? watch(filters, true) : noop;
 }
+export function loadNetwork() {
+  let scope='', close=noop;
+  const stop=derived([networkAuthors,canSeeAuthor],([authors,allowed])=>authors.filter(allowed)).subscribe(authors=>{
+    const next=authors.join(',');
+    if(next===scope)return;
+    scope=next;close();
+    close=authors.length ? watch([{kinds:discussionKinds,authors,limit:80}],true) : noop;
+  });
+  return ()=>{stop();close();};
+}
 const directoryProgress = writable({loading:false,coverage:false});
 let checkDirectoryMembers: ((keys: string[])=>void) | undefined;
 const pageStarts = new Map<number,string>();
@@ -713,8 +723,18 @@ export function observeReferences(eventIds:string[], people:string[]) {
 export function observe(ids:string[]) {
   const visibleIds = [...new Set(ids)].filter(id => hexKey.test(id)).slice(0,60);
   if (!visibleIds.length) return noop;
-  const authors = [...new Set(visibleIds.map(id => (roots.get(id) || replies.get(id))?.pubkey).filter((key):key is string => Boolean(key)))];
-  const stats = watch([...(authors.length ? [{kinds:[0],authors,limit:authors.length}] : []), {kinds:[7,9735,1,1111,5],'#e':visibleIds,limit:190}]);
+  // Saved discussions can render before their relay record arrives. Refresh the
+  // author query when that record loads, even though the displayed ID is stable.
+  let authorScope='',closeNames=noop;
+  const names=()=>{
+    const authors = [...new Set(visibleIds.map(id => (roots.get(id) || replies.get(id))?.pubkey).filter((key):key is string => Boolean(key)))];
+    const next=authors.join(',');
+    if(next===authorScope)return;
+    authorScope=next;closeNames();
+    closeNames=authors.length ? watch([{kinds:[0],authors,limit:authors.length}]) : noop;
+  };
+  const stopRoots=rawPosts.subscribe(names),stopReplies=rawComments.subscribe(names);
+  const stats = watch([{kinds:[7,9735,1,1111,5],'#e':visibleIds,limit:190}]);
   let timer:ReturnType<typeof setTimeout>|undefined, last = '', closeDeletions = noop;
   const stop = reactionIds.subscribe(() => {
     if (timer !== undefined) return;
@@ -727,7 +747,7 @@ export function observe(ids:string[]) {
       closeDeletions = ids.length ? watch([{kinds:[5],'#e':ids,limit:120}]) : noop;
     },220);
   });
-  return () => { stop(); clearTimeout(timer); stats(); closeDeletions(); };
+  return () => { stop(); stopRoots(); stopReplies(); closeNames(); clearTimeout(timer); stats(); closeDeletions(); };
 }
 // Fetch engagement independently of the ranked viewport. Otherwise the first
 // visible posts monopolize evidence and a popular post lower down never rises.

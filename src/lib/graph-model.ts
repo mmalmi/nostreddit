@@ -20,6 +20,28 @@ export type GraphRequest = {
 };
 export type GraphReply = { version: number; discoveryRoot:string; badges: Record<string, GraphBadge>; profile: ProfileRelations | null } | { version: number; error: true };
 
+// Sample each followed person's signed list in turn, so one large list cannot
+// consume the entire network feed request. Direct follows have their own fetch.
+export function networkPostAuthors(viewer:string, peers:readonly string[], lists:readonly NostrEvent[]):string[] {
+  const followed = new Set(peers.slice(0,64));
+  const queues = lists.filter(event=>event.kind===3 && followed.has(event.pubkey)).slice(0,64)
+    .map(event=>event.tags.slice(0,1024).filter(tag=>tag[0]==='p' && /^[a-f0-9]{64}$/.test(tag[1])).map(tag=>tag[1]));
+  const seen = new Set([viewer,...peers]);
+  const authors:string[]=[];
+  for(let i=0;i<1024 && authors.length<256;i++) {
+    let remaining=false;
+    for(const queue of queues) {
+      const key=queue[i]; if(!key)continue;
+      remaining=true;
+      if(seen.has(key))continue;
+      seen.add(key);authors.push(key);
+      if(authors.length===256)break;
+    }
+    if(!remaining)break;
+  }
+  return authors;
+}
+
 // Like Iris Social, compare the opinions at the nearest distance with any
 // followers or muters. More mutes than follows at that distance hides the author.
 function moreMutedThanFollowed(graph: SocialGraph, key: string, omitMuteAt?:number): boolean {

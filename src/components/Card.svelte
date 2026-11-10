@@ -12,7 +12,7 @@
     type Post,
   } from '../lib/network';
   import { displayName, age, safeURL } from '../lib/ui';
-  import { collectMedia } from '../lib/media';
+  import { collectMedia, stripMediaUrls } from '../lib/media';
   import { findTreeEmbeds, hasTreeCapability } from '../lib/tree-embeds';
   import { topicPath } from '../lib/hashtags';
   import { matchesTopic } from '../lib/posts';
@@ -26,6 +26,7 @@
   import Icon from './Icon.svelte';
   import TopicIcon from './TopicIcon.svelte';
   import SocialBadge from './SocialBadge.svelte';
+  import PostMenu from './PostMenu.svelte';
   export let post: Post;
   export let saved = false;
   export let preview = false;
@@ -47,13 +48,15 @@
   $: body = post.body || '';
   $: link = hasTreeCapability(post.url) ? '' : safeURL(post.url);
   $: media = collectMedia(post.event.content,post.event.tags,link,post.event.kind);
+  $: photoAlbum = media.length > 1 && media.every(item=>item.kind==='image');
+  $: shownMedia = !full && photoAlbum ? media.slice(0,4) : media;
   $: trees = findTreeEmbeds([post.event.content, ...post.event.tags.filter(t=>t[0]==='r').map(t=>t[1])].join(' '));
   $: renderEmbeds = full || showPreviews;
   $: embeddedLink = media.some(item=>item.url===link);
   $: attachments = [...media.map(item=>item.url),...trees.map(item=>item.raw)];
   function stripAttachments(text:string, urls:string[]) {
-    let clean = text;
-    for (const url of urls) clean = clean.split(url).join('');
+    let clean = stripMediaUrls(text,urls);
+    for (const url of urls.filter(url=>!/^https?:\/\//i.test(url) || hasTreeCapability(url))) clean = clean.split(url).join('');
     return clean.trim();
   }
   $: title = post.title || '';
@@ -66,12 +69,15 @@
     body.startsWith(rawHeading.slice(0, -1));
   $: firstLine = body.split('\n')[0];
   $: referenceHeading = autoShortened && noteParts(firstLine,post.event.tags).some(part=>part.event || part.person);
-  $: chosenHeading = autoShortened && (full || referenceHeading) ? firstLine : rawHeading;
+  // Clean the complete line before shortening it: otherwise a truncated image
+  // URL cannot match its attachment and leaks into the headline.
+  $: chosenHeading = autoShortened ? firstLine : rawHeading;
   $: strippedHeading = stripAttachments(chosenHeading,attachments);
-  $: heading = comment || (full && post.parent) ? '' :
+  $: longProse = autoShortened && strippedHeading.length > 180 && !referenceHeading;
+  $: heading = comment || (full && (post.parent || longProse)) ? '' :
     strippedHeading === link && link ? new URL(link).hostname :
     strippedHeading || (trees.length ? trees[0].name : media.length ? (media[0].kind==='image' ? 'Photo' : media[0].kind==='audio' ? 'Audio' : 'Video')+' in t/'+topic : chosenHeading);
-  $: remainder = (titleFromBody || (!comment && autoShortened)) ? body.split('\n').slice(1).join('\n').trim() : body;
+  $: remainder = (titleFromBody || (!comment && autoShortened && !(full && longProse))) ? body.split('\n').slice(1).join('\n').trim() : body;
   $: excerpt = post.parent && !full && !comment && remainder.startsWith(chosenHeading) ? remainder.slice(chosenHeading.length).trim() : remainder;
   $: cleanBody = renderEmbeds ? stripAttachments(excerpt,[...attachments,...(link ? [link] : [])]) : excerpt;
   $: visibleBody = full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
@@ -108,6 +114,7 @@
     >
     {#if isEventId(post.parent) && !full && !comment}<a class="stamp" href={postUrl(post.parent)}>Reply to discussion</a>{/if}
     {#if queued}<small class="queued" title="Saved on this device, waiting to sync">Queued</small>{/if}
+    <PostMenu {post} {saved} {onaction}/>
   </div>
   {/if}
   {#if renderedHeading}<h2>
@@ -122,10 +129,12 @@
   {#if hasReferences}<NoteText text={heading} tags={post.event.tags} previewsOnly showPreviews={renderEmbeds} />{/if}
   {#if visibleBody}<NoteText text={visibleBody} tags={post.event.tags} full={full || comment} showPreviews={renderEmbeds} />{/if}
   {#if renderEmbeds && (media.length || trees.length)}
-    <div class="media-gallery" class:photos={media.length > 1 && !trees.length && media.every(item=>item.kind==='image')}>
-      {#each media as item (item.url)}<MediaEmbed {item} compact={!full}/>{/each}
+    {#if photoAlbum && !trees.length}<div class="album-label"><Icon name="image" size={14}/>{media.length} photos</div>{/if}
+    <div class="media-gallery" class:photos={photoAlbum && !trees.length} class:album-detail={full && photoAlbum && !trees.length}>
+      {#each shownMedia as item (item.url)}<MediaEmbed {item} compact={!full} tile={photoAlbum && !trees.length}/>{/each}
       {#each trees as attachment (attachment.url)}<TreeEmbed {attachment}/>{/each}
     </div>
+    {#if shownMedia.length < media.length}<a class="album-more" href={permalink}>View all {media.length} photos <Icon name="next" size={14}/></a>{/if}
   {:else if !renderEmbeds && trees.length}
     {#each trees as attachment (attachment.url)}<a class="external-post" href={attachment.viewerUrl} target="_blank" rel="noopener noreferrer">Open Hashtree attachment</a>{/each}
   {/if}
@@ -168,21 +177,6 @@
         receipts={$receipts[post.id] ?? []}
       /></button
     >
-    <button
-      title={saved ? 'Remove bookmark' : 'Save post'}
-      aria-label={saved ? 'Remove bookmark' : 'Save post'}
-      class:chosen={saved}
-      aria-pressed={saved}
-      onclick={() => onaction('save', post)}
-      ><Icon name="save" size={15} /></button
-    >
-    <button
-      class="share-button"
-      title="Copy post link"
-      aria-label="Copy post link"
-      onclick={() => onaction('share', post)}
-      ><Icon name="share" size={15} /></button
-    >
   </div>{/if}
 </article>
 
@@ -191,4 +185,8 @@
   .queued {font-size:.7rem;color:var(--muted)}
   .media-gallery {display:grid;gap:8px;margin:9px 0;min-width:0}
   .media-gallery.photos {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .album-detail > :global(.media:first-child) {grid-column:1 / -1}
+  .album-label,.album-more {display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--muted);margin-top:14px}
+  .album-more {width:fit-content;color:var(--accent);font-weight:650;margin:10px 0}
+  .album-more:hover {text-decoration:underline}
 </style>

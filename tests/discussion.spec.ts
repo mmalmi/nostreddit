@@ -13,7 +13,8 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
   await seed.click();
   const seedUrl = page.url();
   const root = page.locator('[data-route-active=\"true\"] article').first();
-  await root.getByRole('button',{name:'Save post', exact:true}).click();
+  await root.getByRole('button',{name:'Post options',exact:true}).click();
+  await root.getByRole('menuitem',{name:'Save post', exact:true}).click();
   await page.goto('/saved');
   await expect(page.getByRole('link',{name:'Notes from the coast',exact:true})).toBeVisible();
   await page.goto('/t/photography');

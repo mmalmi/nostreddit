@@ -165,7 +165,8 @@ test('guests can widen and restore the same graph limit across home, topic, save
   await expect(page.getByLabel('Hide overmuted profiles')).not.toBeChecked();
   await page.getByRole('link',{name:'Home feed',exact:true}).click();
   await page.getByRole('link',{name:outsideTitle,exact:true}).click();
-  await page.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Save post',exact:true}).click();
+  await page.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Post options',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Save post',exact:true}).click();
   await page.getByRole('link',{name:'Saved posts',exact:true}).click();
   await expect(page.getByRole('heading',{name:outsideTitle,exact:true})).toBeVisible();
   await page.goto('/u/'+outsiderId);

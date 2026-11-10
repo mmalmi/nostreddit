@@ -29,8 +29,14 @@ test('shared badges distinguish self, follows and familiar neighbors; profile ex
   const badge=(post:Event)=>page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:post.content,exact:true})}).getByTestId('social-distance-badge');
   await expect(badge(ownPost)).toHaveClass(/self/);
   await expect(badge(friendPost)).toHaveClass(/following/);
-  await expect(badge(grayPost)).toHaveClass(/friend/);
-  await expect(badge(goldPost)).toHaveClass(/trusted/);
+  // Graph results may arrive after the first cards are visible. Apply the
+  // reader-controlled update before checking the newly admitted neighbors.
+  await expect(async()=>{
+    const update=page.getByRole('button',{name:'Show updated posts',exact:true});
+    if(await update.isVisible())await update.click();
+    await expect(badge(grayPost)).toHaveClass(/friend/,{timeout:300});
+    await expect(badge(goldPost)).toHaveClass(/trusted/,{timeout:300});
+  }).toPass({timeout:10000,intervals:[250,500]});
   await expect(badge(goldPost)).toHaveAttribute('title','Followed by 11 people you follow');
   await page.screenshot({path:info.outputPath('feed-badges.png')});
   await page.goto('/u/'+npubEncode(getPublicKey(gold)));

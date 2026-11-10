@@ -8,6 +8,7 @@
 
   export let item: MediaItem;
   export let compact = false;
+  export let tile = false;
   let openedUrl = '', failedUrl = '', enlargedUrl = '';
   let player: HTMLVideoElement | HTMLAudioElement | undefined;
   $: expanded = openedUrl === item.url;
@@ -52,7 +53,7 @@
   }
 </script>
 
-<div class="media" class:compact>
+<div class="media" class:compact class:tile>
   {#if failed}
     <a class="source unavailable" href={item.url} target="_blank" rel="noopener noreferrer">
       <Icon name="external" size={15}/>Open {label} on {host}
@@ -104,6 +105,9 @@
   .image-link {display:grid;place-items:center;position:relative;width:100%;min-height:5rem;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden;cursor:zoom-in}
   .image-link img {display:block;width:auto;height:auto;max-width:100%;max-height:min(70vh,550px);object-fit:contain}
   .compact .image-link img {max-height:clamp(220px,36vw,340px)}
+  .tile {margin:0}
+  .tile .image-link {aspect-ratio:4/3;height:100%}
+  .tile .image-link img {width:100%;height:100%;max-height:100%;object-fit:cover}
   .expand-icon {position:absolute;right:7px;bottom:7px;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#12211ddd;color:white;pointer-events:none}
   .media video,.media iframe {display:block;width:100%;aspect-ratio:16/9;max-height:440px;background:#17271f;border:0;border-radius:8px}
   .media audio {display:block;width:min(100%,380px)}
