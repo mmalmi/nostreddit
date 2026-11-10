@@ -27,7 +27,7 @@
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   {:else}
-    <p>Your signing extension manages this profile’s secret key.</p>
+    <p>Your {method === 'bunker' ? 'remote signer' : 'signing extension'} manages this profile’s secret key.</p>
   {/if}
 </section>
 

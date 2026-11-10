@@ -14,6 +14,9 @@ const irisUi = readFileSync('vendor/iris-svelte-ui-3d26f8c.tgz');
 if (createHash('sha256').update(irisUi).digest('hex') !== '888f94c1422f07db33bc4b209a3b2bf5f13b12492c53d717660076de755c935b') {
   throw new Error('Unexpected Iris Kit UI archive');
 }
+if (createHash('sha256').update(readFileSync('vendor/iris-identity-aaa8a51.tgz')).digest('hex') !== 'fcfc59889fa2c9bfdf8ec68e79f5433eb6bc37b45829315f7750bb985486045a') {
+  throw new Error('Unexpected Iris Kit identity archive');
+}
 const graph = readFileSync('public/socialGraph.bin');
 if (createHash('sha256').update(graph).digest('hex') !== '19b490ce9c8715cc5c8dc24b73719051ce932febaec4ec369ab1ed9f7c575d20') {
   throw new Error('Unexpected social graph snapshot');

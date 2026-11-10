@@ -16,6 +16,7 @@ import { readStoredRelayUrls, validateRelayUrls } from './relay-settings';
 import { readLocal, writeLocal } from './ui';
 import { startTopicCatalog } from './topic-catalog-store';
 import type { HotSignal } from './hot';
+import { pairBunker, readBunkerSession, signWithBunker, type BunkerSession } from './bunker';
 export { relayUrls, pendingWrites, outboxReady, outboxError, syncing, type Post };
 export { validateRelayUrls } from './relay-settings';
 
@@ -33,8 +34,14 @@ export function saveRelays(input: string) {
 }
 
 export interface Profile {name:string; about:string; picture:string; banner:string; website:string; lud16:string; lud06:string; nip05:string; display_name:string}
-export interface Account {pubkey:string; method:'local'|'extension'}
+export interface Account {pubkey:string; method:'local'|'extension'|'bunker'}
 export const account = writable<Account|null>(null);
+export const signerAuthUrl = writable('');
+let bunkerSession: BunkerSession | undefined;
+let signerRequests = new AbortController();
+export function cancelSignerRequests() {
+  signerRequests.abort(); signerRequests = new AbortController(); signerAuthUrl.set('');
+}
 const rawPosts = writable<Post[]>([]), rawComments = writable<Post[]>([]);
 const rawProfiles = writable<Record<string,Profile>>({});
 const rawLikes = writable<Record<string,string[]>>({});
@@ -786,9 +793,10 @@ export function createHotObserver() {
     if(pending.some(id=>!seen.has(id))&&seen.size<160){clearTimeout(timer);timer=setTimeout(flush,350);}
   }};
 }
-function remember(session:Account, sk?:Uint8Array) {
-  try { localStorage.setItem(keyStorage,JSON.stringify({...session,...(sk ? {nsec:nsecEncode(sk)} : {})})); }
+function remember(session:Account, sk?:Uint8Array, bunker?:BunkerSession) {
+  try { localStorage.setItem(keyStorage,JSON.stringify({...session,...(sk ? {nsec:nsecEncode(sk)} : {}),...(bunker ? {bunker} : {})})); }
   catch { throw new Error('Allow local storage to save your sign-in on this device.'); }
+  cancelSignerRequests(); bunkerSession = bunker;
   secret?.fill(0); secret = sk; account.set(session);
 }
 function restoreAccount() {
@@ -800,6 +808,9 @@ function restoreAccount() {
       const data = decode(raw.nsec as string);
       if (data.type !== 'nsec' || getPublicKey(data.data) !== raw.pubkey) return;
       secret = data.data;
+    } else if (raw.method === 'bunker') {
+      bunkerSession = readBunkerSession(raw.bunker);
+      if (!bunkerSession) return;
     } else if (raw.method !== 'extension') return;
     account.set({pubkey:raw.pubkey,method:raw.method});
   } catch { /* Invalid or unavailable local account storage leaves guest mode active. */ }
@@ -814,6 +825,11 @@ export async function signInExtension() {
   const pubkey = await extension().getPublicKey();
   if (!hexKey.test(pubkey)) throw new Error('The extension returned an invalid public key.');
   remember({pubkey,method:'extension'});
+}
+export async function signInBunker(connection:string, signal:AbortSignal, onAuth:(url:string)=>void) {
+  const paired = await pairBunker(connection, {signal,onAuth});
+  signal.throwIfAborted();
+  remember({pubkey:paired.pubkey, method:'bunker'}, undefined, paired.bunker);
 }
 export async function importAccount(input:string) {
   let sk:Uint8Array;
@@ -830,20 +846,27 @@ export async function createProfile(name: string) {
   await publish({kind:0, tags:[], content:JSON.stringify({name:displayName, display_name:displayName})});
 }
 export function exportKey() {
-  if (!secret) throw new Error('Your signing extension manages this key.');
+  if (!secret) throw new Error('Your signer manages this key.');
   return nsecEncode(secret);
 }
 export function signOut() {
-  localStorage.removeItem(keyStorage); secret?.fill(0); secret = undefined; account.set(null);
+  localStorage.removeItem(keyStorage); cancelSignerRequests(); bunkerSession = undefined;
+  secret?.fill(0); secret = undefined; account.set(null);
 }
 export async function signEvent(template:EventTemplate):Promise<NostrEvent> {
   const session = get(account);
   if (!session) throw new Error('Sign in to continue.');
-  const signed = session.method === 'local' && secret ? finalizeEvent(template,secret) : structuredClone(await extension().signEvent(structuredClone(template)));
+  let signed: NostrEvent;
+  if (session.method === 'bunker') {
+    if (!bunkerSession) throw new Error('Sign in with your bunker again.');
+    const signal = signerRequests.signal;
+    try { signed = await signWithBunker(bunkerSession, session.pubkey, structuredClone(template), {signal,onAuth:url=>signerAuthUrl.set(url)}); }
+    finally { if (signal === signerRequests.signal) signerAuthUrl.set(''); }
+  } else signed = session.method === 'local' && secret ? finalizeEvent(template,secret) : structuredClone(await extension().signEvent(structuredClone(template)));
   if (!verifyEvent(signed) || signed.pubkey !== session.pubkey || signed.kind !== template.kind ||
       signed.content !== template.content || signed.created_at !== template.created_at || JSON.stringify(signed.tags) !== JSON.stringify(template.tags))
     throw new Error('Your signer returned an event that does not match this action.');
-  if (get(account)?.pubkey !== session.pubkey) throw new Error('The signed-in profile changed. Please try again.');
+  if (get(account) !== session) throw new Error('The signed-in profile changed. Please try again.');
   return signed;
 }
 type Draft = Omit<EventTemplate,'created_at'> & {created_at?:number};

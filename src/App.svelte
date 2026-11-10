@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import RouteView from './RouteView.svelte';
-  import { start, clearRelaySearch } from './lib/network';
+  import { start, clearRelaySearch, signerAuthUrl, cancelSignerRequests } from './lib/network';
   import { watchAppearance } from './lib/appearance';
   import { watchHotPreferences } from './lib/hot-preferences';
   import { watchFeedPreferences } from './lib/feed-preferences';
@@ -14,6 +14,10 @@
   let recent = [current.id];
   let restoration = 0;
   let stopRestoring = () => {};
+  function showSignerApproval(dialog: HTMLDialogElement) {
+    dialog.showModal();
+    return {destroy:() => dialog.close()};
+  }
   const previousRestoration = history.scrollRestoration;
   history.scrollRestoration = 'manual';
   history.replaceState({ ...history.state, nostredditView: current.id }, '');
@@ -111,3 +115,13 @@
     <RouteView active={entry.id === current.id} returnTo={entries.find(previous => previous.id === entry.from)?.url} {navigate} />
   </div>
 {/each}
+{#if $signerAuthUrl}
+  <dialog class="modal signer-approval" aria-label="Signer approval" use:showSignerApproval oncancel={(event) => {event.preventDefault(); cancelSignerRequests()}}>
+    <div class="dialog-content">
+      <h2>Approve in your signer</h2>
+      <p>Your signer needs your approval to continue.</p>
+      <a class="primary wide" href={$signerAuthUrl} target="_blank" rel="noopener noreferrer">Approve in signer</a>
+      <button class="text-button" onclick={cancelSignerRequests}>Cancel</button>
+    </div>
+  </dialog>
+{/if}

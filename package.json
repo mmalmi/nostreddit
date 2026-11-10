@@ -21,6 +21,7 @@
   "dependencies": {
     "@hashtree/core": "file:vendor/hashtree-core-0.4.0.tgz",
     "@huggingface/tokenizers": "0.2.0",
+    "@iris/identity": "file:vendor/iris-identity-aaa8a51.tgz",
     "@iris/svelte-ui": "file:vendor/iris-svelte-ui-3d26f8c.tgz",
     "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
@@ -50,5 +51,10 @@
     "workbox-window": "7.4.1",
     "wrangler": "4.76.0",
     "ws": "8.22.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@iris/identity>nostr-tools": "2.25.2"
+    }
   }
 }

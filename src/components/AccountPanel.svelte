@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { profileUrl } from '../lib/profile-url';
-  import { account, profiles, signInExtension, createProfile, importAccount, signOut, saveProfile } from '../lib/network';
+  import { account, profiles, signInExtension, signInBunker, createProfile, importAccount, signOut, saveProfile } from '../lib/network';
   import { displayName } from '../lib/ui';
   import Icon from './Icon.svelte';
   import Mark from './Mark.svelte';
@@ -25,10 +25,15 @@
   });
   let mode: 'new' | 'existing' | 'retry-name' = 'new';
   let name = suggest(), secret = '', error = '', busy = false;
+  let bunker = '', showBunker = false, authUrl = '';
+  let connection: AbortController | undefined;
+  function cancelBunker() { connection?.abort(); connection = undefined; authUrl = ''; busy = false; }
+  onDestroy(cancelBunker);
   function switchMode(next: typeof mode) {
     mode = next;
     error = '';
     secret = '';
+    bunker = ''; showBunker = false; authUrl = '';
   }
   function changeName(value: string) {
     if (/nsec1[0-9a-z]+/i.test(value)) {
@@ -45,23 +50,26 @@
       changeName(pasted);
     }
   }
-  async function submit(method: 'extension' | 'new' | 'import') {
+  async function submit(method: 'extension' | 'new' | 'import' | 'bunker') {
     if (busy) return;
     busy = true;
     error = '';
+    const attempt = method === 'bunker' ? (connection = new AbortController()) : undefined;
     try {
       if (method === 'new') await createProfile(name);
       else if (method === 'extension') await signInExtension();
+      else if (method === 'bunker') await signInBunker(bunker, attempt!.signal, url => authUrl = url);
       else await importAccount(secret.trim());
-      secret = '';
+      secret = ''; bunker = ''; authUrl = '';
       notify(method === 'new' ? 'Profile created' : 'Signed in');
       onclose();
     } catch (e) {
+      if (attempt?.signal.aborted) return;
       if (method === 'new' && $account) {
         switchMode('retry-name');
       }
       error = e instanceof Error ? e.message : 'Could not sign in.';
-    } finally { busy = false; }
+    } finally { if (!attempt || connection === attempt) { busy = false; connection = undefined; authUrl = ''; } }
   }
   async function retryName() {
     busy = true;
@@ -102,6 +110,17 @@
   {:else}
     <h2>Sign in to your profile</h2>
     <button class="outline wide" disabled={busy} onclick={() => submit('extension')}><Icon name="key"/> Sign in with extension</button>
+    {#if showBunker}
+      <form onsubmit={(e) => {e.preventDefault(); submit('bunker')}}>
+        <label>Bunker link<input type="password" bind:value={bunker} disabled={busy} required placeholder="bunker://…" spellcheck="false" autocomplete="off"/></label>
+        <p class="signer-hint">Paste the connection link from your signer. Your secret key stays there.</p>
+        <button class="primary wide" disabled={busy || !bunker.trim()}>{busy ? 'Waiting for signer…' : 'Connect signer'}</button>
+      </form>
+      {#if authUrl}<a class="outline wide" href={authUrl} target="_blank" rel="noopener noreferrer">Approve in signer <Icon name="external"/></a>{/if}
+      {#if busy && connection}<button class="text-button" onclick={cancelBunker}>Cancel sign-in</button>{/if}
+    {:else}
+      <button class="outline wide" disabled={busy} onclick={() => {showBunker = true; error = ''}}><Icon name="link"/> Sign in with bunker</button>
+    {/if}
     <form onsubmit={(e) => {e.preventDefault(); submit('import')}}>
       <label>Secret key<input type="password" bind:value={secret} required placeholder="nsec1…" spellcheck="false" autocomplete="off"/></label>
       <button class="primary wide" disabled={busy || !secret.trim()}>Sign in with secret key</button>
@@ -113,4 +132,5 @@
 
 <style>
   .name-suggestion {color:var(--green);font-size:13px;text-decoration:underline;text-underline-offset:3px}
+  .signer-hint {font-size:13px;margin:0;color:var(--muted)}
 </style>

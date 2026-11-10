@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@iris/identity>nostr-tools': 2.25.2
+
 importers:
 
   .:
@@ -14,6 +17,9 @@ importers:
       '@huggingface/tokenizers':
         specifier: 0.2.0
         version: 0.2.0
+      '@iris/identity':
+        specifier: file:vendor/iris-identity-aaa8a51.tgz
+        version: file:vendor/iris-identity-aaa8a51.tgz(nostr-social-graph@https://github.com/mmalmi/nostr-social-graph/releases/download/v4.1.0/nostr-social-graph-4.1.0.tgz(typescript@5.9.3))(typescript@5.9.3)
       '@iris/svelte-ui':
         specifier: file:vendor/iris-svelte-ui-3d26f8c.tgz
         version: file:vendor/iris-svelte-ui-3d26f8c.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))
@@ -1131,6 +1137,12 @@ packages:
     engines: {node: ^18.17.0 || ^20.3.0 || >=21.0.0}
     cpu: [x64]
     os: [win32]
+
+  '@iris/identity@file:vendor/iris-identity-aaa8a51.tgz':
+    resolution: {integrity: sha512-jekd1ocLg+SJ3tIG8p/OLsmaqjDwNnRFsRcjx1NA8+r8uRkNMERYmD4nJV5KK8lvj8pcvkywxL4cgeeuW/18dQ==, tarball: file:vendor/iris-identity-aaa8a51.tgz}
+    version: 0.3.1
+    peerDependencies:
+      nostr-social-graph: '*'
 
   '@iris/svelte-ui@file:vendor/iris-svelte-ui-3d26f8c.tgz':
     resolution: {integrity: sha512-pmwjeuzSlGbrBlO5QByjNDFvC0L8OgOTZI2XbyUUxU3mJW7v5pNUFPNFSqT2o5VC6gtqATNk5khYu9Iacwk3qw==, tarball: file:vendor/iris-svelte-ui-3d26f8c.tgz}
@@ -3748,6 +3760,13 @@ snapshots:
 
   '@img/sharp-win32-x64@0.34.5':
     optional: true
+
+  '@iris/identity@file:vendor/iris-identity-aaa8a51.tgz(nostr-social-graph@https://github.com/mmalmi/nostr-social-graph/releases/download/v4.1.0/nostr-social-graph-4.1.0.tgz(typescript@5.9.3))(typescript@5.9.3)':
+    dependencies:
+      nostr-social-graph: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.1.0/nostr-social-graph-4.1.0.tgz(typescript@5.9.3)
+      nostr-tools: 2.25.2(typescript@5.9.3)
+    transitivePeerDependencies:
+      - typescript
 
   '@iris/svelte-ui@file:vendor/iris-svelte-ui-3d26f8c.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))':
     dependencies:
