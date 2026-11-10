@@ -121,15 +121,13 @@ test('extension sign-in, notifications and profile updates work for the active i
   await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);
 });
 
-test('a guest can expand a local search to relays and open a Nostr event identifier', async ({ page }) => {
+test('a guest can search relay posts and open a Nostr event identifier', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('link',{name:'Notes from the coast',exact:true})).toBeVisible();
   const search = page.getByRole('textbox',{name:'Search Nostreddit'});
   await search.fill('ephemeris');
   await search.press('Enter');
   const result = page.getByRole('link',{name:'An ephemeris on the archive shelf',exact:true});
-  await expect(page.getByRole('heading',{name:'No matching posts'})).toBeVisible();
-  await page.getByRole('button',{name:'Search relays',exact:true}).click();
   await expect(result).toBeVisible({timeout:15_000});
   const href = await result.getAttribute('href');
   const note = href!.split('/').at(-1)!;

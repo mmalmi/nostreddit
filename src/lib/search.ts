@@ -2,6 +2,15 @@ import { postIdFromPath, postUrl } from './post-url';
 import { profileUrl } from './profile-url';
 import { decode } from 'nostr-tools/nip19';
 import { topicSlug, topicPath } from './hashtags';
+import type { SearchPlan } from './discovery/query';
+
+export function searchTopics(plan: SearchPlan, known: string[]) {
+  // Topics need no creation step: offer the literal topic even before seeing a post.
+  const exact = [topicSlug(plan.relayQuery), ...plan.hashtags.map(topicSlug)].filter(Boolean);
+  const related = known.filter(slug => plan.terms.some(term =>
+    slug === term || (term.length >= 3 && slug.startsWith(term))));
+  return [...new Set([...exact, ...related])].slice(0, 5);
+}
 
 export function searchTarget(input: string): string {
   const value = input.trim();

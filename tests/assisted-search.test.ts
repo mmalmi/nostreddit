@@ -2,13 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools/pure';
 import { asPost } from '../src/lib/posts';
-import { checkSearch } from '../src/lib/search';
+import { checkSearch, searchTopics } from '../src/lib/search';
 import { allowModel, keywordScore, matchesRetrieval, noExpansion, relevance, relayFilters } from '../src/lib/discovery/discussions';
 import { planPostSearch } from '../src/lib/discovery/query';
 
 const event = finalizeEvent({kind:1,created_at:10,content:'An archive of images from the launch party.',
   tags:[['t','film-lab'],['subject','Behind the lens']]}, generateSecretKey());
 const post = asPost(event)!;
+test('search suggests the literal topic first, including topics not yet seen', () => {
+  assert.deepEqual(searchTopics(planPostSearch('cats'), ['catstr', 'cats', 'catsofinternet']), ['cats', 'catstr', 'catsofinternet']);
+  assert.deepEqual(searchTopics(planPostSearch('find posts about Nature'), []), ['nature']);
+  assert.deepEqual(searchTopics(planPostSearch('coffee brewing #coffee'), ['coffee']), ['coffee']);
+  assert.deepEqual(searchTopics(planPostSearch('日本'), []), ['日本']);
+});
 test('titles, authors, hashtags and Unicode text are searchable without the model', () => {
   assert.ok(keywordScore(planPostSearch('show me discussions about behind the lens'), post, '') > 1);
   assert.equal(keywordScore(planPostSearch('Zoë'), post, 'Zoe\u0308'), 1);

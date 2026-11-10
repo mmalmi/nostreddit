@@ -39,7 +39,7 @@
   import { planPostSearch } from './lib/discovery/query';
   import { allowModel, keywordScore, noExpansion, relevance, semanticFloor } from './lib/discovery/discussions';
   import type { SearchCursors } from './lib/discovery/relay-search';
-  import { checkSearch, searchTarget } from './lib/search';
+  import { checkSearch, searchTarget, searchTopics } from './lib/search';
   import { observeAuthors, observeEventAuthors, graphInfo, graphStatus, setGraphRanking } from './lib/graph';
   import {
     topics,
@@ -190,6 +190,7 @@
   let searchCursors: SearchCursors | undefined;
   let searchExpansion = noExpansion;
   let searching = false, searched = false, searchMessage = '';
+  let searchStarted = false;
   $: canSearchMore = searchCursors?.some(cursor => cursor !== null) ?? true;
   async function expandSearch(more = false) {
     if (searching) return;
@@ -198,19 +199,50 @@
     searchMessage = '';
     try {
       const query = checkSearch(route.value);
-      const expansion = more ? searchExpansion : await assistance.relayExpansion(query);
-      if (run !== searchRun) return;
-      const found = await searchRelays(query, expansion, more ? searchCursors : undefined);
+      let expansion = more ? searchExpansion : noExpansion;
+      let found = await searchRelays(query, expansion, more ? searchCursors : undefined);
       if (run !== searchRun) return;
       remoteIds = found.ids;
       searchCursors = found.cursors;
       searchExpansion = expansion;
       searched = true;
+      let pages = 1;
+      // Show literal results first. Optional meaning expansion must never delay them.
+      if (!more && related) {
+        expansion = await assistance.relayExpansion(query);
+        if (run !== searchRun || !related) return;
+        if (expansion.terms.length || expansion.tags.length) {
+          found = await searchRelays(query, expansion);
+          if (run !== searchRun) return;
+          remoteIds = found.ids;
+          searchCursors = found.cursors;
+          searchExpansion = expansion;
+          pages++;
+        }
+      }
+      // A fresh batch may consist entirely of hidden authors or loose relay
+      // matches. Search a few older batches before asking the reader to continue.
+      if (!more) {
+        await tick();
+        while (run === searchRun && pages < 3 && ordered.length < 5 && searchCursors?.some(cursor => cursor !== null)) {
+          found = await searchRelays(query, searchExpansion, searchCursors);
+          if (run !== searchRun) return;
+          remoteIds = found.ids;
+          searchCursors = found.cursors;
+          pages++;
+          await tick();
+        }
+      }
     } catch (error) {
       if (run === searchRun) searchMessage = error instanceof Error ? error.message : 'Relay search failed.';
     } finally {
       if (run === searchRun) searching = false;
     }
+  }
+  function startSearch() {
+    if (searchStarted || route.value.length < 2) return;
+    searchStarted = true;
+    void expandSearch();
   }
   function go(path: string) { navigate(path); }
   function intercept(e: MouseEvent) {
@@ -349,6 +381,7 @@
   $: if (!active) {
     menu = false;
     if (modal) closeModal();
+    if (searching) searchStarted = false;
     searchRun++; searching = false;
   }
   $: if (active && mounted) {
@@ -356,6 +389,7 @@
     showPreviews = readLocal<boolean>('showPreviews', true);
   }
   $: pageVisible = active && documentVisible;
+  $: if (mounted && pageVisible && route.page === 'search') startSearch();
   $: if (active) observeEventAuthors(saved.map(p => p.pubkey));
   $: visibleSaved = saved.filter(p => $canSeeAuthor(p.pubkey));
   $: visibleSearch = $posts.filter(p => remoteIds.has(p.id));
@@ -377,7 +411,6 @@
       .filter(p => (lexical.get(p.id) ?? -1) >= 0) : []);
   $: minimum = semanticFloor(plan, $assistance.scores);
   $: matchScores = new Map([...lexical].map(([id, score]) => [id, relevance(score, $assistance.scores.get(id), minimum)]));
-  $: relayMatchCount = visibleSearch.filter(p => (matchScores.get(p.id) ?? 0) > 0).length;
   $: activeOrder = route.page === 'search' ? searchOrder : selectedFeed?.order ?? sorting;
   $: candidates = source.filter((p) => {
     if (route.page === 'topic') return matchesTopic(p,route.value);
@@ -450,8 +483,7 @@
     ]),
   ].filter(validTopic);
   $: directoryTopic = topicSlug(directoryFilter.trim().replace(/^[tr]\//i,''));
-  $: topicMatches = plan ? discovered.filter(slug => plan.hashtags.includes(slug) ||
-    plan.terms.some(term => slug === term || (term.length >= 3 && slug.startsWith(term)))).slice(0,5) : [];
+  $: topicMatches = plan ? searchTopics(plan, discovered) : [];
   $: title =
     route.page === 'home'
       ? 'Home'
@@ -488,7 +520,7 @@
                 : route.page === 'topics'
                   ? 'Browse a topic or enter any tag to open it.'
                   : route.page === 'search'
-                    ? 'Loaded discussions and topics.'
+                    ? 'Discussions and topics.'
                     : '';
   $: if (active) document.title =
     (route.page === 'thread' && thread ? thread.title.slice(0, 70) : title) +
@@ -852,8 +884,8 @@
             $assistance.status === 'unavailable' ? 'On-device model unavailable. Showing keyword matches.' : 'Keyword matches'}</small>
         </div>
         <div class="relay-search">
-          <button class="outline compact" disabled={searching || route.value.length < 2} onclick={() => expandSearch()}><Icon name="search" size={15}/>{searching ? 'Searching…' : searched ? 'Search again' : 'Search relays'}</button>
-          <small role="status">{searchMessage || (searched ? (relayMatchCount ? `Found ${relayMatchCount} matching discussion${relayMatchCount === 1 ? '' : 's'} on relays.` : canSearchMore ? 'No matches in this batch. Load more to search older discussions.' : 'Connected relays returned no matching discussions within your graph settings.') : 'Showing loaded discussions. Search public relays for more.')}</small>
+          {#if !searching}<button class="outline compact" disabled={route.value.length < 2} onclick={() => expandSearch()}><Icon name="search" size={15}/>{searchMessage ? 'Try again' : 'Search again'}</button>{/if}
+          <small role="status" class:loading-state={searching}>{searching ? 'Searching discussions…' : searchMessage || (searched ? (ordered.length ? `Found ${ordered.length} matching discussion${ordered.length === 1 ? '' : 's'}.` : canSearchMore ? 'No matches in this batch. Load more to search older discussions.' : 'No matching discussions within your current filters.') : 'Enter at least two characters to search.')}</small>
         </div>
         {#if profileKey(route.value)}<a
             class="search-profile"
@@ -865,7 +897,7 @@
           >{/if}
         {#if topicMatches.length}<div class="search-topics">
             {#each topicMatches as slug}<a href={topicPath(slug)}
-                ><TopicIcon {slug} small />{slug}</a
+                ><TopicIcon {slug} small />t/{slug}</a
               >{/each}
           </div>{/if}
       {/if}
@@ -952,8 +984,8 @@
                 Posts from people you follow will appear here as they load. Your filters may also hide some posts.
               </p>
               <a href="/">Explore the feed</a>
-            {:else if route.page === 'search'}<h2>{['loading','ranking'].includes($assistance.status) ? 'Looking for matches…' : 'No matching posts'}</h2>
-              <p>{['loading','ranking'].includes($assistance.status) ? 'Checking the discussions on this device.' : 'Try a different search or explore more topics.'}</p>
+            {:else if route.page === 'search'}<h2>{searching ? 'Looking for matches…' : 'No matching posts'}</h2>
+              <p>{searching ? 'Fetching discussions for your search.' : 'Try a different search or explore a topic.'}</p>
               <a href="/topics">Browse topics</a>
             {:else if route.page === 'network' && $graphStatus === 'unavailable'}<h2
               >
@@ -992,16 +1024,15 @@
           class="load-more outline"
           onclick={() => (limit += 24)}
           >Load more discussions <Icon name="down" size={15} /></button
-        >{:else if route.page === 'search' && route.value.length >= 2}
+        >{:else if route.page === 'search' && route.value.length >= 2 && searched && !searching && !searchMessage}
         <div class="search-more">
           {#if canSearchMore}
             <button class="load-more outline" disabled={searching} onclick={() => expandSearch(searched)}>
-              {searching ? 'Searching…' : searched ? 'Load more results' : 'Search more discussions'}
+              Load more results
               <Icon name="down" size={15}/>
             </button>
-            <small>{searched ? 'Search older discussions on public relays.' : 'Search public relays beyond the discussions already loaded.'}</small>
+            <small>Search older discussions.</small>
           {:else}<p class="quiet" role="status">No more results returned by connected relays.</p>{/if}
-          {#if searchMessage}<p class="quiet" role="status">{searchMessage}</p>{/if}
         </div>
         {/if}
     {/if}

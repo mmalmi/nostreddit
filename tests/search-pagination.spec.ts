@@ -22,18 +22,21 @@ test.beforeAll(async ({baseURL}) => {
   } finally { ws.close(); }
 });
 
-test('five cached matches can load multiple relay pages and reach a clear end', async ({page,context},testInfo) => {
+test('a submitted search loads relay matches, paginates and reaches a clear end', async ({page,context},testInfo) => {
   await allowFixtureAuthors(context);
   await context.addInitScript(()=>localStorage.setItem('nostreddit.ui.relatedSearch','false'));
   await page.goto('/search?q='+query);
   await page.getByLabel('Match related meanings').uncheck();
-  await expect(page.locator('[data-route-active=\"true\"] article')).toHaveCount(5);
-  await expect(page.getByRole('button',{name:'Search more discussions',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Search more discussions',exact:true}).click();
-  await expect(page.locator('.relay-search small')).toContainText('Found 40 matching discussions');
+  const status = page.locator('[data-route-active="true"] .relay-search small');
+  await expect(status).toContainText(/Found \d+ matching discussions/);
+  // Concurrent Home arrivals can occupy part of the runtime's bounded batch.
+  // Every fixture must still be reachable through the following pages.
+  const firstCount = Number((await status.textContent())!.match(/Found (\d+)/)![1]);
+  expect(firstCount).toBeGreaterThan(24);
+  expect(firstCount).toBeLessThanOrEqual(40);
   await expect(page.locator('[data-route-active=\"true\"] article')).toHaveCount(24);
   await page.getByRole('button',{name:'Load more discussions',exact:true}).click();
-  await expect(page.locator('[data-route-active=\"true\"] article')).toHaveCount(40);
+  await expect(page.locator('[data-route-active=\"true\"] article')).toHaveCount(firstCount);
   await page.getByRole('button',{name:'Load more results',exact:true}).click();
   await expect(page.locator('.relay-search small')).toContainText('Found 65 matching discussions');
   await page.getByRole('button',{name:'Load more discussions',exact:true}).click();
@@ -50,6 +53,6 @@ test('five cached matches can load multiple relay pages and reach a clear end', 
   await page.screenshot({path:testInfo.outputPath('search-pagination-mobile.png')});
   const input = page.getByLabel('Search Nostreddit');
   await input.fill('different search'); await input.press('Enter');
-  await expect(page.getByRole('button',{name:'Search more discussions',exact:true})).toBeVisible();
-  await expect(page.getByText('No more results returned by connected relays.')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Search again',exact:true})).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] article')).toHaveCount(0);
 });

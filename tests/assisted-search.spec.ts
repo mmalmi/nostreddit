@@ -12,6 +12,7 @@ const notes = [
   ['Beans for my morning cup', 'A burr grinder and a paper filter give a clean pour-over.'],
   ['A guide to brewing pale ale', 'Malt, hops and yeast for a hoppy beer.'],
   ['Walking between beaches at low tide', 'The coastal path runs from the inlet to a sandy cove.'],
+  ['Cats watching the garden', 'Two tabbies watching birds from the window.'],
 ];
 test.beforeAll(async ({baseURL}) => {
   const port = Number(new URL(baseURL!).port) + 1;
@@ -20,11 +21,19 @@ test.beforeAll(async ({baseURL}) => {
     await once(ws, 'open');
     const fixture = createHash('sha256').update('nostreddit loopback search fixture').digest();
     for (const [i,[title,body]] of notes.entries()) {
-      const topic = i === notes.length - 1 ? 'coastal-archive' : tag;
+      const topic = i === 4 ? 'coastal-archive' : i === 5 ? 'cats-archive' : tag;
       const event = finalizeEvent({kind:1, content:title+'\n\n'+body, created_at:1730000000+i,
         tags:[['t', topic], ['subject',title]]}, fixture);
       const ack = once(ws,'message');
       ws.send(JSON.stringify(['EVENT',event]));
+      expect(JSON.parse((await ack)[0].toString()).slice(0,3)).toEqual(['OK',event.id,true]);
+    }
+    // Loose substring results fill the newest batch but do not match the word cats.
+    for (let i=0; i<42; i++) {
+      const title = 'catsunrelatedfixture '+i;
+      const event = finalizeEvent({kind:1,content:title,created_at:1730000010+i,
+        tags:[['t','cold-search-unrelated'],['subject',title]]}, fixture);
+      const ack = once(ws,'message'); ws.send(JSON.stringify(['EVENT',event]));
       expect(JSON.parse((await ack)[0].toString()).slice(0,3)).toEqual(['OK',event.id,true]);
     }
   } finally { ws.close(); }
@@ -36,13 +45,38 @@ async function submit(page: Page, query: string) {
   await expect(page).toHaveURL(url => url.pathname === '/search' && url.searchParams.get('q') === query);
 }
 async function ranked(page: Page) {
-  await expect(page.getByText('Ranked on this device',{exact:true})).toBeVisible({timeout:25_000});
+  await expect(page.locator('[data-route-active="true"]').getByText('Ranked on this device',{exact:true})).toBeVisible({timeout:25_000});
 }
+test('a cold search fetches posts and suggests its topic while the model is still loading', async ({browser,baseURL},testInfo) => {
+  const context = await browser.newContext({baseURL,serviceWorkers:'block'});
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  try {
+    await allowFixtureAuthors(context);
+    await context.route('**/*.onnx', async route => { await held; await route.abort(); });
+    const page = await context.newPage();
+    await page.goto('/search?q=cats', {waitUntil:'domcontentloaded'});
+    const topic = page.locator('.search-topics a').first();
+    await expect(topic).toHaveText('t/cats');
+    await expect(topic).toHaveAttribute('href','/t/cats');
+    await expect(page.getByRole('link',{name:notes[5][0],exact:true})).toBeVisible({timeout:10_000});
+    await expect(page.getByText('Preparing on-device search…')).toBeVisible();
+    await expect(page.getByRole('button',{name:'Search again',exact:true})).toBeVisible({timeout:10_000});
+    await expect(page.getByText('Looking for matches…')).toHaveCount(0);
+    await page.screenshot({path:testInfo.outputPath('search-desktop.png')});
+    await page.setViewportSize({width:390,height:844});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({path:testInfo.outputPath('search-mobile.png')});
+    await topic.click();
+    await expect(page).toHaveURL(/\/t\/cats$/);
+    release();
+  } finally { release(); await context.close(); }
+});
 test('a reader finds paraphrases, excludes a competing meaning and can switch back to keywords', async ({page}) => {
   await page.goto('/t/'+tag);
   await expect(page.getByRole('link',{name:notes[0][0],exact:true})).toBeVisible();
   await page.keyboard.press('/');
-  await expect(page.getByLabel('Search Nostreddit')).toBeFocused();
+  await expect(page.getByRole('textbox',{name:'Search Nostreddit'})).toBeFocused();
   const top = page.locator('[data-route-active=\"true\"] article h2').first();
   for (const [query, expected] of [
     ['taking pictures in low light without a flash',notes[0][0]],
@@ -53,31 +87,30 @@ test('a reader finds paraphrases, excludes a competing meaning and can switch ba
     await expect(top).toHaveText(expected);
   }
   await expect(page.getByRole('link',{name:notes[3][0],exact:true})).toHaveCount(0);
-  await page.getByLabel('Match related meanings').uncheck();
+  await page.getByRole('checkbox',{name:'Match related meanings'}).uncheck();
   await expect(page.getByText('No matching posts')).toBeVisible();
   await submit(page, 'find posts about morning cup #'+tag);
   await expect(top).toHaveText(notes[2][0]);
-  await page.getByLabel('Sort search results').selectOption('New');
+  await page.getByRole('combobox',{name:'Sort search results'}).selectOption('New');
   await expect(top).toHaveText(notes[2][0]);
   await page.reload();
-  await expect(page.getByLabel('Match related meanings')).not.toBeChecked();
+  await expect(page.getByRole('checkbox',{name:'Match related meanings'})).not.toBeChecked();
 });
 
 // Opening a result must go through the normal thread page, including on a phone.
-test('a mobile reader explicitly expands a search to relays and returns to the results', async ({page}) => {
+test('a mobile reader automatically finds related relay posts and returns to the results', async ({page}) => {
   await page.setViewportSize({width:390,height:844});
   await page.goto('/');
-  await page.getByLabel('Search Nostreddit').click();
+  await page.getByRole('textbox',{name:'Search Nostreddit'}).click();
   await submit(page,'seaside walks'); await ranked(page);
   const link = page.getByRole('link',{name:notes[4][0],exact:true});
-  await expect(link).toHaveCount(0);
-  await page.getByRole('button',{name:'Search relays',exact:true}).click();
+
   await expect(link).toBeVisible({timeout:15_000});
-  await expect(page.locator('.relay-search small')).toContainText(/Found \d+ matching/);
+  await expect(page.locator('[data-route-active="true"] .relay-search small')).toContainText(/Found \d+ matching/);
   await link.click();
   await expect(page).toHaveURL(/\/post\/note1[023456789acdefghjklmnpqrstuvwxyz]{58}$/);
   await page.goBack();
-  await expect(page.getByLabel('Search Nostreddit')).toHaveValue('seaside walks');
+  await expect(page.getByRole('textbox',{name:'Search Nostreddit'})).toHaveValue('seaside walks');
   await ranked(page);
   await expect(link).toBeVisible();
   const refine = page.getByRole('textbox',{name:'Refine search'});
@@ -98,7 +131,7 @@ test('a cold model failure preserves immediate results and a newer query wins', 
     await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(notes[1][0]);
     await expect(page.getByText(/model unavailable/i)).toBeVisible({timeout:20_000});
     await expect(page.getByRole('link',{name:notes[0][0],exact:true})).toHaveCount(0);
-    const input = page.getByLabel('Search Nostreddit');
+    const input = page.getByRole('textbox',{name:'Search Nostreddit'});
     await input.fill('nsec1deadbeef'); await input.press('Enter');
     await expect(input).toHaveValue('');
     await expect(page).toHaveURL(/q=rear%20derailleur/);

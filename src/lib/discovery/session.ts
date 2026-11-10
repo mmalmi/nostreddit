@@ -12,9 +12,11 @@ export function createSearchSession() {
   const store = writable(initial);
   let state = initial, worker: Worker | undefined, watchdog: ReturnType<typeof setTimeout>;
   let run = 0, query = '', ids = '';
+  let pending: {plan: SearchPlan; posts: Post[]} | undefined;
   function set(next: SearchState) { state = next; store.set(next); }
   function stop() {
     clearTimeout(watchdog); worker?.terminate(); worker = undefined;
+    pending = undefined;
   }
   function failed() {
     stop();
@@ -32,14 +34,21 @@ export function createSearchSession() {
     const window = posts.slice(0, 160);
     const nextIds = window.map(post => post.id).join(',');
     const same = query === plan.text;
+    if (same && ['loading', 'ranking'].includes(state.status)) {
+      // Let the current batch publish scores as new relay posts arrive. Cancelling
+      // every batch on a busy feed can otherwise starve search indefinitely.
+      pending = nextIds === ids ? undefined : {plan, posts:window};
+      return;
+    }
     if (same && (nextIds === ids || state.status === 'unavailable')) return;
+    pending = undefined;
     query = plan.text; ids = nextIds; run++;
     const scores = new Map<string, number>();
     if (same) for (const post of window) {
       const existing = state.scores.get(post.id);
       if (existing !== undefined) scores.set(post.id, existing);
     }
-    set({...initial, scores, status:'loading'});
+    set({...initial, scores, expansion:same ? state.expansion : noExpansion, status:'loading'});
     try {
       if (!worker) {
         worker = new Worker(new URL('./meaning.worker.ts', import.meta.url), {type:'module'});
@@ -54,8 +63,11 @@ export function createSearchSession() {
             for (const [id, score] of data.scores) scores.set(id, score);
             set({...state, scores, status:data.done ? 'ready' : 'ranking'});
           }
-          if (state.status === 'ready') clearTimeout(watchdog);
-          else armWatchdog();
+          if (state.status === 'ready') {
+            clearTimeout(watchdog);
+            const next = pending; pending = undefined;
+            if (next) update(next.plan, next.posts);
+          }
         };
       }
       armWatchdog();

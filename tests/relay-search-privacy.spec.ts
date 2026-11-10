@@ -56,7 +56,6 @@ test('custom relays contain keyword search on startup, live switch and reload', 
       localStorage.setItem('nostreddit.ui.relatedSearch', 'false');
     }, first.state.url);
     await page.goto('/search?q=firstprivacysearchfixture');
-    await page.getByRole('button', { name: 'Search more discussions', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'firstprivacysearchfixture', exact: true })).toBeVisible();
     expect(first.state.searches).toBeGreaterThan(0);
 
@@ -64,7 +63,6 @@ test('custom relays contain keyword search on startup, live switch and reload', 
     first.state.hold = true;
     await page.locator('[data-route-active="true"]').getByLabel('Search Nostreddit').fill('pendingprivacysearchfixture');
     await page.locator('[data-route-active="true"]').getByLabel('Search Nostreddit').press('Enter');
-    await page.getByRole('button', { name: 'Search more discussions', exact: true }).click();
     await expect.poll(() => first.state.pending.size).toBeGreaterThan(0);
     await page.locator('[data-route-active="true"]').getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByLabel('One relay address per line').fill(second.state.url);
@@ -73,13 +71,11 @@ test('custom relays contain keyword search on startup, live switch and reload', 
     const oldSearches = first.state.searches;
     await page.locator('[data-route-active="true"]').getByLabel('Search Nostreddit').fill('secondprivacysearchfixture');
     await page.locator('[data-route-active="true"]').getByLabel('Search Nostreddit').press('Enter');
-    await page.getByRole('button', { name: 'Search more discussions', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'secondprivacysearchfixture', exact: true })).toBeVisible();
     expect(second.state.searches).toBeGreaterThan(0);
     expect(first.state.searches).toBe(oldSearches);
     const beforeReload = second.state.searches;
     await page.reload();
-    await page.getByRole('button', { name: 'Search more discussions', exact: true }).click();
     await expect.poll(() => second.state.searches).toBeGreaterThan(beforeReload);
     await expect(page.getByRole('heading', { name: 'secondprivacysearchfixture', exact: true })).toBeVisible();
     expect(socketAttempts.length).toBeGreaterThan(0);
