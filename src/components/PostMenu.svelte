@@ -73,7 +73,7 @@
   <div class="menu-panel" bind:this={menu} popover="auto" role="menu" tabindex="-1" aria-label="Post options"
     style:left={left + 'px'} style:top={top + 'px'} onkeydown={menuKeys}
     ontoggle={event => { open = event.newState === 'open'; }}>
-    <button role="menuitem" onclick={() => choose('share')}><Icon name="link" size={17}/>Copy post link</button>
+    <button role="menuitem" onclick={() => choose('copy-link')}><Icon name="link" size={17}/>Copy post link</button>
     <button role="menuitem" onclick={() => copyFromMenu(noteEncode(post.id),'Note ID')}><Icon name="copy" size={17}/>Copy note ID</button>
     <button role="menuitem" onclick={() => choose('save')}><Icon name="save" size={17}/>{saved ? 'Remove bookmark' : 'Save post'}</button>
     <div class="divider"></div>

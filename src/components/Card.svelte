@@ -91,7 +91,8 @@
   $: picture = safeURL(author?.picture);
 </script>
 
-<article class="post-card" class:detail={full} class:comment-card={comment}>
+<article class="post-card" class:detail={full} class:comment-card={comment}
+  data-post-href={!full && !comment && !preview ? permalink : undefined}>
   {#if preview}<div class="byline"><span class="topic-link"><TopicIcon slug={topic} small />t/{topic}</span><span class="sep">·</span><span>{name}</span><span class="sep">·</span><span>Draft</span></div>
   {:else}<div class="byline">
     {#if !comment}<a
@@ -177,10 +178,14 @@
         receipts={$receipts[post.id] ?? []}
       /></button
     >
+    {#if !comment}
+      <button type="button" onclick={() => onaction('share', post)}><Icon name="share" size={16}/> Share</button>
+    {/if}
   </div>{/if}
 </article>
 
 <style>
+  [data-post-href] {cursor:pointer}
   .hashtag {color:var(--green)}
   .queued {font-size:.7rem;color:var(--muted)}
   .media-gallery {display:grid;gap:8px;margin:9px 0;min-width:0}

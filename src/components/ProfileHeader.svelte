@@ -22,8 +22,7 @@
   export let onMute: () => void;
   export let onEdit: () => void;
 
-  let expandedFor = '';
-  let enlargedBanner = '';
+  let enlarged: { kind: 'photo' | 'banner'; url: string } | null = null;
   $: profile = $profiles[pubkey];
   $: mine = pubkey === $account?.pubkey;
   $: following = $follows.includes(pubkey);
@@ -31,14 +30,15 @@
   $: npub = npubEncode(pubkey);
   $: shareUrl = location.origin + profileUrl(pubkey);
   $: banner = safeURL(profile?.banner);
+  $: picture = safeURL(profile?.picture);
   $: website = safeURL(profile?.website);
   $: social = $profileRelations?.subject === pubkey && $profileRelations?.viewer === ($account?.pubkey || snapshotRoot)
     ? $profileRelations : null;
   $: if (active) observeEventAuthors([pubkey, ...(social?.mutuals ?? [])]);
   $: allowed = $canSeeAuthor(pubkey);
-  $: if (!active || !allowed || enlargedBanner !== banner) enlargedBanner = '';
+  $: if (enlarged && (!active || !allowed || enlarged.url !== (enlarged.kind === 'photo' ? picture : banner))) enlarged = null;
   $: allowedPeople = social?.mutuals.filter($canSeeAuthor) ?? [];
-  $: people = allowedPeople.slice(0, expandedFor === pubkey ? 12 : 3);
+  $: people = allowedPeople.slice(0, 3);
 </script>
 
 <section class="identity" aria-label="Profile">
@@ -61,17 +61,24 @@
   {:else}
   <div class="cover">
     {#if banner}
-      <button class="banner" aria-label="Expand profile banner" onclick={() => enlargedBanner = banner}>
+      <button class="banner" aria-label="Expand profile banner" onclick={() => enlarged = {kind:'banner', url:banner}}>
         {#key banner}<img width="655" height="164" use:proxyImage={{url:banner,width:655}} alt="" referrerpolicy="no-referrer"/>{/key}
       </button>
     {/if}
   </div>
-  {#if enlargedBanner}
-    <ImageViewer url={enlargedBanner} alt={'Profile banner for ' + displayName(pubkey,profile)} onclose={() => enlargedBanner = ''}/>
+  {#if enlarged}
+    <ImageViewer url={enlarged.url} enlargeSmall={enlarged.kind === 'photo'}
+      alt={'Profile ' + enlarged.kind + ' for ' + displayName(pubkey,profile)} onclose={() => enlarged = null}/>
   {/if}
   <div class="bio">
     <div class="identity-row">
-      <div class="avatar"><ProxyAvatar {pubkey} {profile} size={68}/></div>
+      {#if picture}
+        <button type="button" class="avatar" aria-label="Expand profile photo" onclick={() => enlarged = {kind:'photo', url:picture}}>
+          <ProxyAvatar {pubkey} {profile} size={68}/>
+        </button>
+      {:else}
+        <div class="avatar"><ProxyAvatar {pubkey} {profile} size={68}/></div>
+      {/if}
       <div class="actions">
         {#if mine}<button class="outline compact" onclick={onEdit}>Edit profile</button>
         {:else}
@@ -109,12 +116,12 @@
     {#if social && people.length}
       <div class="connections">
         <div class="faces" aria-hidden="true">
-          {#each people.slice(0,3) as key (key)}<span><ProxyAvatar pubkey={key} profile={$profiles[key]} size={22}/></span>{/each}
+          {#each people as key (key)}<span><ProxyAvatar pubkey={key} profile={$profiles[key]} size={22}/></span>{/each}
         </div>
         <div>
           <span>Followed by </span>{#each people as key, index (key)}{#if index}, {/if}<a href={profileUrl(key)}><Name pubkey={key} profile={$profiles[key]} name={displayName(key,$profiles[key])}/></a>{/each}
           {#if allowedPeople.length > people.length}
-            <button class="more" onclick={() => expandedFor = pubkey}>and {allowedPeople.length - people.length} more</button>
+            <a href={profileUrl(pubkey,'followers')} title="View followers">and {allowedPeople.length - people.length} more</a>
           {/if}
           {#if !$account}<small>From the public social graph</small>{/if}
         </div>
@@ -137,6 +144,7 @@
   .bio {padding:0 20px 17px}
   .identity-row {display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:-29px;position:relative}
   .avatar {width:74px;height:74px;box-sizing:border-box;background:var(--paper);border:3px solid var(--paper);border-radius:50%;flex:none;overflow:hidden}
+  button.avatar {cursor:zoom-in}
   .actions,.links,.links a,.links span,.identifiers,.stats,.badge,.connections,.faces {display:flex;align-items:center}
   .actions {gap:6px;flex-wrap:wrap;justify-content:flex-end}
   h1 {font:700 29px/1.25 var(--serif);letter-spacing:-.8px;margin:9px 0 2px;display:flex;align-items:center;gap:7px;min-width:0}
@@ -152,8 +160,8 @@
   .about {margin-top:10px;white-space:pre-line;overflow-wrap:anywhere;font-size:14px;line-height:1.55}
   .links,.stats {margin-top:10px}
   .links a,.links span,.badge {gap:4px}
-  .links a,.connections a,.more {color:var(--green)}
-  .links a:hover,.connections a:hover,.more:hover {text-decoration:underline}
+  .links a,.connections a {color:var(--green)}
+  .links a:hover,.connections a:hover {text-decoration:underline}
   .stat-link:hover,.stat-link:focus-visible {color:var(--green);text-decoration:underline}
   .stat-link {display:inline-flex;align-items:baseline;gap:4px}
   .stats strong {display:inline-block;min-width:3ch;font-variant-numeric:tabular-nums;color:var(--ink)}
@@ -161,9 +169,7 @@
   .badge {font-size:11px;border-radius:4px;background:var(--light);color:var(--green);padding:2px 6px}
   .connections {gap:9px;margin-top:14px;border-top:1px solid var(--line);padding-top:12px;color:var(--muted);font-size:13px}
   .connections :global(.iris-identity-name) {display:inline;white-space:normal;overflow-wrap:anywhere}
-  .connections a,.more {font-weight:650}
-  .connections a {margin-left:.22em}
-  .more {margin-left:3px}
+  .connections a {font-weight:650;margin-left:.22em}
   .connections small {display:block;font-size:11px}
   .faces {flex:none}
   .faces span {border:2px solid var(--paper);border-radius:50%;overflow:hidden;background:var(--light)}

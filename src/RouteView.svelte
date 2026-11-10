@@ -256,9 +256,18 @@
       e.shiftKey
     )
       return;
-    const a = (e.target as Element)?.closest<HTMLAnchorElement>('a[href]');
+    if (!(e.target instanceof Element)) return;
+    const a = e.target.closest<HTMLAnchorElement>('a[href]');
+    if (!a) {
+      const path = e.target.closest<HTMLElement>('[data-post-href]')?.dataset.postHref;
+      if (path && !e.target.closest('button,input,textarea,select,label,summary,video,audio,iframe,dialog,[popover],[contenteditable],[role="button"]') &&
+          window.getSelection()?.isCollapsed !== false) {
+        e.preventDefault();
+        go(path);
+      }
+      return;
+    }
     if (
-      !a ||
       a.target ||
       a.download ||
       a.origin !== location.origin ||
@@ -536,15 +545,18 @@
       notify(exists ? 'Bookmark removed' : 'Post saved');
       return;
     }
-    if (kind === 'share') {
+    if (kind === 'share' || kind === 'copy-link') {
       const topic = route.page === 'topic' ? route.value : route.fromTopic;
-      const path = postUrl(p.id, topic && matchesTopic(p,topic) ? topic : undefined);
+      const url = location.origin + postUrl(p.id, topic && matchesTopic(p,topic) ? topic : undefined);
+      if (kind === 'share' && navigator.share) {
+        try { await navigator.share({url}); return; }
+        catch (error) { if (error instanceof Error && error.name === 'AbortError') return; }
+      }
       try {
-        await navigator.clipboard.writeText(location.origin + path);
+        await navigator.clipboard.writeText(url);
         notify('Post link copied');
       } catch {
-        go(path);
-        notify('Copy the link from your address bar');
+        window.prompt('Copy post link', url);
       }
       return;
     }
