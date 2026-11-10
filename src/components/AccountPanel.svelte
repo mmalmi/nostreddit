@@ -112,14 +112,14 @@
     <button class="outline wide" disabled={busy} onclick={() => submit('extension')}><Icon name="key"/> Sign in with extension</button>
     {#if showBunker}
       <form onsubmit={(e) => {e.preventDefault(); submit('bunker')}}>
-        <label>Bunker link<input type="password" bind:value={bunker} disabled={busy} required placeholder="bunker://…" spellcheck="false" autocomplete="off"/></label>
+        <label>Signer connection link<input type="password" bind:value={bunker} disabled={busy} required placeholder="bunker://…" spellcheck="false" autocomplete="off"/></label>
         <p class="signer-hint">Paste the connection link from your signer. Your secret key stays there.</p>
         <button class="primary wide" disabled={busy || !bunker.trim()}>{busy ? 'Waiting for signer…' : 'Connect signer'}</button>
       </form>
       {#if authUrl}<a class="outline wide" href={authUrl} target="_blank" rel="noopener noreferrer">Approve in signer <Icon name="external"/></a>{/if}
       {#if busy && connection}<button class="text-button" onclick={cancelBunker}>Cancel sign-in</button>{/if}
     {:else}
-      <button class="outline wide" disabled={busy} onclick={() => {showBunker = true; error = ''}}><Icon name="link"/> Sign in with bunker</button>
+      <button class="outline wide" disabled={busy} onclick={() => {showBunker = true; error = ''}}><Icon name="link"/> Sign in with remote signer</button>
     {/if}
     <form onsubmit={(e) => {e.preventDefault(); submit('import')}}>
       <label>Secret key<input type="password" bind:value={secret} required placeholder="nsec1…" spellcheck="false" autocomplete="off"/></label>
