@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { noteEncode } from 'nostr-tools/nip19';
   import type { Post } from '../lib/posts';
   import Icon from './Icon.svelte';
@@ -7,10 +7,14 @@
   export let post: Post;
   export let saved = false;
   export let onaction: (action: string, post: Post) => void;
+  export let shareExpanded = false;
+  let shareMenu = false;
+  let optionsButton: HTMLButtonElement;
   let trigger: HTMLButtonElement;
   let menu: HTMLDivElement;
   let dialog: HTMLDialogElement;
   let open = false;
+  $: shareExpanded = open && shareMenu;
   let status = '';
   let raw = '';
   let statusTimer: ReturnType<typeof setTimeout>;
@@ -24,13 +28,25 @@
     }, null, 2);
   }
 
-  function toggleMenu() {
-    if (open) { closeMenu(); return; }
+  export function showShare(button: HTMLButtonElement) {
+    if (typeof navigator.share !== 'function') { onaction('copy-link', post); return; }
+    void toggleMenu(button, true);
+  }
+  async function toggleMenu(button: HTMLButtonElement, sharing = false) {
+    if (menu.matches(':popover-open')) {
+      closeMenu(false);
+      if (trigger === button) return;
+    }
+    trigger = button;
+    shareMenu = sharing;
     status = '';
-    const bounds = trigger.getBoundingClientRect();
-    left = Math.max(8, Math.min(bounds.right - 224, innerWidth - 232));
-    top = Math.max(8, Math.min(bounds.bottom + 6, innerHeight - 240));
+    await tick();
+    if (!button.isConnected) return;
     menu.showPopover();
+    const bounds = button.getBoundingClientRect();
+    const panel = menu.getBoundingClientRect();
+    left = Math.max(8, Math.min(sharing ? bounds.left : bounds.right - panel.width, innerWidth - panel.width - 8));
+    top = bounds.bottom + 6 + panel.height <= innerHeight - 8 ? bounds.bottom + 6 : Math.max(8, bounds.top - panel.height - 6);
     menu.querySelector<HTMLButtonElement>('button')?.focus();
   }
   function closeMenu(restoreFocus = true) {
@@ -68,17 +84,22 @@
 
 <svelte:window onresize={() => { if (open) closeMenu(false); }}/>
 <div class="post-menu">
-  <button class="menu-trigger" bind:this={trigger} type="button" aria-label="Post options" title="Post options"
-    aria-haspopup="menu" aria-expanded={open} onclick={toggleMenu}><Icon name="more" size={20}/></button>
-  <div class="menu-panel" bind:this={menu} popover="auto" role="menu" tabindex="-1" aria-label="Post options"
+  <button class="menu-trigger" bind:this={optionsButton} type="button" aria-label="Post options" title="Post options"
+    aria-haspopup="menu" aria-expanded={open && !shareMenu} onclick={() => toggleMenu(optionsButton)}><Icon name="more" size={20}/></button>
+  <div class="menu-panel" bind:this={menu} popover="auto" role="menu" tabindex="-1" aria-label={shareMenu ? 'Share post' : 'Post options'}
     style:left={left + 'px'} style:top={top + 'px'} onkeydown={menuKeys}
     ontoggle={event => { open = event.newState === 'open'; }}>
+    {#if shareMenu}
+    <button role="menuitem" onclick={() => choose('copy-link')}><Icon name="link" size={17}/>Copy link</button>
+    <button role="menuitem" onclick={() => choose('share')}><Icon name="share" size={17}/>Share via…</button>
+    {:else}
     <button role="menuitem" onclick={() => choose('copy-link')}><Icon name="link" size={17}/>Copy post link</button>
     <button role="menuitem" onclick={() => copyFromMenu(noteEncode(post.id),'Note ID')}><Icon name="copy" size={17}/>Copy note ID</button>
     <button role="menuitem" onclick={() => choose('save')}><Icon name="save" size={17}/>{saved ? 'Remove bookmark' : 'Save post'}</button>
     <div class="divider"></div>
     <button role="menuitem" onclick={showRaw}><Icon name="tech" size={17}/>View raw event</button>
     <button role="menuitem" onclick={() => copyFromMenu(eventJSON(),'Event JSON')}><Icon name="copy" size={17}/>Copy event JSON</button>
+    {/if}
   </div>
   <span class="copy-status" role="status">{!dialog?.open ? status : ''}</span>
 </div>

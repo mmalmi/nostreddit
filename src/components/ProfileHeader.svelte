@@ -138,13 +138,12 @@
   .restricted .actions {justify-content:flex-start;margin-top:10px}
   .identity {border:1px solid var(--line);border-radius:13px;background:var(--paper);overflow:hidden}
   .cover {width:100%;aspect-ratio:4/1;min-height:96px;max-height:180px;background:repeating-linear-gradient(135deg,transparent 0 15px,#ffffff12 15px 16px),linear-gradient(120deg,var(--deep),color-mix(in srgb,var(--deep) 40%,#f5ebc8))}
-  .banner {display:block;width:100%;height:100%;cursor:zoom-in}
+  .banner {display:block;width:100%;height:100%}
   .banner:focus-visible {outline:3px solid var(--green);outline-offset:-3px}
   .cover img {display:block;width:100%;height:100%;object-fit:cover}
   .bio {padding:0 20px 17px}
   .identity-row {display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:-29px;position:relative}
   .avatar {width:74px;height:74px;box-sizing:border-box;background:var(--paper);border:3px solid var(--paper);border-radius:50%;flex:none;overflow:hidden}
-  button.avatar {cursor:zoom-in}
   .actions,.links,.links a,.links span,.identifiers,.stats,.badge,.connections,.faces {display:flex;align-items:center}
   .actions {gap:6px;flex-wrap:wrap;justify-content:flex-end}
   h1 {font:700 29px/1.25 var(--serif);letter-spacing:-.8px;margin:9px 0 2px;display:flex;align-items:center;gap:7px;min-width:0}

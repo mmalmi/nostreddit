@@ -97,7 +97,7 @@
   ul {padding:0;margin:0;list-style:none;max-height:250px;overflow:auto} li a {padding:4px;overflow-wrap:anywhere}
   li a:hover,.drive:hover {text-decoration:underline}
   .photo,.video {position:relative;display:block;max-width:100%;border-radius:8px;overflow:hidden;background:var(--bg)}
-  .photo {width:100%;cursor:zoom-in}
+  .photo {width:100%}
   .photo img,video {display:block;width:100%;max-height:420px;object-fit:contain}
   .expand,.close,.play {position:absolute;background:#18231de6;color:#fff;border-radius:50%;display:grid;place-items:center;}
   .expand,.close {right:8px;top:8px;width:30px;height:30px}

@@ -102,7 +102,7 @@
 
 <style>
   .media {width:100%;max-width:100%;min-width:0;margin:.55rem 0}
-  .image-link {display:grid;place-items:center;position:relative;width:100%;min-height:5rem;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden;cursor:zoom-in}
+  .image-link {display:grid;place-items:center;position:relative;width:100%;min-height:5rem;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden}
   .image-link img {display:block;width:auto;height:auto;max-width:100%;max-height:min(70vh,550px);object-fit:contain}
   .compact .image-link img {max-height:clamp(220px,36vw,340px)}
   .tile {margin:0}

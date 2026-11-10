@@ -35,6 +35,8 @@
   export let full = false;
   export let comment = false;
   export let onaction: (action: string, post: Post) => void;
+  let postMenu: PostMenu;
+  let shareExpanded = false;
   $: author = $profiles[post.pubkey];
   $: name = displayName(post.pubkey, author);
   $: likers = $likes[post.id] ?? [];
@@ -115,7 +117,7 @@
     >
     {#if isEventId(post.parent) && !full && !comment}<a class="stamp" href={postUrl(post.parent)}>Reply to discussion</a>{/if}
     {#if queued}<small class="queued" title="Saved on this device, waiting to sync">Queued</small>{/if}
-    <PostMenu {post} {saved} {onaction}/>
+    <PostMenu bind:this={postMenu} bind:shareExpanded {post} {saved} {onaction}/>
   </div>
   {/if}
   {#if renderedHeading}<h2>
@@ -179,7 +181,9 @@
       /></button
     >
     {#if !comment}
-      <button type="button" onclick={() => onaction('share', post)}><Icon name="share" size={16}/> Share</button>
+      <button type="button" aria-haspopup={typeof navigator.share === 'function' ? 'menu' : undefined}
+        aria-expanded={typeof navigator.share === 'function' ? shareExpanded : undefined}
+        onclick={event => postMenu.showShare(event.currentTarget)}><Icon name="share" size={16}/> Share</button>
     {/if}
   </div>{/if}
 </article>

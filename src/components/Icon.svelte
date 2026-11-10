@@ -16,7 +16,7 @@
     arrow: 'M12 4l-8 8h5v8h6v-8h5z',
     comment: 'M21 11a9 8 0 0 1-9 8H8l-5 3 1-6a8 8 0 0 1-1-5 9 8 0 0 1 18 0z',
     zap: 'm13 2-9 12h7l-1 8 10-13h-7z',
-    share: 'M13 6l5-4 5 4 M18 3v11 M13 8H5v13h15v-5',
+    share: 'M14 3l8 7-8 7v-4c-5.4 0-8.8 1.8-12 6.5C3 12.2 6.7 7.2 14 7z',
     link: 'M10 13a4 4 0 0 0 6 .5l4-4a4 4 0 0 0-6-6l-2 2 M14 11a4 4 0 0 0-6-.5l-4 4a4 4 0 0 0 6 6l2-2',
     external: 'M13 4h7v7 M20 4l-11 11 M9 5H4v15h15v-5',
     settings: 'M4 6h7m4 0h5M4 12h2m4 0h10M4 18h10m4 0h2 M11 3v6 M7 9v6 M15 15v6',
@@ -57,8 +57,8 @@
   width={size}
   height={size}
   viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
+  fill={name === 'share' ? 'currentColor' : 'none'}
+  stroke={name === 'share' ? 'none' : 'currentColor'}
   stroke-width="1.75"
   stroke-linecap="round"
   stroke-linejoin="round"

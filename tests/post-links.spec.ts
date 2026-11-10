@@ -40,6 +40,14 @@ test('a shared hashtagged reply reopens at its canonical note URL and legacy lin
   }}));
   await page.evaluate(()=>navigator.clipboard.writeText('untouched'));
   await share.click();
+  const shareMenu=page.getByRole('menu',{name:'Share post'});
+  await expect(shareMenu.getByRole('menuitem',{name:'Copy link'})).toBeFocused();
+  await expect(page.locator('html')).not.toHaveAttribute('data-shared-url',expected);
+  await page.screenshot({path:testInfo.outputPath('share-menu.png')});
+  await page.keyboard.press('Escape');
+  await expect(share).toBeFocused();
+  await share.click();
+  await shareMenu.getByRole('menuitem',{name:'Share via…'}).click();
   await expect(page.locator('html')).toHaveAttribute('data-shared-url',expected);
   expect(await page.evaluate(()=>navigator.clipboard.readText())).toBe('untouched');
   await expect(page).toHaveURL(new URL('/t/permalinks',baseURL).href);
