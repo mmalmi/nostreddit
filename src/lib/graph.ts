@@ -70,7 +70,7 @@ function startWorker() {
 // loading it with the app instead of when the first posts arrive.
 export function warmGraph() {
   if (worker || failed || typeof Worker === 'undefined' || document.hidden) return;
-  try { startWorker(); worker!.postMessage({warm:true}); } catch { unavailable(); }
+  try { startWorker(); worker!.postMessage({warm:true, root, ranking, edges}); } catch { unavailable(); }
 }
 
 function schedule() {

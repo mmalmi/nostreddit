@@ -79,13 +79,15 @@ let overlayOwner='', overlayKey='', undo:Record<string,boolean>={};
 function setEdge(graph:SocialGraph, owner:string, person:string, followed:boolean) {
   if (followed) graph.addFollower(owner,person); else graph.removeFollower(owner,person);
 }
-self.onmessage = ({data}:MessageEvent<GraphRequest|{syncActive:boolean}|{relays:string[]}|{warm:true}>)=>{
-  if('warm' in data){(loaded??=load()).catch(()=>{});return;}
+self.onmessage = ({data}:MessageEvent<GraphRequest|{syncActive:boolean}|{relays:string[]}|Warm>)=>{
+  // Prepare this viewer's graph and ranking before the first authors arrive.
+  if('warm' in data){const {root,ranking,edges}=data;processing=processing.then(()=>render({root,ranking,edges,authors:[],events:[],version:-1,profile:'',lists:[],directory:null},true));return;}
   if('relays' in data){bootstrapAbort?.abort();relayPolicy=graphRelayPolicy(data.relays);sync();return;}
   if('syncActive' in data){syncActive=data.syncActive;sync();return;}
   processing=processing.then(()=>render(data));
 };
-async function render(data:GraphRequest) {
+type Warm={warm:true}&Pick<GraphRequest,'root'|'ranking'|'edges'>;
+async function render(data:GraphRequest,silent=false) {
   try {
     // Fetch optional scoring alongside the graph instead of after it.
     if(data.ranking)void import('nostr-social-graph/ranking').catch(()=>{});
@@ -127,9 +129,9 @@ async function render(data:GraphRequest) {
     await ranker.update(graph,data.root,data.edges.mutes,graphRevision,data.ranking);
     const badges=badgesFor(graph,data.authors,data.root,data.edges.mutes);
     for(const [author,badge] of Object.entries(badges))badge.influence=ranker.weight(author);
-    self.postMessage({version:data.version, discoveryRoot:effective, badges,
+    if(!silent)self.postMessage({version:data.version, discoveryRoot:effective, badges,
       profile:profileRelationsFor(graph,data.profile,data.lists,data.root,data.directory)} satisfies GraphReply);
   } catch {
-    self.postMessage({ version: data.version, error: true } satisfies GraphReply);
+    if(!silent)self.postMessage({ version: data.version, error: true } satisfies GraphReply);
   }
 };
