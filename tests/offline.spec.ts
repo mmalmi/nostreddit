@@ -111,6 +111,7 @@ test('offline posts, replies and reaction changes survive reload and reach the r
   await page.reload();
   await expect(root.getByRole('button',{name:'Liked',exact:true})).toHaveText('1');
   await page.getByRole('link',{name:'Settings',exact:true}).click();
+  await page.getByRole('link',{name:'Backup & sync',exact:true}).click();
   await expect(page.getByRole('region',{name:'Outbox',exact:true})).toContainText(/pending|queued|waiting/i);
   expect((await authoredBy(pubkey)).filter(e=>e.kind!==0)).toHaveLength(0);
 
@@ -192,7 +193,7 @@ test('offline follow, mute and profile edits rebase onto concurrently signed lis
     sign(owner,3,remoteContent,[...contactTags,remoteContactTag],start+20),
     sign(owner,10000,remoteOpaque,[...muteTags,remoteMuteTag],start+20),
   ]);
-  await page.goto('/settings');
+  await page.goto('/settings/account');
   await reconnect(context);
   await expect(page.getByRole('region',{name:'Outbox',exact:true})).toContainText('All changes synced.',{timeout:30_000});
   await expect.poll(async () => {
@@ -215,7 +216,7 @@ test('changing a follow offline immediately changes which cached discussions pas
   const post=sign(author,1,'Notes from the direct graph',[['t','nostr']],time);
   await supply([sign(owner,3,'',[['p',target],['p',freshKey()]],time),post]);
   await signIn(page,owner);
-  await page.goto('/settings');
+  await page.goto('/settings/network');
   await page.getByLabel('Maximum follow distance').selectOption('1');
   await page.goto('/post/'+post.id);
   await expect(page.getByRole('heading',{name:post.content})).toBeVisible();

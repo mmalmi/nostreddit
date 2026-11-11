@@ -28,7 +28,7 @@
   {#if !permitted}
     <p class="state loading-state">
       {#if !$graphInfo[pubkey] && $graphStatus === 'loading'}Checking your social graph…
-      {:else}Your <a href="/settings">graph settings</a> hide this profile.{/if}
+      {:else}Your <a href="/settings/network">graph settings</a> hide this profile.{/if}
     </p>
   {:else if $page.keys.length}
     <ul aria-label={title}>
@@ -45,7 +45,7 @@
     </ul>
   {:else if $page.status !== 'limited'}<p class="state loading-state" role="status">
     {#if $page.loading}Loading profiles…
-    {:else if $page.status === 'filtered'}No profiles are visible with your <a href="/settings">graph settings</a>.
+    {:else if $page.status === 'filtered'}No profiles are visible with your <a href="/settings/network">graph settings</a>.
     {:else if $page.status === 'unknown'}No public list has been found for this profile yet.
     {:else}{direction === 'followers' ? 'No known followers on this page.' : 'No public follows on this page.'}{/if}
   </p>{/if}

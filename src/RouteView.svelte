@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isSettingsTab, type SettingsTab } from './lib/settings-tabs';
   import { onMount, tick } from 'svelte';
   import * as nip19 from 'nostr-tools/nip19';
   import {
@@ -134,6 +135,7 @@
       }
       return {page:base, value:query.slice(0, 128)};
     }
+    if (base === 'settings' && !section && (!value || isSettingsTab(value))) return { page: base, value };
     return {
       page: [
         'topics',
@@ -141,8 +143,7 @@
         'saved',
         'network',
         'notifications',
-        'settings',
-      ].includes(base)
+      ].includes(base) && !value
         ? base
         : 'missing',
       value: '',
@@ -694,7 +695,7 @@
   </div>
 </header>
 
-<div class="shell">
+<div class="shell" class:no-rail={route.page === 'settings'}>
   {#if menu}<button
       class="drawer-backdrop"
       aria-label="Close navigation"
@@ -725,7 +726,7 @@
         >{/each}
     </div>
     <a class="nav-row" class:active={route.page === 'settings'} aria-current={route.page === 'settings' ? 'page' : undefined} href="/settings"><Icon name="settings" size={18} />Settings</a>
-    {#if $pendingWrites.length}<a class="sync-link" href="/settings">{$pendingWrites.length} pending {$pendingWrites.length === 1 ? 'change' : 'changes'}</a>{/if}
+    {#if $pendingWrites.length}<a class="sync-link" href="/settings/account">{$pendingWrites.length} pending {$pendingWrites.length === 1 ? 'change' : 'changes'}</a>{/if}
     <div class="left-foot" class:loading-state={$status === 'loading'}>
       <span class="signal-dot" class:offline={$status === 'offline'}
       ></span>{$status === 'live'
@@ -780,7 +781,7 @@
             {#await import('./components/SettingsPage.svelte')}
         <p class="state loading-state" role="status">Loading…</p>
       {:then {default: SettingsPage}}
-        <SettingsPage {active} {sorting} {showPreviews} onOrderChange={changeOrder}
+        <SettingsPage {active} tab={route.value as SettingsTab | ''} {sorting} {showPreviews} onOrderChange={changeOrder}
         onPreviewsChange={(value) => { showPreviews = value; writeLocal('showPreviews', value); }} />
       {:catch}
         {@render componentError()}
@@ -855,7 +856,7 @@
         {/key}
       {:else if $hiddenPostIds.has(route.value) || saved.some(p => p.id === route.value && !$canSeeAuthor(p.pubkey))}
         <div class="empty loading-state"><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
-          <p>Visibility depends on the author’s follow distance and mutes.</p><a href="/settings">Graph settings</a></div>
+          <p>Visibility depends on the author’s follow distance and mutes.</p><a href="/settings/network">Graph settings</a></div>
       {:else}<div class="empty loading-state">
           <Icon name="comment" size={28} />
           <h2>
@@ -945,7 +946,7 @@
       {#if stableFeed}
         <div class="hot-controls">
           {#if hotActive && (route.page === 'home' || route.page === 'topic')}
-          <a href="/settings" class="hot-status">{$hotPreferences.ai && hotInterest
+          <a href="/settings/feeds" class="hot-status">{$hotPreferences.ai && hotInterest
             ? $hotAssistance.status === 'loading' ? 'Personalizing…' : $hotAssistance.status === 'ready' ? 'Personalized on this device'
               : $hotAssistance.status === 'unavailable' ? 'AI unavailable · social ranking' : 'Hot preferences'
             : 'Hot preferences'}</a>

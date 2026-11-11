@@ -43,7 +43,7 @@ test('proxy settings reroute open tabs, profile images and posters and preserve 
   await expect(page.locator('.load .poster').first()).toHaveAttribute('src',/^https:\/\/vidproxy\.iris\.to\/.+\/thumb\//);
   expect(originalHits).toEqual([]);
   const settings=await context.newPage();
-  await settings.goto('/settings');
+  await settings.goto('/settings/network');
   const toggle=settings.getByLabel('Load images via proxy'), fallback=settings.getByLabel('Fallback to original source');
   await expect(toggle).toBeChecked(); await expect(fallback).toBeChecked();
   await toggle.uncheck();

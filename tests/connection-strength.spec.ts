@@ -33,9 +33,9 @@ test('independent connections outweigh many keys behind one follow; switching mo
   };
   await expectRankedFirst('Independent recommendations');
   await page.screenshot({path:info.outputPath('connection-strength.png')});
-  await page.goto('/settings');await page.getByLabel('Weight reactions by connection strength').uncheck();
+  await page.goto('/settings/feeds');await page.getByLabel('Weight reactions by connection strength').uncheck();
   await page.goto('/t/connection-check');await expectRankedFirst('Repeated promotion');
-  await page.goto('/settings');await page.getByLabel('Weight reactions by connection strength').check();
+  await page.goto('/settings/feeds');await page.getByLabel('Weight reactions by connection strength').check();
   await page.goto('/t/connection-check');await expectRankedFirst('Independent recommendations');
   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
   // The bounded feed snapshot is written in a batch; wait for its durable
@@ -57,7 +57,7 @@ test('ordinary settings and distance mode do not import the optional ranking mod
   try {
   const page=await context.newPage();
   const requests:string[]=[];context.on('request',r=>requests.push(r.url()));
-  await page.goto('/settings');await page.getByLabel('Weight reactions by connection strength').uncheck();
+  await page.goto('/settings/feeds');await page.getByLabel('Weight reactions by connection strength').uncheck();
   await page.goto('/t/connection-check');await expect(page.getByRole('button',{name:'Refresh Hot',exact:true})).toBeVisible();
   expect(requests.filter(url=>/\/ranking-[^/]+\.js/.test(url))).toEqual([]);
   }finally{await context.close();}

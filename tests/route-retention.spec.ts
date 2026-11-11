@@ -23,6 +23,7 @@ test('back and forward retain the actual DOM and local directory state', async (
   await expect(page.locator(active)).toHaveAttribute('data-route-view', settingsId!);
   expect(await page.evaluate(() => window.scrollY)).toBe(settingsScroll);
   await expect(page.getByRole('main')).toHaveCount(1);
+  await page.getByRole('link', { name: 'Nostreddit home', exact: true }).click();
   await page.getByRole('link', { name: 'Explore all', exact: true }).click();
   await expect(filter).toHaveValue('photo');
   expect(await filter.evaluate((node, previous) => node === previous, original)).toBe(true);

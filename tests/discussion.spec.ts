@@ -76,6 +76,7 @@ test('a relay-rejected post stays local and its delivery can be retried from Set
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
   const permalink = page.url();
   await page.getByRole('link',{name:'Settings',exact:true}).click();
+  await page.getByRole('link',{name:'Backup & sync',exact:true}).click();
   const outbox = page.getByRole('region',{name:'Outbox',exact:true});
   await expect(outbox).toContainText(/block|reject|failed|not accepted|no relay accepted/i,{timeout:15_000});
   await outbox.getByRole('button',{name:'Retry sync',exact:true}).click();
@@ -116,7 +117,7 @@ test('extension sign-in, notifications and profile updates work for the active i
   await page.getByRole('textbox',{name:'Display name'}).fill('Field Guide');
   await page.getByRole('button',{name:/Save profile|Save changes/}).click();
   await expect(page.getByRole('heading',{name:'Field Guide',exact:true})).toBeVisible();
-  await page.goto('/settings');
+  await page.goto('/settings/account');
   await expect(page.getByText('Your signing extension manages this profile’s secret key.')).toBeVisible();
   await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);
 });
@@ -156,6 +157,7 @@ test('mobile guests can open Settings and persist their feed preferences', async
   await page.getByRole('link',{name:'Settings',exact:true}).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole('heading',{name:'Profile backup'})).toHaveCount(0);
+  await page.getByRole('link',{name:'Feeds',exact:true}).click();
   await page.getByLabel('Feed order').selectOption('New');
   await page.getByLabel('Show media previews in feeds').uncheck();
   await page.reload();
@@ -190,7 +192,7 @@ test('pasting an existing secret key into the name prompt opens private sign-in'
   await page.locator('header .account-button').click();
   await expect(page.getByRole('link',{name:'View profile',exact:true})).toHaveAttribute('href','/u/'+npubEncode(getPublicKey(key)));
   await expect(page.getByRole('button',{name:/back up|reveal secret key/i})).toHaveCount(0);
-  await page.goto('/settings');
+  await page.goto('/settings/account');
   await expect(page.getByRole('heading',{name:'Profile backup'})).toBeVisible();
   const field = page.getByLabel('Your secret key',{exact:true});
   await expect(field).toHaveCount(0);
@@ -200,7 +202,7 @@ test('pasting an existing secret key into the name prompt opens private sign-in'
   await page.getByRole('button',{name:'Hide secret key'}).click();
   await expect(field).toHaveCount(0);
   await page.getByRole('button',{name:'Reveal secret key'}).click();
-  await page.getByRole('link',{name:'Home feed',exact:true}).click();
+  await page.getByRole('link',{name:'Nostreddit home',exact:true}).click();
   await page.getByRole('link',{name:'Settings',exact:true}).click();
   await expect(field).toHaveCount(0);
 });

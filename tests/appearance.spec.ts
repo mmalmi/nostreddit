@@ -41,7 +41,7 @@ test('all palettes work in both modes and survive navigation and reload', async 
   }
   expect(accents.size).toBe(8);
   await page.getByRole('radio', { name: 'Ocean' }).check();
-  await page.getByRole('link', { name: 'Home feed', exact: true }).click();
+  await page.getByRole('link', { name: 'Nostreddit home', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Notes from the coast', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
@@ -54,6 +54,7 @@ test('all palettes work in both modes and survive navigation and reload', async 
   await page.screenshot({ path: testInfo.outputPath('dark-ocean-settings.png') });
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/settings/appearance');
   await mode.selectOption('light');
   const plum = page.getByRole('radio', { name: 'Plum' });
   await page.getByRole('radio', { name: 'Ocean' }).focus();

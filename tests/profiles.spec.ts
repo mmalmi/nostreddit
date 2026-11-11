@@ -57,7 +57,7 @@ test('profile context links the viewer’s mutuals and uses Iris Kit names for u
   await header.getByRole('link',{name:'Coast Wren'}).click();
   await expect(page).toHaveURL(new RegExp('/u/'+npubEncode(f)+'$'));
   await expect(page.getByRole('heading',{name:'Coast Wren',exact:true})).toBeVisible();
-  await page.goto('/settings');
+  await page.goto('/settings/network');
   await page.getByLabel('Maximum follow distance').selectOption('1');
   await page.goto('/u/'+npubEncode(t)+'/followers');
   const directory=page.getByRole('list',{name:'Followers'});

@@ -21,7 +21,7 @@
     <li><span class="dot gray">✓</span> Gray: {publicGraph?'two steps from the public graph’s center.':'followed by someone you follow.'}</li>
     <li><span class="dot gold">✓</span> Gold: followed by more than 10 {publicGraph?'direct connections in that graph.':'people you follow.'}</li>
   </ul>
-  <p>These show connections, not identity verification or an endorsement. <a href="/settings">Graph settings</a></p>
+  <p>These show connections, not identity verification or an endorsement. <a href="/settings/network">Graph settings</a></p>
 </details>
 <style>
   .social-context{margin-top:12px;color:var(--muted);font-size:12px;line-height:1.6}

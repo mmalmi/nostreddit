@@ -72,7 +72,7 @@ test('local AI improves a specific interest over social-only ranking and preserv
   const social=await page.locator('[data-route-active=\"true\"] article h2').allTextContents();
   const viewportCount=await page.locator('[data-route-active="true"] article').evaluateAll(cards =>
     cards.filter(card => card.getBoundingClientRect().top < innerHeight).length);
-  await page.goto('/settings');
+  await page.goto('/settings/feeds');
   await page.getByLabel('Your interests').fill('taking photographs in low light without a flash');
   await page.getByLabel('Personalize Hot with AI').check();
   const started=performance.now();
@@ -93,7 +93,7 @@ test('local AI improves a specific interest over social-only ranking and preserv
   await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(texts[0][0]);
   await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible();
   expect(requests).toEqual([]);
-  await page.goto('/settings');await expect(page.getByLabel('Personalize Hot with AI')).toBeChecked();
+  await page.goto('/settings/feeds');await expect(page.getByLabel('Personalize Hot with AI')).toBeChecked();
   await expect(page.getByLabel('Your interests')).toHaveValue('taking photographs in low light without a flash');
   console.log(JSON.stringify({socialFirst:social[0],personalizedFirst:ranked[0],aiReadyMs:Math.round(elapsed),reloadModelRequests:requests.length}));
   for(const [query,title] of [['repairing a slipping bicycle chain',texts[1][0]],['coffee brewing',texts[2][0]]]) {
@@ -102,7 +102,7 @@ test('local AI improves a specific interest over social-only ranking and preserv
     const update=page.getByRole('button',{name:'Show updated posts',exact:true});
     if(await update.isVisible())await update.click();
     await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(title);
-    await page.goto('/settings');
+    await page.goto('/settings/feeds');
   }
   await page.goto('/t/hot-ai');
   await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible();
@@ -141,7 +141,7 @@ test('a signed-in reader discovers a post liked by a follow while graph settings
     {method:'local',pubkey:getPublicKey(viewer),nsec:nsecEncode(viewer)});
   await page.goto('/');
   await expect(page.getByRole('link',{name:liked.content,exact:true})).toBeVisible({timeout:15_000});
-  await page.goto('/settings');
+  await page.goto('/settings/network');
   await page.getByLabel('Maximum follow distance').selectOption('1');
   await page.goto('/');
   await expect(page.getByRole('link',{name:liked.content,exact:true})).toHaveCount(0);

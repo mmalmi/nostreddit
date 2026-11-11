@@ -62,7 +62,7 @@ for (const scenario of cases) test(`relay defaults preserve ${scenario.name} set
       localStorage.setItem('nostreddit.account.v1', JSON.stringify(account));
       localStorage.setItem('nostreddit.ui.graphVisibility', JSON.stringify({maxDistance:null,hideOvermuted:false}));
     }, { saved: scenario.saved, account: { pubkey: getPublicKey(secret), method: 'local', nsec: nsecEncode(secret) } });
-    await page.goto('/settings');
+    await page.goto('/settings/network');
     await expect(page.getByLabel('One relay address per line')).toHaveValue(scenario.expected.join('\n'));
     await expect.poll(() => configured.at(-1)).toEqual(scenario.expected);
     expect(workersInstrumented).toBeGreaterThan(0);

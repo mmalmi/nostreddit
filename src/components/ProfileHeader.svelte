@@ -49,7 +49,7 @@
       {#if !muted && !$graphInfo[pubkey] && $graphStatus !== 'unavailable'}
         <p>Checking your social graph…</p>
       {:else}
-        <p>Your <a href="/settings">visibility settings</a> hide this profile.</p>
+        <p>Your <a href="/settings/network">visibility settings</a> hide this profile.</p>
         {#if !muted}<p>Follow this profile to add them to your network and see their posts.</p>{/if}
         <div class="actions">
           <button class="outline compact" disabled={followBusy || (!!$account && !$outboxReady)} onclick={onFollow}>{following ? 'Following' : 'Follow'}</button>

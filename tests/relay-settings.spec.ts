@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 test('relay settings validate, persist and restore', async ({ page }) => {
-  await page.goto('/settings');
+  await page.goto('/settings/network');
   const input = page.getByLabel('One relay address per line');
   await expect(input).toBeVisible();
   await input.fill('https://example.com');

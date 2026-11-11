@@ -95,7 +95,7 @@ test('an established reader and two new friends connect and discover each other 
       await friend.page.reload();
       await expect(friend.page.getByRole('heading',{name:other.title,exact:true})).toBeVisible();
       await friend.page.screenshot({path:info.outputPath('connected-friend-'+index+'.png')});
-      await friend.page.goto('/settings');
+      await friend.page.goto('/settings/network');
       await expect(friend.page.getByLabel('Maximum follow distance')).toHaveValue('5');
       await expect(friend.page.getByLabel('Hide overmuted profiles')).toBeChecked();
     }

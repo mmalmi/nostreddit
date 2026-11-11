@@ -57,11 +57,12 @@ test.beforeEach(async ({page}) => {
 
 async function setDistance(page: Page, value: string) {
   await page.getByRole('link',{name:'Settings',exact:true}).click();
+  await page.getByRole('link',{name:'Network',exact:true}).click();
   await page.getByLabel('Maximum follow distance').selectOption(value);
 }
 async function expectFiltered(page: Page, path: string, content: string) {
   await page.goto(path);
-  await expect(page.locator('[data-route-active=\"true\"] main a[href="/settings"]').first()).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] main a[href="/settings/network"]').first()).toBeVisible();
   await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(content);
   expect(await page.title()).not.toContain(content);
 }
@@ -134,17 +135,17 @@ test('background graph updates preserve the card a reader is focused on', async 
 });
 
 test('guests can widen and restore the same graph limit across home, topic, saved, search and direct links', async ({page}) => {
-  await page.goto('/settings');
+  await page.goto('/settings/network');
   await expect(page.getByLabel('Maximum follow distance')).toHaveValue('5');
   await expect(page.getByLabel('Hide overmuted profiles')).toBeChecked();
-  await page.getByRole('link',{name:'Home feed',exact:true}).click();
+  await page.getByRole('link',{name:'Nostreddit home',exact:true}).click();
   await expect(page.locator('[data-route-active=\"true\"] article h2 a[href="'+postUrl(oneHop.id)+'"]')).toBeVisible();
   const twoHopLink = page.locator('[data-route-active=\"true\"] article h2 a[href="'+postUrl(twoHops.id)+'"]');
   await expect(twoHopLink).toBeVisible();
   await expect(page.getByRole('heading',{name:outsideTitle,exact:true})).toHaveCount(0);
 
   await setDistance(page,'1');
-  await page.getByRole('link',{name:'Home feed',exact:true}).click();
+  await page.getByRole('link',{name:'Nostreddit home',exact:true}).click();
   await expect(page.locator('[data-route-active=\"true\"] article h2 a[href="'+postUrl(oneHop.id)+'"]')).toBeVisible();
   await expect(twoHopLink).toHaveCount(0);
   await expectFiltered(page,'/post/'+outsidePost.id,outsideTitle);
@@ -163,7 +164,7 @@ test('guests can widen and restore the same graph limit across home, topic, save
   await page.reload();
   await expect(page.getByLabel('Maximum follow distance')).toHaveValue('unlimited');
   await expect(page.getByLabel('Hide overmuted profiles')).not.toBeChecked();
-  await page.getByRole('link',{name:'Home feed',exact:true}).click();
+  await page.getByRole('link',{name:'Nostreddit home',exact:true}).click();
   await page.getByRole('link',{name:outsideTitle,exact:true}).click();
   await page.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Post options',exact:true}).click();
   await page.getByRole('menuitem',{name:'Save post',exact:true}).click();
@@ -178,6 +179,7 @@ test('guests can widen and restore the same graph limit across home, topic, save
   await expect(page.locator('[data-route-active=\"true\"] li[data-comment-id="'+outsideReply.id+'"]')).toContainText(replyText);
 
   await setDistance(page,'5');
+  await page.getByRole('link',{name:'Nostreddit home',exact:true}).click();
   await page.getByRole('link',{name:'Saved posts',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Saved posts',exact:true})).toBeVisible();
   await expect(page.locator('[data-route-active=\"true\"] main article')).toHaveCount(0);

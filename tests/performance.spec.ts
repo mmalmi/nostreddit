@@ -13,12 +13,14 @@ test('startup defers optional views and revisiting settings keeps its controls m
     const optional = () => requests.filter(path => /\/(SettingsPage|ThreadComments|ProfileHeader|AccountPanel|Composer|ZapPanel)-.*\.js$/.test(path));
     expect(optional()).toEqual([]);
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('link', { name: 'Feeds', exact: true }).click();
     const sorting = page.getByLabel('Feed order', { exact: true });
     await expect(sorting).toBeVisible();
     const original = await sorting.elementHandle();
     await sorting.selectOption('New');
-    await page.getByRole('link', { name: 'Home feed', exact: true }).click();
+    await page.getByRole('link', { name: 'Nostreddit home', exact: true }).click();
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('link', { name: 'Feeds', exact: true }).click();
     await expect(sorting).toHaveValue('New');
     expect(await sorting.evaluate((node, previous) => node === previous, original)).toBe(true);
     expect(optional().filter(path => path.includes('/SettingsPage-'))).toHaveLength(1);

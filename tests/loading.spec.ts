@@ -75,7 +75,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     const pending = new Promise<void>(resolve => { release = resolve; });
     await page.route('**/SettingsPage-*.js', async route => { await pending; await route.continue(); });
     try {
-      await page.goto('/settings', { waitUntil: 'domcontentloaded' });
+      await page.goto('/settings/network', { waitUntil: 'domcontentloaded' });
       const loading = page.locator('[data-route-active="true"] .loading-state').filter({ hasText: 'Loading…' });
       await expect(loading).toBeAttached();
       await expect(loading).toBeHidden();
@@ -96,7 +96,7 @@ test('a fast page never shows the placeholder and a failed page shows its error 
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/SettingsPage-*.js', async route => { await pending; await route.continue(); });
-  await page.goto('/settings', { waitUntil: 'domcontentloaded' });
+  await page.goto('/settings/network', { waitUntil: 'domcontentloaded' });
   const loading = page.locator('[data-route-active="true"] .loading-state').filter({ hasText: 'Loading…' });
   await expect(loading).toBeAttached();
   await expect(loading).toBeHidden();
