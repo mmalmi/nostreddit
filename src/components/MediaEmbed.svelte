@@ -9,6 +9,7 @@
   export let item: MediaItem;
   export let compact = false;
   export let tile = false;
+  export let gallery: MediaItem[] = [];
   let openedUrl = '', failedUrl = '', enlargedUrl = '';
   let player: HTMLVideoElement | HTMLAudioElement | undefined;
   $: expanded = openedUrl === item.url;
@@ -20,6 +21,8 @@
   $: video = item.kind === 'video' || provider;
   $: label = item.kind === 'youtube' ? 'YouTube' : item.kind === 'vimeo' ? 'Vimeo' : item.kind;
   $: host = new URL(item.url).hostname;
+  const viewerAlt = (image: MediaItem) => image.alt || 'Photo from ' + new URL(image.url).hostname;
+  $: viewerItems = gallery.some(image => image.url === item.url) ? gallery.map(image => ({url: image.url, alt: viewerAlt(image)})) : [];
 
   function enlarge(e: MouseEvent) {
     if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || typeof HTMLDialogElement === 'undefined' || !HTMLDialogElement.prototype.showModal) return;
@@ -68,7 +71,8 @@
       </span>
     </a>
     {#if enlargedUrl === item.url}
-      <ImageViewer url={item.url} alt={item.alt || 'Photo from ' + host} onclose={() => enlargedUrl = ''}/>
+      <ImageViewer url={item.url} alt={viewerAlt(item)} items={viewerItems}
+        start={viewerItems.findIndex(image => image.url === item.url)} onclose={() => enlargedUrl = ''}/>
     {/if}
   {:else}
     {#if (compact || provider || item.clickToLoad) && !expanded}

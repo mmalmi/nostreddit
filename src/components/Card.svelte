@@ -51,6 +51,7 @@
   $: link = hasTreeCapability(post.url) ? '' : safeURL(post.url);
   $: media = collectMedia(post.event.content,post.event.tags,link,post.event.kind);
   $: photoAlbum = media.length > 1 && media.every(item=>item.kind==='image');
+  $: images = media.filter(item=>item.kind==='image');
   $: shownMedia = !full && photoAlbum ? media.slice(0,4) : media;
   $: trees = findTreeEmbeds([post.event.content, ...post.event.tags.filter(t=>t[0]==='r').map(t=>t[1])].join(' '));
   $: renderEmbeds = full || showPreviews;
@@ -134,7 +135,7 @@
   {#if renderEmbeds && (media.length || trees.length)}
     {#if photoAlbum && !trees.length}<div class="album-label"><Icon name="image" size={14}/>{media.length} photos</div>{/if}
     <div class="media-gallery" class:photos={photoAlbum && !trees.length} class:album-detail={full && photoAlbum && !trees.length}>
-      {#each shownMedia as item (item.url)}<MediaEmbed {item} compact={!full} tile={photoAlbum && !trees.length}/>{/each}
+      {#each shownMedia as item (item.url)}<MediaEmbed {item} compact={!full} tile={photoAlbum && !trees.length} gallery={images}/>{/each}
       {#each trees as attachment (attachment.url)}<TreeEmbed {attachment}/>{/each}
     </div>
     {#if shownMedia.length < media.length}<a class="album-more" href={permalink}>View all {media.length} photos <Icon name="next" size={14}/></a>{/if}
