@@ -86,6 +86,8 @@ self.onmessage = ({data}:MessageEvent<GraphRequest|{syncActive:boolean}|{relays:
 };
 async function render(data:GraphRequest) {
   try {
+    // Fetch optional scoring alongside the graph instead of after it.
+    if(data.ranking)void import('nostr-social-graph/ranking').catch(()=>{});
     const source=await (loaded??=load());
     await source.setRoot(data.root);
     if(data.events.length&&source.handleEvent(data.events,true))persistChange();

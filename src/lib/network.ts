@@ -91,7 +91,9 @@ function syncKeys(store:Writable<string[]>, keys:Set<string>) {
 export const canSeeAuthor = derived([viewerLists, visibilitySettings, graphViewer, graphInfo, graphStatus],
   ([lists, options, graphRoot, info, status]) => {
     const sameViewer = lists.viewer === graphRoot;
-    return authorPolicy(lists, options, sameViewer ? info : {}, sameViewer && status === 'ready');
+    // A guest's bundled badges are valid while the graph is still loading.
+    const ready = status === 'ready' || (status === 'loading' && graphRoot === snapshotRoot);
+    return authorPolicy(lists, options, sameViewer ? info : {}, sameViewer && ready);
   });
 function visibleList<T extends {pubkey:string}>(raw: Writable<T[]>) {
   return derived([raw, canSeeAuthor], ([items, allowed]) => items.filter(item => allowed(item.pubkey)));

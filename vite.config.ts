@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -7,9 +7,23 @@ const assets = ({names}: {names: string[]}) => {
   const optional = names.some(name => /^(search-|ort-wasm-)/.test(name));
   return (optional ? 'assets/search/' : 'assets/') + '[name]-[hash][extname]';
 };
+// A cold visit shows the bundled starter feed first. Fetch it and its worker
+// alongside the app instead of after it.
+const startupPreloads = (): Plugin => ({
+  name: 'startup-preloads', apply: 'build',
+  transformIndexHtml: { order: 'post', handler(_html, {bundle}) {
+    const link = (attrs: Record<string, string | boolean>) => ({tag: 'link', attrs, injectTo: 'head' as const});
+    return [
+      ...Object.keys(bundle ?? {}).filter(file => /^assets\/relay\.worker-[^/]+\.js$/.test(file))
+        .map(file => link({rel: 'modulepreload', href: '/' + file})),
+      link({rel: 'preload', as: 'fetch', crossorigin: true, href: '/starter-feed.json'}),
+    ];
+  }},
+});
 export default defineConfig({
   plugins: [
     svelte(),
+    startupPreloads(),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
