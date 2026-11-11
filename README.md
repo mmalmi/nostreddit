@@ -42,7 +42,7 @@ Bunker connections use the shared `@iris/identity/remoteSigner` from Iris Kit co
 
 ## Data and trust
 
-A dedicated worker runs `nostr-pubsub` for bounded relay subscriptions, verified event ingestion and acknowledged writes. IndexedDB keeps a small snapshot for subsequent visits. After the first successful online visit a service worker caches the public app shell, so previously loaded discussions can be opened offline. A signed starter feed provides an immediate first visit while relays connect. The bundled records came from public relays and retain their original authors, IDs, timestamps and signatures.
+A dedicated worker runs `nostr-pubsub` for bounded relay subscriptions, verified event ingestion and acknowledged writes. IndexedDB keeps a small snapshot for subsequent visits. After the first successful online visit a service worker caches the public app shell, so previously loaded discussions can be opened offline.
 
 Nostreddit can be installed as a standalone app using the browser’s install or Add to Home Screen command. Vite PWA builds the manifest and the service worker. An update activates after tabs using the previous worker close. Queued posts and profile edits stay in IndexedDB across updates. Previously loaded discussions are available within a bounded local history. New relay data, external players, and Lightning invoices require a connection.
 

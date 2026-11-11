@@ -37,7 +37,7 @@ test('install precaches the app and graph, keeps optional assets lazy, and serve
     const groups = await Promise.all((await caches.keys()).map(async key=>(await (await caches.open(key)).keys()).map(r=>new URL(r.url).pathname)));
     return groups.flat();
   });
-  expect(paths).toEqual(expect.arrayContaining(['/','/socialGraph.bin','/starter-feed.json','/manifest.webmanifest']));
+  expect(paths).toEqual(expect.arrayContaining(['/','/socialGraph.bin','/manifest.webmanifest']));
   expect(paths.some(p=>p.startsWith('/assets/search/'))).toBe(false);
   expect(paths.some(p=>p.includes('/tree-reader-'))).toBe(true);
   expect(optionalRequests).toHaveLength(0);

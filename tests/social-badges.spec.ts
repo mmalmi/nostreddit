@@ -13,7 +13,7 @@ const grayPost=event(gray,1,'A neighbor’s field notes',[['subject','A neighbor
 const goldPost=event(gold,1,'A widely followed field guide',[['subject','A widely followed field guide'],['t','badge-check']]);
 const friendPost=event(friends[0],1,'A friend’s observation',[['subject','A friend’s observation'],['t','badge-check']]);
 const ownPost=event(viewer,1,'My observation',[['subject','My observation'],['t','badge-check']]);
-const guestPost:Event=JSON.parse(readFileSync('public/starter-feed.json','utf8')).find((e:Event)=>e.id==='c6b253ccbfc699f0f458bb7336dcf99ca907b70e4ca4ec6d0e36902f4749c992');
+const guestPost:Event=JSON.parse(readFileSync('tests/fixtures/graph-author-events.json','utf8')).find((e:Event)=>e.id==='c6b253ccbfc699f0f458bb7336dcf99ca907b70e4ca4ec6d0e36902f4749c992');
 test.beforeAll(async()=>{
   const records=[event(viewer,3,'',friends.map(key=>['p',getPublicKey(key)])),
     ...friends.map((key,i)=>event(key,3,'',[['p',getPublicKey(gold)],...(i===0?[['p',getPublicKey(gray)]]:[])])),

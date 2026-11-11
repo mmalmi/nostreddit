@@ -6,7 +6,7 @@ import { finalizeEvent, generateSecretKey, getPublicKey, type Event, type EventT
 import { WebSocket } from 'ws';
 
 // These signed public notes belong to authors one and two hops from the bundled guest graph root.
-const seed: Event[] = JSON.parse(readFileSync('public/starter-feed.json', 'utf8'));
+const seed: Event[] = JSON.parse(readFileSync('tests/fixtures/graph-author-events.json', 'utf8'));
 const oneHop = seed.find(e => e.id === 'c6b253ccbfc699f0f458bb7336dcf99ca907b70e4ca4ec6d0e36902f4749c992')!;
 const twoHops = seed.find(e => e.id === '7ddf995cdc443cd3268ca8fee03b021f60a23236cb27d0ff98a52728bf126f5b')!;
 const viewer = generateSecretKey(), friend = generateSecretKey(), outsider = generateSecretKey();

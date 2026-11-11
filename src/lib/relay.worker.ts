@@ -104,8 +104,6 @@ async function restore() {
   await admitSnapshot(events);
 }
 void restore().catch(() => {});
-if (!testRelays) void fetch(new URL('starter-feed.json', self.location.origin), {signal: AbortSignal.timeout(6500)})
-  .then(response => response.ok ? response.json() : []).then(admitSnapshot).catch(() => {});
 
 self.onmessage = async (message: MessageEvent<Request>) => {
   const req = message.data;

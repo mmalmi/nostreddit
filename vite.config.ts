@@ -7,17 +7,13 @@ const assets = ({names}: {names: string[]}) => {
   const optional = names.some(name => /^(search-|ort-wasm-)/.test(name));
   return (optional ? 'assets/search/' : 'assets/') + '[name]-[hash][extname]';
 };
-// A cold visit shows the bundled starter feed first. Fetch it and its worker
-// alongside the app instead of after it.
+// Fetch the relay worker alongside the app instead of after it.
 const startupPreloads = (): Plugin => ({
   name: 'startup-preloads', apply: 'build',
   transformIndexHtml: { order: 'post', handler(_html, {bundle}) {
     const link = (attrs: Record<string, string | boolean>) => ({tag: 'link', attrs, injectTo: 'head' as const});
-    return [
-      ...Object.keys(bundle ?? {}).filter(file => /^assets\/relay\.worker-[^/]+\.js$/.test(file))
-        .map(file => link({rel: 'modulepreload', href: '/' + file})),
-      link({rel: 'preload', as: 'fetch', crossorigin: true, href: '/starter-feed.json'}),
-    ];
+    return Object.keys(bundle ?? {}).filter(file => /^assets\/relay\.worker-[^/]+\.js$/.test(file))
+      .map(file => link({rel: 'modulepreload', href: '/' + file}));
   }},
 });
 export default defineConfig({
@@ -46,7 +42,7 @@ export default defineConfig({
         // The worker uses this list to recognize optional hashed assets, without
         // fetching search models or their WASM runtime at install.
         globPatterns: ['index.html', 'manifest.webmanifest', 'favicon.svg', 'icons/*.png',
-          'socialGraph.bin', 'starter-feed.json', 'assets/**/*'],
+          'socialGraph.bin', 'assets/**/*'],
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
         dontCacheBustURLsMatching: /^assets\/.+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/,
         rollupFormat: 'iife',

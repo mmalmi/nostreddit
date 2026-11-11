@@ -2,12 +2,7 @@ import { writable } from 'svelte/store';
 import type { Event as NostrEvent } from 'nostr-tools';
 import { networkPostAuthors, summarizeProfileList, snapshotRoot, type RelationshipKind, type ProfileList, type ProfileRelations, type GraphBadge, type GraphRequest, type PendingEdges, type GraphReply } from './graph-model';
 
-import starterBadges from './starter-badges.json';
-
-// The bundled starter feed carries the badges a guest's graph would give its
-// authors, so a first visit can show it before the graph snapshot arrives.
-export const guestBadges: Readonly<Record<string, GraphBadge>> = starterBadges;
-export const graphInfo = writable<Record<string, GraphBadge>>(guestBadges);
+export const graphInfo = writable<Record<string, GraphBadge>>({});
 export const graphViewer = writable(snapshotRoot);
 export const graphDiscoveryRoot = writable(snapshotRoot);
 export const graphStatus = writable<'loading' | 'ready' | 'unavailable'>('loading');
@@ -30,7 +25,7 @@ let selectedProfile = '';
 let selectedDirectory: RelationshipKind | null = null;
 let profilePeers = new Set<string>(), graphPeers = new Set<string>();
 let profileVersion = 0, profileDirty = false, version = 0;
-let cached: Record<string, GraphBadge> = guestBadges;
+let cached: Record<string, GraphBadge> = {};
 let busy = false, scheduled = false, failed = false;
 let ranking=false;
 let worker: Worker | undefined;
@@ -138,7 +133,7 @@ export function setGraphRoot(pubkey: string | null) {
   pending.clear(); latestLists.clear(); profileLists.clear(); graphPeers.clear();
   networkKey = ''; networkAuthors.set([]);
   profileRelations.set(null);
-  cached = next === snapshotRoot ? guestBadges : {};
+  cached = {};
   graphInfo.set(cached);
   graphStatus.set(failed ? 'unavailable' : 'loading');
   refreshBadges();
