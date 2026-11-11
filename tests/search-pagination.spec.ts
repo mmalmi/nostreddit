@@ -44,11 +44,11 @@ test('a submitted search loads relay matches, paginates and reaches a clear end'
   await expect(page.locator('[data-route-active=\"true\"] article h2').first()).toHaveText(query+' 0');
   await expect(page.locator('[data-route-active=\"true\"] article h2').last()).toHaveText(query+' 64');
   await page.getByRole('button',{name:'Load more results',exact:true}).click();
-  await expect(page.getByText('No more results returned by connected relays.')).toBeVisible();
+  await expect(page.getByText('No more results.')).toBeVisible();
   await expect(page.locator('[data-route-active=\"true\"] article')).toHaveCount(65);
   await page.screenshot({path:testInfo.outputPath('search-pagination-end.png')});
   await page.setViewportSize({width:390,height:844});
-  await expect(page.getByText('No more results returned by connected relays.')).toBeVisible();
+  await expect(page.getByText('No more results.')).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({path:testInfo.outputPath('search-pagination-mobile.png')});
   const input = page.getByLabel('Search Nostreddit');

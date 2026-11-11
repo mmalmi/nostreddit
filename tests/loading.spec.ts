@@ -35,7 +35,7 @@ async function controlledWorkers(page: Page, options: { content?: 'feed' | 'comm
   ` }));
   await page.route('**/graph-worker-*.js', route => route.fulfill({ contentType: 'text/javascript', body: `
     self.onmessage = ({data}) => {
-      if ('relays' in data || 'syncActive' in data) return;
+      if ('relays' in data || 'syncActive' in data || 'warm' in data) return;
       self.postMessage({version:data.version,
       discoveryRoot:'4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0',
       badges:Object.fromEntries(data.authors.map(key => [key,{distance:2,muted:false,overmuted:false,followedByFriends:1}])),
@@ -117,9 +117,9 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await controlledWorkers(page, { offline: true });
     await page.goto('/');
     const empty = page.locator('[data-route-active="true"] .feed-list .empty');
-    await expect(empty).toContainText('No discussions loaded yet');
+    await expect(empty).toContainText('Nothing seen yet');
     await expect(empty).toBeHidden();
-    await expect(empty).toContainText('Relays are offline');
+    await expect(empty).toContainText('Nothing seen yet');
     await expect(empty).toBeHidden();
     await expect(empty).toHaveCSS('animation-delay', '2s');
     await page.waitForTimeout(800);

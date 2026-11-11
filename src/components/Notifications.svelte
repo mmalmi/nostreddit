@@ -26,7 +26,7 @@
     <button class="primary compact" onclick={onSignIn}>Sign in</button>
   </section>
 {:else if !$notifications.length}
-  <section class="empty loading-state"><Icon name="comment" size={28}/><h2>No notifications loaded</h2>
+  <section class="empty loading-state"><Icon name="comment" size={28}/><h2>No notifications seen yet</h2>
     <p>Replies, mentions, and reactions addressed to your Nostr profile appear here.</p>
   </section>
 {:else}

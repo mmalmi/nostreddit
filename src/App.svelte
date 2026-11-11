@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import RouteView from './RouteView.svelte';
+  import { warmGraph } from './lib/graph';
   import { start, clearRelaySearch, signerAuthUrl, cancelSignerRequests } from './lib/network';
   import { watchAppearance } from './lib/appearance';
   import { watchHotPreferences } from './lib/hot-preferences';
@@ -89,6 +90,7 @@
 
   onMount(() => {
     const stop = start(location.pathname !== '/');
+    warmGraph();
     const stopAppearance = watchAppearance();
     const stopHot = watchHotPreferences();
     const stopFeeds = watchFeedPreferences();

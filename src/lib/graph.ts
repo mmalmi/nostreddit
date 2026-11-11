@@ -44,6 +44,35 @@ function unavailable() {
   graphInfo.set(cached); profileRelations.set(null); graphStatus.set('unavailable');
 }
 
+function startWorker() {
+  worker = new Worker(new URL('./graph-worker.ts', import.meta.url), {type:'module'});
+  worker.postMessage({relays:configuredGraphRelays});
+  worker.onerror = unavailable;
+  worker.onmessage = ({data}: MessageEvent<GraphReply|{refresh:true}>) => {
+    if ('refresh' in data) { refreshBadges(); return; }
+    busy = false;
+    if ('error' in data) return unavailable();
+    if (data.version === version) {
+      graphDiscoveryRoot.set(data.discoveryRoot);
+      const accepted = Object.entries(data.badges).filter(([key]) => interested.has(key));
+      if (accepted.length) {
+        cached = {...cached, ...Object.fromEntries(accepted)};
+        graphInfo.set(cached);
+      }
+      if (sentProfileVersion === profileVersion && data.profile?.subject === selectedProfile) profileRelations.set(data.profile);
+      graphStatus.set('ready');
+    }
+    schedule();
+  };
+}
+
+// Posts stay hidden until their authors are checked against the graph. Begin
+// loading it with the app instead of when the first posts arrive.
+export function warmGraph() {
+  if (worker || failed || typeof Worker === 'undefined' || document.hidden) return;
+  try { startWorker(); worker!.postMessage({warm:true}); } catch { unavailable(); }
+}
+
 function schedule() {
   if (scheduled || busy || failed || typeof Worker === 'undefined' || document.hidden) return;
   if (!missing.size && !pending.size && !profileDirty) return;
@@ -52,27 +81,7 @@ function schedule() {
     scheduled = false;
     if (document.hidden) return;
     try {
-      if (!worker) {
-        worker = new Worker(new URL('./graph-worker.ts', import.meta.url), {type:'module'});
-        worker.postMessage({relays:configuredGraphRelays});
-        worker.onerror = unavailable;
-        worker.onmessage = ({data}: MessageEvent<GraphReply|{refresh:true}>) => {
-          if ('refresh' in data) { refreshBadges(); return; }
-          busy = false;
-          if ('error' in data) return unavailable();
-          if (data.version === version) {
-            graphDiscoveryRoot.set(data.discoveryRoot);
-            const accepted = Object.entries(data.badges).filter(([key]) => interested.has(key));
-            if (accepted.length) {
-              cached = {...cached, ...Object.fromEntries(accepted)};
-              graphInfo.set(cached);
-            }
-            if (sentProfileVersion === profileVersion && data.profile?.subject === selectedProfile) profileRelations.set(data.profile);
-            graphStatus.set('ready');
-          }
-          schedule();
-        };
-      }
+      if (!worker) startWorker();
       const authors: string[] = [];
       for (const key of missing) {
         authors.push(key); missing.delete(key);
@@ -84,7 +93,7 @@ function schedule() {
       sentProfileVersion = profile ? profileVersion : -1;
       profileDirty = false;
       busy = true;
-      worker.postMessage({root, ranking, edges, authors, events, version, profile, directory:selectedDirectory, lists:profile ? [...profileLists.values()] : []} satisfies GraphRequest);
+      worker!.postMessage({root, ranking, edges, authors, events, version, profile, directory:selectedDirectory, lists:profile ? [...profileLists.values()] : []} satisfies GraphRequest);
     } catch { unavailable(); }
   }, 24);
 }

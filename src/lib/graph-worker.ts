@@ -79,7 +79,8 @@ let overlayOwner='', overlayKey='', undo:Record<string,boolean>={};
 function setEdge(graph:SocialGraph, owner:string, person:string, followed:boolean) {
   if (followed) graph.addFollower(owner,person); else graph.removeFollower(owner,person);
 }
-self.onmessage = ({data}:MessageEvent<GraphRequest|{syncActive:boolean}|{relays:string[]}>)=>{
+self.onmessage = ({data}:MessageEvent<GraphRequest|{syncActive:boolean}|{relays:string[]}|{warm:true}>)=>{
+  if('warm' in data){(loaded??=load()).catch(()=>{});return;}
   if('relays' in data){bootstrapAbort?.abort();relayPolicy=graphRelayPolicy(data.relays);sync();return;}
   if('syncActive' in data){syncActive=data.syncActive;sync();return;}
   processing=processing.then(()=>render(data));

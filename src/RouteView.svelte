@@ -463,7 +463,6 @@
   $: if (mounted) feedPresentation.update(`${activeOrder}:${feedScope}:${$account?.pubkey || 'guest'}`,
     ranked.map(p=>p.id), stableFeed && pageVisible);
   $: ordered = stableFeed ? $feedPresentation.ids.map(id=>rankedById.get(id)).filter((p):p is Post=>Boolean(p)) : ranked;
-  $: preparingFeed = stableFeed && !ordered.length && ranked.length > 0;
   $: visible = ordered.slice(0,limit);
   function showUpdatedPosts() {
     feedPresentation.reveal();
@@ -859,12 +858,7 @@
           <p>Visibility depends on the author’s follow distance and mutes.</p><a href="/settings/network">Graph settings</a></div>
       {:else}<div class="empty loading-state">
           <Icon name="comment" size={28} />
-          <h2>
-            {$status === 'loading'
-              ? 'Loading discussion…'
-              : 'Looking for this discussion'}
-          </h2>
-          <p>Posts appear when a connected relay has a copy.</p>
+          <h2>Discussion not seen yet</h2>
           <a href="/">Back to the feed</a>
         </div>{/if}
     {:else if route.page === 'missing' || (route.page === 'custom' && !selectedFeed)}<div class="empty">
@@ -994,9 +988,7 @@
             {:else if followingFeed}<h2>
                 No posts from follows yet
               </h2>
-              <p>
-                Posts from people you follow will appear here as they load. Your filters may also hide some posts.
-              </p>
+              <p>Your filters may also hide some posts.</p>
               <a href="/">Explore the feed</a>
             {:else if route.page === 'search'}<h2>{searching ? 'Looking for matches…' : 'No matching posts'}</h2>
               <p>{searching ? 'Fetching discussions for your search.' : 'Try a different search or explore a topic.'}</p>
@@ -1007,26 +999,13 @@
               </h2>
               <p>You can still browse all public discussions.</p>
               <a href="/">Open home feed</a>
-            {:else if preparingFeed || $status === 'loading' || (route.page === 'network' && $graphStatus === 'loading')}<h2
-              >
-                Tuning in…
-              </h2>
-              <p>Loading discussions from the network.</p>
             {:else if selectedFeed && (route.page === 'custom' || selectedFeed.topics.length || selectedFeed.keywords.length || selectedFeed.exclude.length || selectedFeed.authors.length)}
               <h2>No posts match this feed yet</h2><p>Try adjusting your filters or check back for new discussions.</p>
               <button class="outline compact" onclick={() => customize(selectedFeed)}>Edit feed</button>
             {:else}<h2>
-                {route.page === 'topic'
-                  ? 'No discussions here yet'
-                  : $status === 'offline'
-                    ? 'Relays are offline'
-                    : 'No discussions loaded yet'}
+                {route.page === 'topic' ? 'No discussions here yet' : 'Nothing seen yet'}
               </h2>
-              <p>
-                {route.page === 'topic'
-                  ? 'Start a conversation in t/' + route.value + '.'
-                  : 'Posts appear as your relays connect.'}
-              </p>
+              {#if route.page === 'topic'}<p>Start a conversation in t/{route.value}.</p>{/if}
               {#if route.page === 'topic'}<button
                   class="primary compact"
                   onclick={()=>compose()}>Create a post</button
@@ -1046,7 +1025,7 @@
               <Icon name="down" size={15}/>
             </button>
             <small>Search older discussions.</small>
-          {:else}<p class="quiet" role="status">No more results returned by connected relays.</p>{/if}
+          {:else}<p class="quiet" role="status">No more results.</p>{/if}
         </div>
         {/if}
     {/if}

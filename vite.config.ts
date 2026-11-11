@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -7,13 +8,18 @@ const assets = ({names}: {names: string[]}) => {
   const optional = names.some(name => /^(search-|ort-wasm-)/.test(name));
   return (optional ? 'assets/search/' : 'assets/') + '[name]-[hash][extname]';
 };
-// Fetch the relay worker alongside the app instead of after it.
+// Posts wait for relays and the graph snapshot. Fetch both workers and the
+// snapshot alongside the app instead of one after another.
 const startupPreloads = (): Plugin => ({
   name: 'startup-preloads', apply: 'build',
   transformIndexHtml: { order: 'post', handler(_html, {bundle}) {
     const link = (attrs: Record<string, string | boolean>) => ({tag: 'link', attrs, injectTo: 'head' as const});
-    return Object.keys(bundle ?? {}).filter(file => /^assets\/relay\.worker-[^/]+\.js$/.test(file))
-      .map(file => link({rel: 'modulepreload', href: '/' + file}));
+    const graph = readFileSync('src/lib/graph-model.ts', 'utf8').match(/snapshotHash = '([0-9a-f]{64})'/)![1];
+    return [
+      ...Object.keys(bundle ?? {}).filter(file => /^assets\/(relay\.worker|graph-worker)-[^/]+\.js$/.test(file))
+        .map(file => link({rel: 'modulepreload', href: '/' + file})),
+      link({rel: 'preload', as: 'fetch', crossorigin: true, href: '/socialGraph.bin?v=' + graph.slice(0, 16)}),
+    ];
   }},
 });
 export default defineConfig({
