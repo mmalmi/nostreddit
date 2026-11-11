@@ -3,6 +3,7 @@
   import { settingsTabs, type SettingsTab } from '../lib/settings-tabs';
   import Icon from './Icon.svelte';
   import RelaySettings from './RelaySettings.svelte';
+  import TranslationSettings from './TranslationSettings.svelte';
   import AppearanceSettings from './AppearanceSettings.svelte';
   import HotSettings from './HotSettings.svelte';
   import ImageProxySettings from './ImageProxySettings.svelte';
@@ -43,6 +44,7 @@
           onPreviewsChange(event.currentTarget.checked);
         }} /></label>
       </section>
+      <TranslationSettings/>
       <HotSettings/>
     {:else if current === 'network'}
       <GraphSettings/>

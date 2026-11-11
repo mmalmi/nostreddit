@@ -9,6 +9,10 @@
   import { graphInfo, profileRelations, graphStatus, observeEventAuthors } from '../lib/graph';
   import { snapshotRoot } from '../lib/graph-model';
   import { safeURL, displayName } from '../lib/ui';
+  import TranslationButton from './TranslationButton.svelte';
+  import { displayText, paragraphs, type Translations } from '../lib/translation';
+  let translated: Translations | undefined;
+  function showTranslation(value?: Translations) { translated = value; }
   import Icon from './Icon.svelte';
   import SocialBadge from './SocialBadge.svelte';
   import SocialContext from './SocialContext.svelte';
@@ -24,6 +28,7 @@
 
   let enlarged: { kind: 'photo' | 'banner'; url: string } | null = null;
   $: profile = $profiles[pubkey];
+  $: translationGroups = paragraphs(profile?.about || '');
   $: mine = pubkey === $account?.pubkey;
   $: following = $follows.includes(pubkey);
   $: muted = $mutes.includes(pubkey);
@@ -94,7 +99,8 @@
       <CopyButton class="profile-copy" text={npub} label="Copy public key" ariaLabel="Copy public key" title="Copy public key" promptLabel="Public key"/>
     </div>
     <div class="profile-details">
-    {#if profile?.about}<p class="about">{profile.about}</p>{/if}
+    {#if profile?.about}<div data-translation-item><p class="about">{displayText(profile.about,translated)}</p>
+      <TranslationButton groups={translationGroups} ondisplay={showTranslation}/></div>{/if}
     {#if website || profile?.lud16}
       <div class="links">
         {#if website}<a href={website} target="_blank" rel="noopener noreferrer"><Icon name="link" size={14}/>{new URL(website).hostname}</a>{/if}

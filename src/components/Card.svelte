@@ -26,6 +26,8 @@
   import Icon from './Icon.svelte';
   import TopicIcon from './TopicIcon.svelte';
   import SocialBadge from './SocialBadge.svelte';
+  import { displayText, paragraphs, type Translations } from '../lib/translation';
+  import TranslationButton from './TranslationButton.svelte';
   import PostMenu from './PostMenu.svelte';
   export let post: Post;
   export let saved = false;
@@ -35,6 +37,8 @@
   export let full = false;
   export let comment = false;
   export let onaction: (action: string, post: Post) => void;
+  let translated: Translations | undefined;
+  function showTranslation(value?: Translations) { translated = value; }
   let postMenu: PostMenu;
   let shareExpanded = false;
   $: author = $profiles[post.pubkey];
@@ -83,8 +87,11 @@
   $: remainder = (titleFromBody || (!comment && autoShortened && !(full && longProse))) ? body.split('\n').slice(1).join('\n').trim() : body;
   $: excerpt = post.parent && !full && !comment && remainder.startsWith(chosenHeading) ? remainder.slice(chosenHeading.length).trim() : remainder;
   $: cleanBody = renderEmbeds ? stripAttachments(excerpt,[...attachments,...(link ? [link] : [])]) : excerpt;
-  $: visibleBody = full || comment ? cleanBody : cleanBody.replace(/\s*\n\s*/g, ' ');
-  $: headingParts = noteParts(heading, post.event.tags);
+  $: translationGroups = paragraphs(heading === strippedHeading ? heading : '', cleanBody);
+  $: shownHeading = displayText(heading, translated);
+  $: shownBody = displayText(cleanBody, translated);
+  $: visibleBody = full || comment ? shownBody : shownBody.replace(/\s*\n\s*/g, ' ');
+  $: headingParts = noteParts(shownHeading, post.event.tags);
   $: headingQuoteIds = renderEmbeds ? [...new Set(headingParts.flatMap(part=>part.event ? [part.event] : []))].slice(0,4) : [];
   $: embeddedHeadingIds = headingQuoteIds.filter(id=>$referencePosts.has(id));
   $: visibleHeadingParts = headingParts.filter(part=>!part.event || !embeddedHeadingIds.includes(part.event));
@@ -94,7 +101,7 @@
   $: picture = safeURL(author?.picture);
 </script>
 
-<article class="post-card" class:detail={full} class:comment-card={comment}
+<article data-translation-item class="post-card" class:detail={full} class:comment-card={comment}
   data-post-href={!full && !comment && !preview ? permalink : undefined}>
   {#if preview}<div class="byline"><span class="topic-link"><TopicIcon slug={topic} small />t/{topic}</span><span class="sep">·</span><span>{name}</span><span class="sep">·</span><span>Draft</span></div>
   {:else}<div class="byline">
@@ -123,14 +130,14 @@
   {/if}
   {#if renderedHeading}<h2>
       {#if full}
-        <NoteText text={heading} tags={post.event.tags} inline embeddedIds={embeddedHeadingIds} />
+        <NoteText text={shownHeading} tags={post.event.tags} inline embeddedIds={embeddedHeadingIds} />
       {:else if taggedHeading}
         {#each visibleHeadingParts as part}
           {#if part.topic}<a class="hashtag" href={topicPath(part.topic)}>{part.text}</a>{:else}<a href={permalink}>{partText(part,$profiles,$referencePosts)}</a>{/if}
         {/each}
       {:else}<a href={permalink}>{renderedHeading}</a>{/if}
     </h2>{/if}
-  {#if hasReferences}<NoteText text={heading} tags={post.event.tags} previewsOnly showPreviews={renderEmbeds} />{/if}
+  {#if hasReferences}<NoteText text={shownHeading} tags={post.event.tags} previewsOnly showPreviews={renderEmbeds} />{/if}
   {#if visibleBody}<NoteText text={visibleBody} tags={post.event.tags} full={full || comment} showPreviews={renderEmbeds} />{/if}
   {#if renderEmbeds && (media.length || trees.length)}
     {#if photoAlbum && !trees.length}<div class="album-label"><Icon name="image" size={14}/>{media.length} photos</div>{/if}
@@ -186,6 +193,7 @@
         aria-expanded={typeof navigator.share === 'function' ? shareExpanded : undefined}
         onclick={event => postMenu.showShare(event.currentTarget)}><Icon name="share" size={16}/> Share</button>
     {/if}
+    <TranslationButton groups={translationGroups} ondisplay={showTranslation}/>
   </div>{/if}
 </article>
 
