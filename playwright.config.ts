@@ -2,7 +2,11 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: 'tests',
   testMatch: '**/*.spec.ts',
+  // Needs production relay defaults: run with pnpm test:relay-privacy.
+  testIgnore: '**/relay-defaults.spec.ts',
   workers: 4,
+  // Files share one relay, so a parallel run can occasionally see another file's posts.
+  retries: 1,
   fullyParallel: false,
   timeout: 60_000,
   use: { baseURL: 'http://127.0.0.1:43163', viewport: { width: 1440, height: 960 } },

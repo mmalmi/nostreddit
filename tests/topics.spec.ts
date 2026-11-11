@@ -13,7 +13,7 @@ test('a guest starts an open topic offline, publishes its first post and another
   await expect(page.getByRole('heading',{name:'Topics',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:/join|create community/i})).toHaveCount(0);
   await page.getByRole('textbox',{name:'Find or open a topic'}).fill('#Quiet-Gardens');
-  await page.getByRole('link',{name:'Open t/quiet-gardens'}).click();
+  await page.getByRole('link',{name:'Open quiet-gardens'}).click();
   await expect(page).toHaveURL(/\/t\/quiet-gardens$/);
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
   await expect(page.getByLabel('Display name',{exact:true})).not.toHaveValue('');

@@ -52,9 +52,9 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
     await expect(page).toHaveURL(new RegExp('/t/'+fromTag+'$'));
     await card.locator('.stamp').first().click();
     await expect(page).toHaveURL(new RegExp('/post/'+identifier+'\\?t='+fromTag+'$'));
-    await expect(page.locator('a.back-link').first()).toHaveAttribute('href','/t/'+fromTag);
+    await expect(page.locator('[data-route-active="true"] a.back-link').first()).toHaveAttribute('href','/t/'+fromTag);
     const reply='The channel is rising. #'+replyTag;
-    await page.getByLabel('Your reply').fill(reply);
+    await page.locator('[data-route-active="true"]').getByLabel('Your reply').fill(reply);
     await page.getByRole('button',{name:'Post reply',exact:true}).click();
     const row=page.locator('[data-route-active=\"true\"] li[data-comment-id]').filter({hasText:reply});
     const id=await row.getAttribute('data-comment-id');
@@ -65,7 +65,7 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
     await expect(matchingReply.getByRole('link',{name:'Reply to discussion'})).toBeVisible();
     await page.screenshot({path:info.outputPath('tagged-reply-'+device+'.png')});
     await matchingReply.locator('.stamp').first().click();
-    await expect(page.locator('a.back-link').first()).toHaveAttribute('href','/t/'+replyTag.toLowerCase());
+    await expect(page.locator('[data-route-active="true"] a.back-link').first()).toHaveAttribute('href','/t/'+replyTag.toLowerCase());
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   });
 }
