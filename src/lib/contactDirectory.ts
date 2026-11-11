@@ -1,5 +1,5 @@
 import { getEventHash, verifyEvent } from 'nostr-tools/pure';
-import type { NostrEvent, NostrRuntime } from 'nostr-pubsub';
+import type { NostrEvent, NostrFilter, NostrRuntime, RuntimeSubscription } from 'nostr-pubsub';
 import type { ContactQuery } from './relayTypes';
 
 const hex = /^[a-f0-9]{64}$/;
@@ -93,7 +93,25 @@ async function remember(namespace:string, subject:string, events:NostrEvent[], r
   });
 }
 
-export async function queryDirectory(runtime:NostrRuntime, namespace:string, query:ContactQuery) {
+type Completion = {sources: readonly {complete: boolean}[]};
+// Read stored history through an open subscription so each event is handed on
+// as its relay delivers it. Resolves whether any relay finished its history.
+function readHistory(runtime:NostrRuntime, filters:NostrFilter[], onEvent:(event:NostrEvent)=>void, deadline:number) {
+  return new Promise<boolean>(resolve => {
+    const sub:RuntimeSubscription = runtime.subscribe(filters, {
+      onEvent,
+      onEose(status:Completion) {
+        queueMicrotask(() => sub.close());
+        resolve(status.sources.some(source => source.complete));
+      },
+    }, {cache:'network-only', deadline});
+  });
+}
+
+// `found` receives every current-looking list as it arrives. The returned lists
+// are the reconciled record once relay history has finished.
+export async function queryDirectory(runtime:NostrRuntime, namespace:string, query:ContactQuery,
+    found:(events:NostrEvent[])=>void = () => {}) {
   const {subject, mode} = query;
   if (!hex.test(subject)) throw new Error('Invalid profile.');
   const stored = await cachedSubject(namespace,subject);
@@ -103,39 +121,45 @@ export async function queryDirectory(runtime:NostrRuntime, namespace:string, que
       event.pubkey !== subject && event.tags.some(tag=>tag[0] === 'p' && tag[1] === subject)))) throw new Error('No cached directory.');
     return previous;
   }
-  let candidates: string[];
-  let reverseChecked = false;
   const supplied = [...new Set((query.authors || []).filter(key => hex.test(key)))];
-  const options = {cache:'network-only' as const, deadline:Date.now()+6500};
-  if (mode === 'following') candidates = [subject];
-  else if (mode === 'check') candidates = supplied.slice(0,30);
+  const fresh: NostrEvent[] = [];
+  const nominated = new Set<string>(), reads: Promise<boolean>[] = [];
+  let waiting: string[] = [], timer: ReturnType<typeof setTimeout> | undefined;
+  // Ask for each author's newest replaceable record without a #p condition.
+  // Small groups keep the requests accepted by ordinary relays and bound relay traffic.
+  const confirm = () => {
+    clearTimeout(timer); timer = undefined;
+    for (let i=0;i<waiting.length;i+=12) {
+      const authors = waiting.slice(i,i+12);
+      reads.push(readHistory(runtime, authors.map(author=>({kinds:[3],authors:[author],limit:1})), event => {
+        if (event.kind !== 3 || !authors.includes(event.pubkey)) return;
+        fresh.push(event); found([event]);
+      }, Date.now()+6500));
+    }
+    waiting = [];
+  };
+  const nominate = (author:string) => {
+    if (nominated.has(author) || nominated.size >= maximumAuthors) return;
+    nominated.add(author); waiting.push(author);
+    // Confirm nominees while the reverse lookup is still answering.
+    if (waiting.length >= 12) confirm(); else timer ??= setTimeout(confirm,40);
+  };
+  let reverseChecked = false;
+  if (mode === 'following') nominate(subject);
+  else if (mode === 'check') supplied.slice(0,30).forEach(nominate);
   else {
     const filter = {kinds:[3], '#p':[subject], limit:maximumAuthors, ...(mode === 'mutual' ? {authors:supplied.slice(0,256)} : {})};
-    const result = await runtime.query([filter],options);
-    reverseChecked = mode === 'followers' && result.sources.some(source => source.complete);
     // Reverse-tag hits nominate authors only: a retained superseded event is not proof of a current follow.
-    candidates = [...new Set([...result.events.map(event=>event.pubkey), ...previous.filter(event =>
-      event.pubkey !== subject && (mode === 'followers' || supplied.includes(event.pubkey))).map(event=>event.pubkey)])].slice(0,maximumAuthors);
-    if (!candidates.length && !result.sources.some(source=>source.complete)) throw new Error('No search relay responded.');
+    const reverse = readHistory(runtime, [filter], event => nominate(event.pubkey), Date.now()+6500);
+    const complete = await reverse;
+    // Lists verified earlier are already on screen; recheck them in the remaining room.
+    for (const event of previous)
+      if (event.pubkey !== subject && (mode === 'followers' || supplied.includes(event.pubkey))) nominate(event.pubkey);
+    reverseChecked = mode === 'followers' && complete;
+    if (!nominated.size && !complete) throw new Error('No search relay responded.');
   }
-  const fresh: NostrEvent[] = [];
-  if (candidates.length) {
-    // Ask for each author's newest replaceable record without a #p condition.
-    // Small groups keep the requests accepted by ordinary relays and bound relay traffic.
-    const batches:string[][] = [];
-    for(let i=0;i<candidates.length;i+=12) batches.push(candidates.slice(i,i+12));
-    let complete = false;
-    const deadline = Date.now()+6500;
-    await Promise.all(batches.map(async authors => {
-      const result = await runtime.query(authors.map(author=>({kinds:[3],authors:[author],limit:1})),
-        {cache:'network-only',deadline});
-      if (result.sources.some(source => source.complete)) {
-        complete = true;
-        fresh.push(...result.events.filter(event=>authors.includes(event.pubkey)));
-      }
-    }));
-    if (!complete) throw new Error('No relay returned contact lists.');
-  }
+  confirm();
+  if (reads.length && !(await Promise.all(reads)).some(Boolean)) throw new Error('No relay returned contact lists.');
   if (fresh.length || reverseChecked) await remember(namespace,subject,fresh,reverseChecked).catch(()=>{});
   const latest = freshestContactLists([...previous,...fresh]);
   const relevant = mode === 'following' ? latest.filter(event=>event.pubkey === subject)

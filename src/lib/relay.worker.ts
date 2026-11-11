@@ -1,9 +1,9 @@
-import { MemoryEventStore, NostrRuntime, type NostrEvent, type RuntimeSubscription } from 'nostr-pubsub';
+import { MemoryEventStore, NostrRuntime, type NostrEvent, type NostrFilter, type RuntimeSubscribeOptions, type RuntimeSubscription } from 'nostr-pubsub';
 import { discussionKinds } from './posts';
 import { focusedThread, VisitedThreads } from './visited-threads';
 import { queryDirectory } from './contactDirectory';
 import { relayFilters } from './discovery/discussions';
-import { readSearchPage } from './discovery/relay-search';
+import { readSearchPage, type SearchHistory } from './discovery/relay-search';
 import { planPostSearch } from './discovery/query';
 import { checkSearch } from './search';
 import { relayUrls, searchRelayUrls, testRelays, type Request, type Response } from './relayTypes';
@@ -16,6 +16,25 @@ let configuredRelayUrls = [...relayUrls];
 let configuredSearchRelayUrls = [...searchRelayUrls];
 let searchController = new AbortController();
 const reply = (data: Response) => self.postMessage(data);
+// Hand a request's results over as relays deliver them, a frame's worth at a time.
+function streamTo(id: number) {
+  let batch: NostrEvent[] = [], timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    clearTimeout(timer); timer = undefined;
+    if (batch.length) reply({type:'found', id, events:batch});
+    batch = [];
+  };
+  return {add(events: NostrEvent[]) { batch.push(...events); timer ??= setTimeout(flush, 30); }, flush};
+}
+// One-shot history as an open subscription: every event is reported on arrival.
+function readHistory(filters: NostrFilter[], history: SearchHistory, options: RuntimeSubscribeOptions) {
+  let ended = false;
+  const sub: RuntimeSubscription = runtime.subscribe(filters, {
+    onEvent: event => history.onEvent(event),
+    onEose(status) { ended = true; queueMicrotask(() => sub.close()); history.onEose(status); },
+  }, options);
+  return () => { if (!ended) sub.close(); };
+}
 const watches = new Map<number, RuntimeSubscription>();
 const queue = new Map<string, NostrEvent>();
 let connectionState: 'live' | 'offline' | undefined;
@@ -150,19 +169,30 @@ self.onmessage = async (message: MessageEvent<Request>) => {
       return;
     }
     if (req.type === 'contacts') {
-      const events = await queryDirectory(runtime, cacheKey, req);
-      reply({type:'result',id:req.id,events});
+      const stream = streamTo(req.id);
+      try {
+        const events = await queryDirectory(runtime, cacheKey, req, stream.add);
+        stream.flush();
+        reply({type:'result',id:req.id,events});
+      } finally { stream.flush(); }
       return;
     }
     if (req.type === 'search') {
       const query = checkSearch(req.query);
       const filters = relayFilters(planPostSearch(query), req.expansion);
       if (!filters.length) { reply({type:'result', id:req.id, events:[], cursors:[]}); return; }
-      const page = await readSearchPage(filters, req.cursors ?? [], filter => runtime.query([filter], {
-        cache: 'network-only', relays: filter.search ? configuredSearchRelayUrls : configuredRelayUrls,
-        deadline: Date.now() + 6500, limit: filter.limit, signal: searchController.signal,
-      }));
-      reply({type:'result', id:req.id, ...page});
+      // Only the newest search reads relays; its results stream to the page.
+      searchController.abort();
+      const {signal} = searchController = new AbortController();
+      const stream = streamTo(req.id);
+      try {
+        const page = await readSearchPage(filters, req.cursors ?? [], (filter, history) => readHistory([filter], history, {
+          cache: 'network-only', relays: filter.search ? configuredSearchRelayUrls : configuredRelayUrls,
+          deadline: Date.now() + 6500, signal,
+        }), stream.add, signal);
+        stream.flush();
+        reply({type:'result', id:req.id, events:[], cursors:page.cursors});
+      } finally { stream.flush(); }
       return;
     }
     const result = await runtime.query([{ kinds: [req.kind], authors: [req.pubkey], limit: 1 }], {

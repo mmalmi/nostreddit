@@ -38,7 +38,7 @@
   } from './lib/network';
   import { createSearchSession } from './lib/discovery/session';
   import { planPostSearch } from './lib/discovery/query';
-  import { allowModel, keywordScore, noExpansion, relevance, semanticFloor } from './lib/discovery/discussions';
+  import { allowModel, keywordScore, noExpansion, relevance, semanticFloor, type Expansion } from './lib/discovery/discussions';
   import type { SearchCursors } from './lib/discovery/relay-search';
   import { checkSearch, searchTarget, searchTopics } from './lib/search';
   import { observeAuthors, observeEventAuthors, graphInfo, graphStatus, setGraphRanking } from './lib/graph';
@@ -200,36 +200,38 @@
     searchMessage = '';
     try {
       const query = checkSearch(route.value);
-      let expansion = more ? searchExpansion : noExpansion;
-      let found = await searchRelays(query, expansion, more ? searchCursors : undefined);
-      if (run !== searchRun) return;
-      remoteIds = found.ids;
-      searchCursors = found.cursors;
-      searchExpansion = expansion;
-      searched = true;
+      // Matches appear as each relay delivers them. The awaits below only settle
+      // where older results continue, once this batch's history has finished.
+      const show = (ids: Set<string>) => { if (run === searchRun) remoteIds = ids; };
+      const settle = (found: Awaited<ReturnType<typeof searchRelays>>, expansion: Expansion) => {
+        remoteIds = found.ids;
+        searchCursors = found.cursors;
+        searchExpansion = expansion;
+        searched = true;
+      };
       let pages = 1;
-      // Show literal results first. Optional meaning expansion must never delay them.
-      if (!more && related) {
-        expansion = await assistance.relayExpansion(query);
-        if (run !== searchRun || !related) return;
-        if (expansion.terms.length || expansion.tags.length) {
-          found = await searchRelays(query, expansion);
-          if (run !== searchRun) return;
-          remoteIds = found.ids;
-          searchCursors = found.cursors;
-          searchExpansion = expansion;
-          pages++;
-        }
-      }
-      // A fresh batch may consist entirely of hidden authors or loose relay
-      // matches. Search a few older batches before asking the reader to continue.
-      if (!more) {
+      if (more) {
+        const found = await searchRelays(query, searchExpansion, searchCursors, show);
+        if (run !== searchRun) return;
+        settle(found, searchExpansion);
+      } else {
+        // Show literal results first. Optional meaning expansion must never delay
+        // them, and it does not wait for the literal relays to finish either.
+        const literal = searchRelays(query, noExpansion, undefined, show);
+        literal.catch(() => {});
+        const expansion = related ? await assistance.relayExpansion(query) : noExpansion;
+        if (run !== searchRun) return;
+        const expanded = related && (expansion.terms.length || expansion.tags.length);
+        const found = await (expanded ? searchRelays(query, expansion, undefined, show) : literal);
+        if (run !== searchRun) return;
+        settle(found, expanded ? expansion : noExpansion);
+        // A fresh batch may consist entirely of hidden authors or loose relay
+        // matches. Search a few older batches before asking the reader to continue.
         await tick();
         while (run === searchRun && pages < 3 && ordered.length < 5 && searchCursors?.some(cursor => cursor !== null)) {
-          found = await searchRelays(query, searchExpansion, searchCursors);
+          const older = await searchRelays(query, searchExpansion, searchCursors, show);
           if (run !== searchRun) return;
-          remoteIds = found.ids;
-          searchCursors = found.cursors;
+          settle(older, searchExpansion);
           pages++;
           await tick();
         }

@@ -20,4 +20,6 @@ export type Request =
 export type Response =
   | { type: 'events'; events: NostrEvent[] }
   | { type: 'status'; value: 'live' | 'offline' }
+  // Results of a request that is still reading relays. Its 'result' follows.
+  | { type: 'found'; id: number; events: NostrEvent[] }
   | { type: 'result'; id: number; events: NostrEvent[]; cursors?: SearchCursors; error?: string };

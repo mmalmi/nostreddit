@@ -299,7 +299,7 @@ function apply(events:NostrEvent[]) {
 type Interest = Extract<Request,{type:'watch'}>;
 const interests = new Map<number,Interest>();
 type Result = Extract<Response,{type:'result'}>;
-const waiting = new Map<number,{resolve:(result:Result)=>void; reject:(reason:Error)=>void}>();
+const waiting = new Map<number,{resolve:(result:Result)=>void; reject:(reason:Error)=>void; found?:(events:NostrEvent[])=>void}>();
 let seq = 0, worker: Worker|undefined, active = false, watching = false;
 function shutdown() {
   worker?.terminate(); worker = undefined; watching = false;
@@ -316,6 +316,7 @@ function connect() {
     if (worker !== next) return;
     if (data.type === 'events') apply(data.events);
     else if (data.type === 'status') status.set(data.value);
+    else if (data.type === 'found') waiting.get(data.id)?.found?.(data.events);
     else {
       const pending = waiting.get(data.id); waiting.delete(data.id);
       if (data.error) pending?.reject(new Error(data.error));
@@ -341,15 +342,19 @@ function watch(filters:NostrFilter[], live = false) {
 }
 type RequestPayload = ContactQuery|{type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}|
   {type:'search';query:string;expansion:Expansion;cursors?:SearchCursors};
-function requestResult(payload: RequestPayload) {
+// `found` receives results while relays are still answering; the promise only
+// settles the request's bookkeeping once its history has finished.
+function requestResult(payload: RequestPayload, found?: (events:NostrEvent[])=>void) {
   return new Promise<Result>((resolve,reject) => {
     const id = ++seq;
     let owner:Worker;
     try { owner = connect(); } catch { reject(new Error('Nostr connections are unavailable in this browser.')); return; }
-    waiting.set(id,{resolve,reject}); owner.postMessage({...payload,id});
+    waiting.set(id,{resolve,reject,found}); owner.postMessage({...payload,id});
   });
 }
-function request(payload: RequestPayload) { return requestResult(payload).then(result => result.events); }
+function request(payload: RequestPayload, found?: (events:NostrEvent[])=>void) {
+  return requestResult(payload,found).then(result => result.events);
+}
 
 const localSync = new WriteSync({
   current:()=>get(account)?.pubkey ?? '',
@@ -361,14 +366,29 @@ const localSync = new WriteSync({
 });
 export function retrySync() { return localSync.retry(); }
 export function clearRelaySearch() { relaySearchVersion++; relaySearchIds.clear(); }
-export async function searchRelays(query: string, expansion = noExpansion, cursors?: SearchCursors) {
+// Matches reach `found` as each relay delivers them. The returned promise ends
+// the page: it carries where older results continue, never the results themselves.
+export async function searchRelays(query: string, expansion = noExpansion, cursors?: SearchCursors,
+    found: (ids:Set<string>)=>void = noop) {
   const version = ++relaySearchVersion;
-  const {events, cursors: next = []} = await requestResult({type:'search',query,expansion,cursors});
-  if (version !== relaySearchVersion) return {ids:new Set<string>(),cursors:[]};
-  if (!cursors) relaySearchIds.clear();
-  for (const event of events) relaySearchIds.add(event.id);
-  while (relaySearchIds.size > 700) relaySearchIds.delete(relaySearchIds.values().next().value!);
-  apply(events);
+  const replaced = {ids:new Set<string>(),cursors:[] as SearchCursors};
+  const show = (events:NostrEvent[]) => {
+    if (version !== relaySearchVersion || !events.length) return;
+    for (const event of events) relaySearchIds.add(event.id);
+    while (relaySearchIds.size > 700) relaySearchIds.delete(relaySearchIds.values().next().value!);
+    apply(events);
+    found(new Set(relaySearchIds));
+  };
+  let next: SearchCursors;
+  try {
+    const result = await requestResult({type:'search',query,expansion,cursors},show);
+    show(result.events);
+    next = result.cursors ?? [];
+  } catch (error) {
+    if (version !== relaySearchVersion) return replaced;
+    throw error;
+  }
+  if (version !== relaySearchVersion) return replaced;
   return {ids:new Set(relaySearchIds),cursors:next};
 }
 
@@ -489,9 +509,8 @@ export function loadProfile(pubkey:string, directory:RelationshipKind|null = nul
     if (!fresh.length || !get(canSeeAuthor)(pubkey) || navigator.onLine === false) return;
     fresh.forEach(key=>checked.add(key));
     const token = run;
-    void request({type:'contacts',subject:pubkey,mode:'check',authors:fresh}).then(records => {
-      if (active && token === run) observeDirectoryLists(pubkey,records);
-    }).catch(noop);
+    const observeChecked = (records:NostrEvent[]) => { if (active && token === run) observeDirectoryLists(pubkey,records); };
+    void request({type:'contacts',subject:pubkey,mode:'check',authors:fresh},observeChecked).then(observeChecked).catch(noop);
   };
   checkDirectoryMembers = directory === 'followers' ? checkMembers : undefined;
   const readLists = async (token:number) => {
@@ -510,10 +529,16 @@ export function loadProfile(pubkey:string, directory:RelationshipKind|null = nul
     if (!current()) return;
     if (navigator.onLine !== false) {
       try {
-        const events = await request(query);
+        // Each list is shown as its relay delivers it; the await only ends "loading".
+        const observeLists = (events:NostrEvent[]) => {
+          if (!current()) return;
+          const covered = mode === 'followers' || events.some(event=>event.pubkey === pubkey) || coverage;
+          observeDirectoryLists(pubkey,events);
+          if (covered !== coverage) { coverage = covered; directoryProgress.set({loading:true,coverage}); }
+        };
+        const events = await request(query,observeLists);
         if (!current()) return;
-        coverage = mode === 'followers' || events.some(event=>event.pubkey === pubkey) || coverage;
-        observeDirectoryLists(pubkey,events);
+        observeLists(events);
       } catch { /* Snapshot and previously verified relationships remain available. */ }
     }
     if (current()) directoryProgress.set({loading:false,coverage});

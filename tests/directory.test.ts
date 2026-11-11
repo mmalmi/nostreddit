@@ -15,15 +15,28 @@ test('reverse discovery confirms latest untagged kind 3 before admitting a nonmu
   const subject=getPublicKey(target), viewer=getPublicKey(reader);
   const old=contacts(former,5,subject), newer=contacts(former,7);
   const current=contacts(person,4,subject), unconfirmed=contacts(potential,3,subject);
+  const arrived:string[] = [];
+  let settled = false, finishReverse = () => {};
   const runtime = {
-    async query(filters:NostrFilter[]) {
+    subscribe(filters:NostrFilter[], handlers:{onEvent(event:unknown):void; onEose(status:unknown):void}) {
       const reverse = filters.some(f=>f['#p']?.includes(subject));
-      const events = reverse ? [old,current,unconfirmed] : [newer,current,old];
       if (!reverse) assert.ok(filters.every(f=>f.authors?.length===1 && f.limit===1 && !f['#p']));
-      return {events,sources:[{complete:true}]};
+      (reverse ? [old,current,unconfirmed] : [newer,current,old]).forEach(handlers.onEvent);
+      const finish = () => handlers.onEose({sources:[{complete:true}]});
+      // The reverse lookup has a silent relay: its history stays open for now.
+      if (reverse) finishReverse = finish; else finish();
+      return {close() {}};
     }
   } as unknown as NostrRuntime;
-  const verified = await queryDirectory(runtime,'fixture',{type:'contacts',mode:'followers',subject});
+  const reading = queryDirectory(runtime,'fixture',{type:'contacts',mode:'followers',subject},
+    events=>arrived.push(...events.map(e=>e.id)));
+  void reading.then(()=>{settled=true;});
+  await new Promise(resolve=>setTimeout(resolve,120));
+  // Confirmed lists are reported while the reverse lookup is still unanswered.
+  assert.ok(arrived.includes(newer.id) && arrived.includes(current.id));
+  assert.equal(settled,false);
+  finishReverse();
+  const verified = await reading;
   assert.deepEqual(verified.map(e=>e.id).sort(),[newer.id,current.id].sort());
   const graph=new SocialGraph(viewer);
   const lists=verified.map(e=>summarizeProfileList(e,subject,viewer));
