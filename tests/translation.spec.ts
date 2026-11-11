@@ -70,3 +70,37 @@ for (const width of [390, 1280]) {
     await expect(page.getByRole('button',{name:'Remove Swedish'})).toBeVisible();
   });
 }
+
+test('automatic translation ahead of the reader preserves bilingual posts', async ({page,context}) => {
+  await allowFixtureAuthors(context);
+  await page.setViewportSize({width:390,height:800});
+  // Keep both fixtures just below the fold from the first paint.
+  await page.addInitScript(() => {
+    localStorage.setItem('reading-translation-v1', JSON.stringify({auto:true,target:'en',read:['fi']}));
+    const style = document.createElement('style');
+    style.textContent = 'article.detail { margin-top: 820px !important; }';
+    new MutationObserver((_,observer) => {
+      if (document.head) { document.head.append(style); observer.disconnect(); }
+    }).observe(document,{childList:true,subtree:true});
+    Object.assign(window,{
+      LanguageDetector:{availability:async ()=>'available',create:async()=>({
+        detect:async (text:string)=>[{detectedLanguage:text.trim().startsWith('Suomi')?'fi':'sv',confidence:0.99}]
+      })},
+      Translator:{availability:async ()=>'available',create:async()=>({
+        translate:async (text:string)=>'English '+text,destroy(){}
+      })}
+    });
+  });
+  const secret = generateSecretKey(), created_at = Math.floor(Date.now()/1000);
+  const sign = (body:string) => finalizeEvent({kind:1,created_at,content:body,tags:[['t','skog'],['subject','Svenska rubriken']]},secret);
+  const mono = sign('Svenska fortsätter här.'), mixed = sign('Svenska först. Suomi seuraavaksi.');
+  const relay = await Relay.connect(process.env.NOSTREDDIT_TEST_RELAY_URL || 'ws://127.0.0.1:43164');
+  try { for (const event of [mono,mixed]) await relay.publish(event); } finally { relay.close(); }
+  const article = page.locator('[data-route-active="true"] article.detail').first();
+  await page.goto(postUrl(mono.id));
+  await expect(article.getByRole('button',{name:'Show original'})).toBeAttached();
+  await expect(article.locator('.note-text')).toHaveText('English Svenska fortsätter här.');
+  await page.goto(postUrl(mixed.id));
+  await expect(article.getByRole('button',{name:'Translate',exact:true})).toBeAttached();
+  await expect(article.locator('.note-text')).toHaveText(mixed.content);
+});
