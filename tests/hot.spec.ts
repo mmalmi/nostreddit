@@ -79,10 +79,14 @@ test('local AI improves a specific interest over social-only ranking and preserv
   await page.goto('/t/hot-ai');
   await expect(page.getByText('Personalized on this device',{exact:true})).toBeVisible({timeout:30_000});
   const elapsed=performance.now()-started;
-  // Background AI can reorder the tail while waiting to promote a post into view.
-  await expect(page.getByRole('button',{name:'Show updated posts',exact:true})).toBeVisible();
-  expect((await page.locator('[data-route-active="true"] article h2').allTextContents()).slice(0,viewportCount)).toEqual(social.slice(0,viewportCount));
-  await page.getByRole('button',{name:'Show updated posts',exact:true}).click();
+  // Scores that are ready before the first paint rank it directly. Later ones
+  // can reorder the tail while waiting to promote a post into view.
+  const update=page.getByRole('button',{name:'Show updated posts',exact:true}),top=page.locator('[data-route-active="true"] article h2').first();
+  await expect(async()=>expect(await update.isVisible() || await top.textContent()===texts[0][0]).toBe(true)).toPass();
+  if(await update.isVisible()) {
+    expect((await page.locator('[data-route-active="true"] article h2').allTextContents()).slice(0,viewportCount)).toEqual(social.slice(0,viewportCount));
+    await update.click();
+  }
   const ranked=await page.locator('[data-route-active=\"true\"] article h2').allTextContents();
   expect(ranked[0]).toBe(texts[0][0]);expect(new Set(ranked)).toEqual(new Set(texts.map(([title])=>title)));
   expect(social[0]).not.toBe(texts[0][0]);

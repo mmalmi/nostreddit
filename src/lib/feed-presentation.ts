@@ -5,11 +5,11 @@ function sameOrder(a: string[], b: string[]) {
 }
 
 /** Store IDs only: visibility and card content stay live while ranked arrivals are batched. */
-export function createFeedPresentation(viewportSlots: () => number) {
+export function createFeedPresentation(viewportSlots: () => number, atTop: () => boolean = () => true) {
   let shown: string[] = [], latest: string[] = [], scope: string | undefined;
-  let pending = false, active = false;
+  let pending = false, active = false, signals: boolean | undefined;
   const store = writable({ ids: shown, pending });
-  let timer: ReturnType<typeof setTimeout> | undefined, started = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined, started = 0, settleUntil = 0;
   function cancel() {
     clearTimeout(timer);
     timer = undefined;
@@ -42,21 +42,29 @@ export function createFeedPresentation(viewportSlots: () => number) {
     started ||= performance.now();
     clearTimeout(timer);
     // A bounded burst window. Measure the viewport when the batch actually paints.
-    timer = setTimeout(flush, Math.max(0, Math.min(120, 480 - (performance.now() - started))));
+    // A first paint ranked by engagement waits briefly for it, and paints as soon
+    // as arriving signals go quiet. The limit stays under the empty-state delay.
+    const [quiet, limit] = signals === undefined || shown.length ? [120, 480] : [signals ? 250 : 1500, 1500];
+    timer = setTimeout(flush, Math.max(0, Math.min(quiet, limit - (performance.now() - started))));
   }
   return {
     subscribe: store.subscribe,
     viewportChanged() {
       if (active && pending && timer === undefined) schedule();
     },
-    update(nextScope: string, ids: string[], isActive: boolean) {
+    update(nextScope: string, ids: string[], isActive: boolean, engagement?: boolean) {
       latest = ids;
       active = isActive;
+      signals = engagement;
       if (scope !== nextScope) {
         cancel();
         scope = nextScope;
         // A deliberate sort/profile change applies once, without blanking cards.
-        if (shown.length) set(latest, false);
+        if (shown.length) {
+          set(latest, false);
+          // The chosen order keeps settling as its ranking inputs and fresh posts arrive.
+          settleUntil = performance.now() + 3000;
+        }
       }
       const available = new Set(latest);
       const permitted = shown.filter(id => available.has(id));
@@ -64,6 +72,9 @@ export function createFeedPresentation(viewportSlots: () => number) {
       if (sameOrder(shown, latest)) {
         cancel();
         set(shown, false);
+      } else if (active && performance.now() < settleUntil && atTop()) {
+        cancel();
+        set(latest, false);
       } else if (active) {
         schedule();
       } else {

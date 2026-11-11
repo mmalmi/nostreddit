@@ -83,7 +83,7 @@
     }
     return start;
   }
-  const feedPresentation = createFeedPresentation(viewportSlots);
+  const feedPresentation = createFeedPresentation(viewportSlots, () => window.scrollY < 8);
   function watchFeedSize(list: HTMLElement) {
     const observer = new ResizeObserver(feedPresentation.viewportChanged);
     observer.observe(list);
@@ -461,7 +461,8 @@
   $: rankedById = new Map(ranked.map(p=>[p.id,p]));
   $: stableFeed = ['home','topic','following','network','saved','custom','profile'].includes(route.page) && !route.connections;
   $: if (mounted) feedPresentation.update(`${activeOrder}:${feedScope}:${$account?.pubkey || 'guest'}`,
-    ranked.map(p=>p.id), stableFeed && pageVisible);
+    ranked.map(p=>p.id), stableFeed && pageVisible,
+    hotActive && navigator.onLine !== false ? $hotSignals.some(signal=>rankedById.has(signal.target)) : undefined);
   $: ordered = stableFeed ? $feedPresentation.ids.map(id=>rankedById.get(id)).filter((p):p is Post=>Boolean(p)) : ranked;
   $: visible = ordered.slice(0,limit);
   function showUpdatedPosts() {
@@ -959,7 +960,8 @@
           />{:else}
           <!-- A connected relay can still be waiting for posts. Keep the delay
                for the entire empty interval, including loading/status changes. -->
-          <div class="empty" class:loading-state={savedFeed ? saved.length > 0 :
+          <!-- Posts held for their first ranked paint are not an empty feed. -->
+          <div class="empty" style:display={stableFeed && ranked.length ? 'none' : undefined} class:loading-state={savedFeed ? saved.length > 0 :
             !followingFeed || !!$account}>
             <span class="empty-icon"
               ><Icon

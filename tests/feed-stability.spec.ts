@@ -31,8 +31,9 @@ for (const order of ['Hot', 'New', 'Top']) {
     const topic = `stable-${order.toLowerCase()}`;
     const rows = Array.from({ length: 8 }, (_, i) => note(`Stable ${order} ${i}`, topic, -3600 - i));
     await publish(rows);
+    await page.addInitScript(order => localStorage.setItem('nostreddit.ui.sort', JSON.stringify(order)), order);
     await page.goto(`/t/${topic}`);
-    await page.getByRole('button', { name: order, exact: true }).click();
+    await expect(page.getByRole('button', { name: order, exact: true })).toHaveAttribute('aria-pressed', 'true');
     const titles = page.locator(`${active} .feed-list article h2`);
     await expect(titles).toHaveCount(rows.length);
     const before = await titles.evaluateAll(nodes => nodes
@@ -61,8 +62,9 @@ for (const width of [390, 1440]) {
     const topic = `viewport-${width}`;
     const rows = Array.from({ length: 28 }, (_, i) => note(`Field note ${i}`, topic, -1200 - i * 10));
     await publish(rows);
+    await page.addInitScript(order => localStorage.setItem('nostreddit.ui.sort', JSON.stringify(order)), 'New');
     await page.goto(`/t/${topic}`);
-    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'New', exact: true })).toHaveAttribute('aria-pressed', 'true');
     const cards = page.locator(`${active} .feed-list article`);
     const titles = cards.locator('h2');
     const update = page.getByRole('button', { name: 'Show updated posts' });
@@ -101,8 +103,9 @@ for (const width of [390, 1440]) {
   test(`the post Back link returns to the original home feed and scroll at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await publish(Array.from({ length: 30 }, (_, i) => note(`Home return ${width} ${i}`, `home-return-${width}`, -1200 - i, ['photography'])));
+    await page.addInitScript(order => localStorage.setItem('nostreddit.ui.sort', JSON.stringify(order)), 'New');
     await page.goto('/');
-    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'New', exact: true })).toHaveAttribute('aria-pressed', 'true');
     const links = page.locator(`${active} .feed-list article h2 a`);
     await expect(links).toHaveCount(24);
     const link = links.nth(18);
@@ -127,8 +130,9 @@ for (const width of [390, 1440]) {
     const topic = `scroll-photo-${width}`;
     const photo = finalizeEvent({ kind: 1, content: 'https://feed-images.test/late.png', tags: [['subject', 'Slow photo'], ['t', topic]], created_at: now - 100 }, generateSecretKey());
     await publish([photo, ...Array.from({ length: 28 }, (_, i) => note(`Photo scroll ${width} ${i}`, topic, -200 - i))]);
+    await page.addInitScript(order => localStorage.setItem('nostreddit.ui.sort', JSON.stringify(order)), 'New');
     await page.goto(`/t/${topic}`);
-    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'New', exact: true })).toHaveAttribute('aria-pressed', 'true');
     const link = page.locator(`${active} .feed-list article h2 a`).filter({ hasText: `Photo scroll ${width} 18` });
     await expect(link).toBeAttached();
     await link.evaluate(node => scrollTo(0, node.getBoundingClientRect().top + scrollY - 120));
@@ -148,8 +152,9 @@ for (const width of [390, 1440]) {
       const topic = `scroll-${width}-${order.toLowerCase()}`;
       const rows = Array.from({ length: 36 }, (_, i) => note(`Scroll ${width} ${order} ${i}`, topic, -7200 - i));
       await publish(rows);
+      await page.addInitScript(order => localStorage.setItem('nostreddit.ui.sort', JSON.stringify(order)), order);
       await page.goto(`/t/${topic}`);
-      await page.getByRole('button', { name: order, exact: true }).click();
+      await expect(page.getByRole('button', { name: order, exact: true })).toHaveAttribute('aria-pressed', 'true');
       const titles = page.locator(`${active} .feed-list article h2 a`);
       await expect(titles).toHaveCount(24);
       const link = titles.nth(18);
@@ -183,8 +188,9 @@ test('a short feed waits when an appended card would enter the viewport', async 
   const topic = 'viewport-short';
   await page.setViewportSize({ width: 1440, height: 1000 });
   await publish([note('Only card', topic, -40)]);
+  await page.addInitScript(order => localStorage.setItem('nostreddit.ui.sort', JSON.stringify(order)), 'New');
   await page.goto(`/t/${topic}`);
-  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'New', exact: true })).toHaveAttribute('aria-pressed', 'true');
   const cards = page.locator(`${active} .feed-list article`);
   await expect(cards).toHaveCount(1);
   const bottom = await cards.first().evaluate(node => node.getBoundingClientRect().bottom);
@@ -196,4 +202,18 @@ test('a short feed waits when an appended card would enter the viewport', async 
   await page.setViewportSize({ width: 1440, height: Math.floor(bottom) - 10 });
   await expect(cards).toHaveCount(2);
   await expect(update).toHaveCount(0);
+});
+
+test('choosing another sort shows arrivals that follow without a prompt', async ({ page }) => {
+  const topic = 'sort-switch';
+  const rows = Array.from({ length: 8 }, (_, i) => note(`Switch ${i}`, topic, -3600 - i));
+  await publish(rows);
+  await page.goto(`/t/${topic}`);
+  const titles = page.locator(`${active} .feed-list article h2`);
+  await expect(titles).toHaveCount(rows.length);
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(titles.first()).toHaveText('Switch 0');
+  await publish([note('Switch arrival', topic, -5)]);
+  await expect(titles.first()).toHaveText('Switch arrival');
+  await expect(page.getByRole('button', { name: 'Show updated posts' })).toHaveCount(0);
 });

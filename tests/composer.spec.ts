@@ -153,14 +153,14 @@ for (const width of [1440,390,320]) {
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await editor.getByRole('button',{name:'Edit post',exact:true}).click();
     await expect(editor.getByLabel('Body (optional)',{exact:true})).toHaveValue('First line\nSecond line #photography');
-    await editor.getByLabel('Title',{exact:true}).fill('Updated coast preview');
+    await editor.getByLabel('Title',{exact:true}).fill('Updated coast preview '+width);
     await editor.getByRole('button',{name:'Preview',exact:true}).click();
-    await expect(preview.getByRole('heading',{name:'Updated coast preview',exact:true})).toBeVisible();
+    await expect(preview.getByRole('heading',{name:'Updated coast preview '+width,exact:true})).toBeVisible();
     await editor.getByRole('button',{name:'Cancel',exact:true}).click();
     await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).first().click();
-    await expect(editor.getByLabel('Title',{exact:true})).toHaveValue('Updated coast preview');
+    await expect(editor.getByLabel('Title',{exact:true})).toHaveValue('Updated coast preview '+width);
     await editor.getByRole('button',{name:'Preview',exact:true}).click();
     await editor.getByRole('button',{name:'Publish post',exact:true}).click();
-    await expect(page.getByRole('main').getByRole('heading',{name:'Updated coast preview',exact:true})).toBeVisible();
+    await expect(page.getByRole('main').getByRole('heading',{name:'Updated coast preview '+width,exact:true})).toBeVisible();
   });
 }
