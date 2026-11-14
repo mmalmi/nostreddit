@@ -4,9 +4,10 @@ import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools/pure
 import { npubEncode } from 'nostr-tools/nip19';
 import { WebSocket } from 'ws';
 import { allowFixtureAuthors } from './helpers/graphPreferences';
+import { postUrl } from '../src/lib/post-url';
 
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
-test('proxy settings reroute open tabs, profile images and posters and preserve opened photos offline', async ({page,context}) => {
+test('proxy settings reroute open tabs, profile images and posters and preserve opened photos offline', async ({page,context},info) => {
   await allowFixtureAuthors(context);
   const secret=generateSecretKey(), pubkey=getPublicKey(secret), stamp=Math.floor(Date.now()/1000);
   const base='https://origin.example', photo=base+'/p.jpg', avatar=base+'/avatar.png', banner=base+'/cover.png', clip=base+'/movie.mp4';
@@ -34,10 +35,20 @@ test('proxy settings reroute open tabs, profile images and posters and preserve 
       proxyHits.push(url);
       const target=Buffer.from(new URL(url).pathname.split('/').pop()!,'base64url').toString();
       if (breakUnopened && target!==photo) return route.abort();
+      if (target===avatar) return route.fulfill({contentType:'image/svg+xml',
+        body:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#85b4a7"/><circle cx="20" cy="16" r="8" fill="#343453"/><path d="M4 40a16 16 0 0 1 32 0" fill="#343453"/></svg>'});
       return route.fulfill({contentType:'image/png',headers:{'Access-Control-Allow-Origin':'*'},body:png});
     });
   }
   await page.goto('/t/proxy-fixture');
+  const card=page.locator('article').filter({has:page.getByRole('heading',{name:'Proxy delivery',exact:true})});
+  const authorLink=card.getByRole('link',{name:'Cloud Heron',exact:true});
+  const avatarPath=new RegExp('/rs:fill:18:18/dpr:2/'+Buffer.from(avatar).toString('base64url')+'$');
+  const authorPhoto=authorLink.locator('img[loading="lazy"]');
+  await expect(authorPhoto).toHaveAttribute('src',/^https:\/\/imgproxy\.iris\.to\//);
+  await expect(authorPhoto).toHaveAttribute('src',avatarPath);
+  await expect(authorPhoto).toHaveCSS('opacity','1');
+  await card.screenshot({path:info.outputPath('feed-avatars.png')});
   const image=page.locator('.image-link img').first();
   await expect(image).toHaveAttribute('src',/^https:\/\/imgproxy\.iris\.to\/.+\/rs:fit:350:350\/dpr:2\//);
   await expect(page.locator('.load .poster').first()).toHaveAttribute('src',/^https:\/\/vidproxy\.iris\.to\/.+\/thumb\//);
@@ -58,6 +69,7 @@ test('proxy settings reroute open tabs, profile images and posters and preserve 
   await settings.getByRole('button',{name:'Save proxy settings'}).click();
   await expect(settings.getByRole('status',{name:''}).filter({hasText:'Saved'}).first()).toBeVisible();
   await expect(image).toHaveAttribute('src',/^https:\/\/proxy\.example\/images\//);
+  await expect(authorPhoto).toHaveAttribute('src',/^https:\/\/proxy\.example\/images\//);
   await expect(page.locator('.load .poster').first()).toHaveAttribute('src',/^https:\/\/video-proxy\.example\/.+\/thumb\//);
   originalHits.length=0;
   await page.getByRole('link',{name:'Expand image: Harbor photo'}).click();
@@ -67,6 +79,17 @@ test('proxy settings reroute open tabs, profile images and posters and preserve 
   await expect.poll(()=>page.evaluate(async url=>!!(await (await caches.open('nostreddit-opened-photos-v1')).match(url)),photo)).toBe(true);
   expect(originalHits).toEqual([]);
   await viewer.getByRole('button',{name:'Close image'}).click();
+  await page.setViewportSize({width:390,height:844});
+  await page.goto(postUrl(root.id));
+  const bylines=page.locator('[data-route-active="true"] article .byline .author');
+  await expect(bylines).toHaveCount(2);
+  for (const author of await bylines.all()) {
+    await expect(author).toHaveAccessibleName('Cloud Heron');
+    const thumb=author.locator('img[loading="lazy"]');
+    await expect(thumb).toHaveAttribute('src',avatarPath);
+    await expect(thumb).toHaveCSS('opacity','1');
+  }
+  await page.screenshot({path:info.outputPath('thread-avatars-mobile.png')});
   await page.goto('/u/'+npubEncode(pubkey));
   await expect(page.getByRole('heading',{name:'Cloud Heron'})).toBeVisible();
   await expect.poll(()=>proxyHits.some(url=>url.includes('/rs:fill:68:68/dpr:2/') && url.endsWith(Buffer.from(avatar).toString('base64url')))).toBe(true);
@@ -85,6 +108,13 @@ test('proxy settings reroute open tabs, profile images and posters and preserve 
   await expect(page.locator('.avatar .iris-minidenticon')).toBeVisible();
   expect(originalHits).not.toContain(avatar); expect(originalHits).not.toContain(banner);
   await fallback.check();
-  await expect.poll(()=>originalHits.includes(avatar) && originalHits.includes(banner)).toBe(true);
+  await expect.poll(()=>originalHits.includes(banner)).toBe(true);
+  await page.goto(postUrl(root.id));
+  await expect(bylines.locator('.iris-minidenticon')).toHaveCount(2);
+  for (const byline of await bylines.all()) {
+    await expect(byline.locator('.iris-minidenticon')).toBeVisible();
+    await expect(byline.locator('img[loading="lazy"]')).toHaveJSProperty('complete',true);
+  }
+  expect(originalHits).not.toContain(avatar);
   await settings.close();
 });

@@ -123,6 +123,7 @@ for (const width of [1440,390,320]) {
     await editor.getByRole('textbox',{name:'Link',exact:true}).fill('https://example.org/coast');
     await editor.getByRole('button',{name:'Preview',exact:true}).click();
     const preview=editor.getByRole('region',{name:'Post preview',exact:true});
+    await expect(preview.locator('.byline .iris-minidenticon')).toBeVisible();
     await expect(preview.getByRole('heading',{name:'Preview from the coast',exact:true})).toBeVisible();
     await expect(preview).toContainText('Second line');
     await expect(preview.locator('a[href="https://example.org/coast"]').first()).toBeVisible();

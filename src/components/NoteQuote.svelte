@@ -4,6 +4,7 @@
   import { postUrl } from '../lib/post-url';
   import { noteParts, partText } from '../lib/mentions';
   import { displayName, age } from '../lib/ui';
+  import ProxyAvatar from './ProxyAvatar.svelte';
   export let id: string;
   $: post = $referencePosts.get(id);
   $: name = post ? displayName(post.pubkey,$profiles[post.pubkey]) : '';
@@ -15,7 +16,7 @@
 
 {#if post}
   <a class="quoted-post" href={postUrl(id)} aria-label={'Open quoted post by '+name}>
-    <span class="quote-byline"><b>{name}</b><span>·</span><time datetime={new Date(post.created_at*1000).toISOString()}>{age(post.created_at)}</time></span>
+    <span class="quote-byline"><ProxyAvatar pubkey={post.pubkey} profile={$profiles[post.pubkey]} size={18}/><b>{name}</b><span>·</span><time datetime={new Date(post.created_at*1000).toISOString()}>{age(post.created_at)}</time></span>
     {#if title}<strong>{title}</strong>{/if}
     {#if body && body !== title}<span class="quote-body">{body}</span>{/if}
   </a>

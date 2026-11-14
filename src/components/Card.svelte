@@ -17,7 +17,7 @@
   import { topicPath } from '../lib/hashtags';
   import { matchesTopic } from '../lib/posts';
   import MediaEmbed from './MediaEmbed.svelte';
-  import { proxyImage } from '../lib/image-load';
+  import ProxyAvatar from './ProxyAvatar.svelte';
   import TreeEmbed from './TreeEmbed.svelte';
   import { noteParts, partText } from '../lib/mentions';
   import { referencePosts } from '../lib/note-references';
@@ -127,26 +127,25 @@
   $: taggedHeading = visibleHeadingParts.some(part=>part.topic);
   $: hasReferences = headingParts.some(part=>part.event || part.person);
   $: renderedHeading = visibleHeadingParts.map(part => partText(part,$profiles,$referencePosts)).join('').trim();
-  $: picture = safeURL(author?.picture);
 </script>
+
+{#snippet authorIdentity()}
+  <ProxyAvatar pubkey={post.pubkey} profile={author} size={18}/>
+  {#if !preview}<SocialBadge pubkey={post.pubkey}/>{/if}
+  <span class="author-name">{name}</span>
+{/snippet}
 
 <article data-translation-item class="post-card" class:detail={full} class:comment-card={comment}
   data-post-href={!full && !comment && !preview ? permalink : undefined}>
-  {#if preview}<div class="byline">{#if tagged}<span class="topic-link"><TopicIcon slug={topic} small />t/{topic}</span><span class="sep">·</span>{/if}<span>{name}</span><span class="sep">·</span><span>Draft</span></div>
+  {#if preview}<div class="byline">{#if tagged}<span class="topic-link"><TopicIcon slug={topic} small />t/{topic}</span><span class="sep">·</span>{/if}<span class="author">{@render authorIdentity()}</span><span class="sep">·</span><span>Draft</span></div>
   {:else}<div class="byline">
     {#if !comment && tagged}<a
         class="topic-link"
         href={topicPath(topic)}
         ><TopicIcon slug={topic} small />t/{topic}</a
       ><span class="sep">·</span>{/if}
-    <a class="author" href={profileUrl(post.pubkey)} aria-label={name}
-      ><SocialBadge pubkey={post.pubkey}/>{#if comment && picture}<img
-          use:proxyImage={{url:picture,width:18,square:true}}
-          alt=""
-          loading="lazy"
-          referrerpolicy="no-referrer"
-        />{/if}<span class="author-name">{name}</span></a
-    ><span class="sep">·</span>
+    <a class="author" href={profileUrl(post.pubkey)} aria-label={name}>{@render authorIdentity()}</a>
+    <span class="sep">·</span>
     <a class="stamp" href={permalink}
       ><time datetime={new Date(post.created_at * 1000).toISOString()}
         >{age(post.created_at)}</time

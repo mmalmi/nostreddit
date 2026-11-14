@@ -51,6 +51,7 @@ for (const [device,width,height] of [['desktop',1440,960],['mobile',390,844]] as
     await expect(text).toContainText(invalid);
     await expect(card.locator('a[href="'+url+'"]')).toHaveAttribute('target','_blank');
     await expect(card.locator('.quoted-post')).toHaveCount(2);
+    await expect(card.locator('.quote-byline .iris-minidenticon')).toHaveCount(2);
     await expect(card.locator('.quoted-post').first()).toContainText('A quiet morning beside the water.');
     const comment = page.locator('[data-route-active=\"true\"] li[data-comment-id="'+reply.id+'"]');
     await expect(comment.getByRole('link',{name:'@Coastal Walker',exact:true})).toHaveAttribute('href',profileUrl(pubkey));

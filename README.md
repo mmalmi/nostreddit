@@ -18,7 +18,9 @@ To invite a friend, open your profile and use **Copy link**. They can open it, c
 
 In network fetches recent discussions from up to 256 friends of followed people, sampled across the signed contact lists of up to 64 direct follows. The request is limited to 80 discussions and runs only while a network feed is open. This includes new topics without requiring the posts to have appeared in Home first. Existing distance and mute filters still apply.
 
-Settings → Image proxy controls how remote images and video thumbnails load. The Iris proxy is enabled by default. You can disable fallback to the original image host or configure your own proxy servers and signing settings.
+Posts and comments show an 18-pixel avatar beside the author's name. Avatars use a local Iris identicon while the photo loads or if it is missing. If the proxy fails, the identicon stays in place without downloading the original photo.
+
+Settings → Image proxy controls how remote images and video thumbnails load. The Iris proxy is enabled by default. You can disable fallback to the original image host for other media or configure your own proxy servers and signing settings.
 
 Settings → Network → Relays shows each address with its current connection status. Add, edit or remove rows, then choose **Save relays** to store up to eight addresses in this browser. Changes apply to posts, publishing, keyword search and graph syncing immediately; replacing the selection stops pending searches and graph syncing on the previous relays. Custom selections disable the public graph bootstrap and public search-relay fallback. Keyword search depends on the selected relays supporting search. Restore defaults re-enables the shipped public discovery services.
 

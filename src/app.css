@@ -592,13 +592,6 @@ main > .feed-heading:first-child { margin-top: 0; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.author img {
-  height: 18px;
-  width: 18px;
-  border-radius: 50%;
-  flex: none;
-  object-fit: cover;
-}
 .iris-social-distance-badge {
   vertical-align: -2px;
 }
