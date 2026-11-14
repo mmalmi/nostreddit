@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
 import { bech32, hex } from '@scure/base'
-import { finalizeEvent, getPublicKey, verifyEvent } from 'nostr-tools/pure'
-import { inspectZapInvoice, lightningEndpoint, matchesZapReceipt, signedZapAuthor, payWithWallet, receivedZapSats, requestZap } from '../src/lib/zaps'
+import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent } from 'nostr-tools/pure'
+import { inspectZapInvoice, lightningEndpoint, matchesZapReceipt, postTipActor, postTipSummary, signedZapAuthor, payWithWallet, receivedZapSats, requestZap } from '../src/lib/zaps'
 
 import { providerKey, authorKey, signerKey, target, preimage, encoder, recipient, params, metadata, bolt11 } from './helpers/zapInvoice'
 
@@ -87,4 +87,52 @@ test('bad provider settings and mismatching signer are rejected before invoicing
       assert.equal(fetcher.mock.callCount(), 1)
     } finally { fetcher.mock.restore() }
   }
+})
+
+
+test('post tip groups reconcile to the visible total, preserve anonymous receipts, and ignore repeat payment hashes', async () => {
+  const groupRecipient = {lud16: 'groups@lightning.example'}
+  const fetcher = mock.method(globalThis, 'fetch', async () => Response.json(metadata))
+  const senderA = generateSecretKey(), senderB = generateSecretKey(), publicA = getPublicKey(senderA), publicB = getPublicKey(senderB)
+  const now = Math.floor(Date.now() / 1000)
+  const receipt = (key: Uint8Array, sats: number, at: number, anonymous = false, post = target.id) => {
+    const tags = [['p',target.pubkey], ['e',post], ['amount',String(sats * 1000)], ['relays','wss://relay.example']]
+    if (anonymous) tags.push(['anon'])
+    const request = finalizeEvent({kind:9734,tags,content:'',created_at:at}, key)
+    const description = JSON.stringify(request), invoice = bolt11(description, {sats,proof:generateSecretKey()})
+    return finalizeEvent({kind:9735,content:'',created_at:at,tags:[
+      ['e',post], ['p',target.pubkey], ['P',request.pubkey], ['description',description], ['bolt11',invoice],
+    ]}, providerKey)
+  }
+  const first = receipt(senderA, 100, now - 10), second = receipt(senderA, 200, now - 9)
+  const duplicate = finalizeEvent({...first, created_at: now + 1}, providerKey)
+  const other = receipt(senderB, 300, now - 8)
+  const anonA = receipt(generateSecretKey(), 10, now - 7, true), anonB = receipt(senderA, 0.5, now - 6, true)
+  const wrongPost = receipt(senderB, 1000, now, false, 'a'.repeat(64))
+  const forgery = finalizeEvent({...first, created_at: now}, generateSecretKey())
+  try {
+    assert.deepEqual(postTipActor(anonA), {sender:null})
+    assert.equal(signedZapAuthor(anonB), null)
+    const records = [duplicate, other, first, anonA, second, anonB, wrongPost, forgery]
+    const summary = await postTipSummary(target, groupRecipient, records)
+    assert.deepEqual(summary, {status:'ready', totalMillisats:610500, groups:[
+      {sender:publicB, millisats:300000, count:1, latest:now-8},
+      {sender:publicA, millisats:300000, count:2, latest:now-9},
+      {sender:null, millisats:10500, count:2, latest:now-6},
+    ]})
+    assert.deepEqual(await postTipSummary(target, groupRecipient, [...records].reverse()), summary)
+    assert.equal(await receivedZapSats(target, groupRecipient, records), 610.5)
+    // Match the network's named-author policy: a hidden sender's anonymous
+    // payment remains anonymous even when their named payments are hidden.
+    const permitted = records.filter(event => postTipActor(event)?.sender !== publicA)
+    assert.deepEqual((await postTipSummary(target, groupRecipient, permitted)).groups, [summary.groups[0],summary.groups[2]])
+    assert.equal(fetcher.mock.callCount(), 1)
+    assert.deepEqual(await postTipSummary(target, undefined, records), {status:'unavailable', totalMillisats:0, groups:[]})
+    assert.deepEqual(await postTipSummary(target, undefined, [wrongPost]), {status:'ready', totalMillisats:0, groups:[]})
+    assert.deepEqual(await postTipSummary(target, groupRecipient, [forgery]), {status:'ready', totalMillisats:0, groups:[]})
+    fetcher.mock.mockImplementation(async () => { throw new Error('offline') })
+    assert.deepEqual(await postTipSummary(target, {lud16:'offline@lightning.example'}, records), {
+      status:'unavailable', totalMillisats:0, groups:[],
+    })
+  } finally { fetcher.mock.restore() }
 })

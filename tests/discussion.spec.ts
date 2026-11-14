@@ -50,7 +50,7 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
     await expect(second.locator('[data-route-active=\"true\"] article').filter({hasText:'Under the pier this morning.'}).last()).toBeVisible();
     await expect(second.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Like',exact:true})).toHaveText('1');
     const upvote=second.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Like',exact:true});
-    const upvotes=second.getByRole('dialog',{name:'Upvotes',exact:true});
+    const upvotes=second.getByRole('dialog',{name:'Reactions',exact:true});
     await upvote.hover(); await second.mouse.down(); await second.waitForTimeout(600); await second.mouse.up();
     await expect(upvotes).toBeVisible();
     await expect(upvotes.getByRole('link',{name:'Rain Reader'})).toBeVisible();

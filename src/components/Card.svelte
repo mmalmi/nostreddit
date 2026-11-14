@@ -29,7 +29,7 @@
   import { displayText, paragraphs, type Translations } from '../lib/translation';
   import TranslationButton from './TranslationButton.svelte';
   import PostMenu from './PostMenu.svelte';
-  import ReactionsMenu from './ReactionsMenu.svelte';
+  import { onDestroy } from 'svelte';
   export let post: Post;
   export let saved = false;
   export let preview = false;
@@ -41,17 +41,33 @@
   let translated: Translations | undefined;
   function showTranslation(value?: Translations) { translated = value; }
   let postMenu: PostMenu;
-  let reactionsMenu: ReactionsMenu, likeButton: HTMLButtonElement;
-  // Holding the upvote (or right-clicking it) lists who upvoted instead of toggling the vote.
-  let pressTimer: ReturnType<typeof setTimeout> | undefined, held = false;
-  function pressStart(event: PointerEvent) {
-    if (event.button > 0) return;
-    held = false; clearTimeout(pressTimer);
-    pressTimer = setTimeout(() => { held = true; reactionsMenu.show(likeButton); }, 450);
-  }
+  type ReactionTab = 'upvotes' | 'tips';
+  let pressTimer: ReturnType<typeof setTimeout> | undefined;
+  let held: ReactionTab | undefined;
   function pressEnd() { clearTimeout(pressTimer); }
-  function showLikers(event: Event) { event.preventDefault(); pressEnd(); held = true; reactionsMenu.show(likeButton); }
-  function likeClick() { if (held) { held = false; return; } onaction('like', post); }
+  onDestroy(pressEnd);
+  function openReactions(button: HTMLElement, tab: ReactionTab) {
+    pressEnd();
+    held = tab;
+    button.focus({preventScroll:true});
+    onaction(tab, post);
+  }
+  function pressStart(event: PointerEvent, tab: ReactionTab) {
+    pressEnd();
+    held = undefined;
+    if (event.button !== 0) return;
+    const button = event.currentTarget as HTMLElement;
+    pressTimer = setTimeout(() => openReactions(button,tab),450);
+  }
+  function reactionShortcut(event: MouseEvent | KeyboardEvent, tab: ReactionTab) {
+    if (event instanceof KeyboardEvent && !(event.key === 'ArrowDown' || (event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu')) return;
+    event.preventDefault();
+    openReactions(event.currentTarget as HTMLElement,tab);
+  }
+  function reactionClick(event:MouseEvent, tab: ReactionTab) {
+    if (held === tab && event.detail > 0) { held = undefined; return; }
+    onaction(tab === 'upvotes' ? 'like' : 'zap',post);
+  }
   let shareExpanded = false;
   $: author = $profiles[post.pubkey];
   $: name = displayName(post.pubkey, author);
@@ -175,17 +191,16 @@
   {#if !preview}<div class="post-actions">
     <button
       class="like"
-      bind:this={likeButton}
       disabled={!!$account && !$outboxReady}
       class:chosen={liked}
       aria-pressed={liked}
       aria-label={liked ? 'Liked' : 'Like'}
       aria-haspopup="dialog"
       title={(liked ? 'Remove like' : 'Like') + ' · hold to see who upvoted'}
-      onclick={likeClick}
-      onpointerdown={pressStart} onpointerup={pressEnd} onpointercancel={pressEnd} onpointerleave={pressEnd}
-      oncontextmenu={showLikers}
-      onkeydown={event => { if (event.key === 'ArrowDown' || (event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') showLikers(event); }}
+      onclick={event => reactionClick(event,'upvotes')}
+      onpointerdown={event => pressStart(event,'upvotes')} onpointerup={pressEnd} onpointercancel={pressEnd} onpointerleave={pressEnd}
+      oncontextmenu={event => reactionShortcut(event,'upvotes')}
+      onkeydown={event => reactionShortcut(event,'upvotes')}
       ><Icon name="arrow" size={15} /><b>{likers.length}</b></button
     >
     {#if comment}<button
@@ -197,9 +212,12 @@
         ><Icon name="comment" size={16} /><span>{replyCount}</span></a
       >{/if}
     <button
-      title="Tip with Lightning"
+      title="Tip with Lightning · hold to view tips"
       aria-label="Tip with Lightning"
-      onclick={() => onaction('zap', post)}
+      aria-haspopup="dialog"
+      onclick={event => reactionClick(event,'tips')}
+      onpointerdown={event => pressStart(event,'tips')} onpointerup={pressEnd} onpointercancel={pressEnd} onpointerleave={pressEnd}
+      oncontextmenu={event => reactionShortcut(event,'tips')} onkeydown={event => reactionShortcut(event,'tips')}
       ><Icon name="zap" size={15} /><ZapCount
         event={post.event}
         profile={author}
@@ -212,7 +230,7 @@
         onclick={event => postMenu.showShare(event.currentTarget)}><Icon name="share" size={16}/> Share</button>
     {/if}
     <TranslationButton groups={translationGroups} ondisplay={showTranslation}/>
-  </div><ReactionsMenu bind:this={reactionsMenu} {likers}/>{/if}
+  </div>{/if}
 </article>
 
 <style>

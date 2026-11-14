@@ -6,7 +6,7 @@ import { graphViewer, graphInfo, graphStatus, networkAuthors, observeEventAuthor
 import { asPost, discussionKinds, commentDraft, hexKey, postDraft, resolveCommunityThreads, topicSlug, type Post } from './posts';
 import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
-import { lightningEndpoint, matchesZapReceipt, receivedTips, signedZapAuthor, type ZapInvoice } from './zaps';
+import { lightningEndpoint, matchesZapReceipt, receivedTips, postTipActor, type PostTipActor, type ZapInvoice } from './zaps';
 import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './write-sync';
 import { cacheOwnEvents, type Change } from './local-writes';
 import { noExpansion, type Expansion } from './discovery/discussions';
@@ -49,6 +49,7 @@ const rawPosts = writable<Post[]>([]), rawComments = writable<Post[]>([]);
 const rawProfiles = writable<Record<string,Profile>>({});
 const rawLikes = writable<Record<string,string[]>>({});
 const rawReceipts = writable<Record<string,NostrEvent[]>>({});
+const reactionViewLimit = 1000;
 const rawHotSignals = writable<HotSignal[]>([]);
 export const follows = writable<string[]>([]), mutes = writable<string[]>([]);
 export const status = derived([configuredRelays, relayConnections], ([urls, connections]) => {
@@ -147,17 +148,17 @@ export const unreadNotificationCount = derived([notificationGroups, unreadNotifi
 export const likes = derived([rawLikes, canSeeAuthor], ([items, allowed]) =>
   Object.fromEntries(Object.entries(items).map(([id, keys]) => [id, keys.filter(allowed)])) as Record<string,string[]>);
 
-const zapAuthors = new WeakMap<NostrEvent, string | null>();
-function zapAuthor(receipt: NostrEvent): string | null {
-  if (zapAuthors.has(receipt)) return zapAuthors.get(receipt)!;
-  const sender = signedZapAuthor(receipt);
-  zapAuthors.set(receipt, sender);
-  return sender;
+const tipActors = new WeakMap<NostrEvent, PostTipActor | null>();
+function cachedTipActor(receipt: NostrEvent): PostTipActor | null {
+  if (tipActors.has(receipt)) return tipActors.get(receipt)!;
+  const actor = postTipActor(receipt);
+  tipActors.set(receipt, actor);
+  return actor;
 }
 export const receipts = derived([rawReceipts, canSeeAuthor], ([items, allowed]) =>
   Object.fromEntries(Object.entries(items).map(([id, events]) => [id, events.filter(event => {
-    const key = zapAuthor(event);
-    return key !== null && allowed(key);
+    const actor = cachedTipActor(event);
+    return actor !== null && (actor.sender === null || allowed(actor.sender));
   })])) as Record<string,NostrEvent[]>);
 export const hotSignals = derived([rawHotSignals,comments,canSeeAuthor], ([signals,replies,allowed]) => [
   ...signals.filter(signal=>allowed(signal.actor)),
@@ -220,7 +221,7 @@ function apply(events:NostrEvent[]) {
   const authors = new Set<string>();
   for (const event of events) {
     if (event.kind === 9735) {
-      const sender = zapAuthor(event);
+      const sender = cachedTipActor(event)?.sender;
       if (sender) authors.add(sender);
     } else if ([0,7,...discussionKinds].includes(event.kind)) authors.add(event.pubkey);
   }
@@ -232,7 +233,8 @@ function apply(events:NostrEvent[]) {
     addInboxEvents(bulkInboxPosts, posts.filter(isBulkAddressed));
     addInboxEvents(inboxReceipts, addressed.filter(e => e.kind === 9735));
   }
-  let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, receiptsDirty = false, hotDirty = false;
+  let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, hotDirty = false;
+  const changedReceipts = new Set<string>();
   const ps = get(rawProfiles), ls = get(rawLikes), rs = get(rawReceipts);
   for (const event of events) {
     if (event.kind === 3 || event.kind === 10000) observeGraphEvent(event);
@@ -275,14 +277,15 @@ function apply(events:NostrEvent[]) {
         const tombstone = deleted.get(event.pubkey+':'+event.id);
         if (tombstone && tombstone.created_at >= event.created_at) continue;
         const entries = reactions.get(target) || new Map<string,NostrEvent>();
-        if (!entries.has(event.id) && entries.size < 1000) {
+        if (!entries.has(event.id) && entries.size < reactionViewLimit) {
           entries.set(event.id,event); reactions.set(target,entries); reactionTargets.set(event.id,target);
           hotDirty = true;
           reactionIds.update(count => count+1);
           if (!ls[target]?.includes(event.pubkey)) { ls[target] = [...(ls[target] || []),event.pubkey]; likesDirty = true; }
         }
-      } else if (event.kind === 9735 && zapAuthor(event) && !rs[target]?.some(receipt => receipt.id === event.id)) {
-        rs[target] = [...(rs[target] || []),event].slice(-160); receiptsDirty = true;
+      } else if (event.kind === 9735 && cachedTipActor(event) && !rs[target]?.some(receipt => receipt.id === event.id)) {
+        rs[target] = [...(rs[target] || []),event];
+        changedReceipts.add(target);
       }
     } else if (!roots.has(event.id) && !replies.has(event.id)) {
       const tombstone = deleted.get(event.pubkey+':'+event.id);
@@ -323,8 +326,23 @@ function apply(events:NostrEvent[]) {
     }
     rawLikes.set(ls);
   }
-  if (receiptsDirty) { trimRecord(rs,600); rawReceipts.set(rs); }
-  if (likesDirty || receiptsDirty || hotDirty) {
+  if (changedReceipts.size) {
+    for (const id of changedReceipts) {
+      rs[id].sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id));
+      if (rs[id].length > reactionViewLimit) rs[id].length = reactionViewLimit;
+    }
+    trimRecord(rs,600);
+    // A few busy posts can use a larger share of the existing receipt budget.
+    const histories = Object.entries(rs);
+    let count = histories.reduce((sum,[,events]) => sum + events.length, 0);
+    for (const [id, events] of histories) {
+      if (count <= 96_000) break;
+      delete rs[id];
+      count -= events.length;
+    }
+    rawReceipts.set(rs);
+  }
+  if (likesDirty || changedReceipts.size || hotDirty) {
     const signals:HotSignal[]=[];
     for(const [target,entries] of reactions) {
       const people=new Map<string,number>();
@@ -332,7 +350,7 @@ function apply(events:NostrEvent[]) {
       for(const [actor,at] of people) signals.push({target,actor,at,kind:'like'});
     }
     for(const [target,events] of Object.entries(rs)) for(const event of events) {
-      const actor=zapAuthor(event);if(actor) signals.push({target,actor,at:event.created_at,kind:'zap'});
+      const actor=cachedTipActor(event)?.sender;if(actor) signals.push({target,actor,at:event.created_at,kind:'zap'});
     }
     rawHotSignals.set(signals);
   }
@@ -808,6 +826,11 @@ export function observeReferences(eventIds:string[], people:string[]) {
   const stopPosts = rawPosts.subscribe(names), stopReplies = rawComments.subscribe(names), stopPolicy = canSeeAuthor.subscribe(names);
   return () => { stopPosts(); stopReplies(); stopPolicy(); stops.forEach(stop=>stop()); };
 }
+export function observePostReactions(id:string) {
+  if (!hexKey.test(id)) return noop;
+  return watch([{kinds:[7], '#e':[id], limit:reactionViewLimit}, {kinds:[9735], '#e':[id], limit:reactionViewLimit}], true);
+}
+
 export function observe(ids:string[]) {
   const visibleIds = [...new Set(ids)].filter(id => hexKey.test(id)).slice(0,60);
   if (!visibleIds.length) return noop;

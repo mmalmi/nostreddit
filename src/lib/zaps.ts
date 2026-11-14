@@ -211,7 +211,10 @@ export async function payWithWallet(zap: ZapInvoice, wallet: Wallet) {
 // A receipt is emitted by a Lightning provider. Attribute it only to a signed
 // zap request whose recipient and post exactly match the receipt. Payment and
 // provider authorization are still independently verified at presentation time.
-export function signedZapAuthor(receipt: NostrEvent): string | null {
+export type PostTipActor = { sender: string | null };
+// A valid anonymous request may contribute to the public total without
+// contributing a key to profiles, graph lookups or Hot ranking.
+export function postTipActor(receipt: NostrEvent): PostTipActor | null {
   if (receipt.kind !== 9735) return null;
   const tag = (event: NostrEvent, key: string) => {
     const tags = event.tags.filter(t => t[0] === key);
@@ -228,8 +231,13 @@ export function signedZapAuthor(receipt: NostrEvent): string | null {
       if (!id || !/^[a-f0-9]{64}$/.test(id) || tag(request,key) !== id) return null;
     }
     if (receipt.tags.some(t => t[0] === 'P') && tag(receipt,'P') !== request.pubkey) return null;
-    return verifyEvent(JSON.parse(JSON.stringify(receipt))) ? request.pubkey : null;
+    if (!verifyEvent(JSON.parse(JSON.stringify(receipt)))) return null;
+    return {sender: request.tags.some(tag => tag[0] === 'anon') ? null : request.pubkey};
   } catch { return null; }
+}
+
+export function signedZapAuthor(receipt: NostrEvent): string | null {
+  return postTipActor(receipt)?.sender ?? null;
 }
 
 export function matchesZapReceipt(event: NostrEvent, zap: ZapInvoice) {
@@ -302,15 +310,51 @@ export async function receivedTips(recipient: string, endpoint: string | null, r
     const targetId = event.tags.find(tag => tag[0] === 'e')?.[1]
     if (targetId !== undefined && !/^[a-f0-9]{64}$/.test(targetId)) continue
     const paid = checkedReceipt(event, recipient, targetId, provider, endpoint)
-    if (!paid || payments.has(paid.paymentHash)) continue
-    payments.set(paid.paymentHash, {event, ...paid})
+    if (!paid) continue
+    // A provider can issue several receipts for one payment. A later copy
+    // must not make an old payment recent or change its relative ordering.
+    const previous = payments.get(paid.paymentHash)?.event
+    if (!previous || event.created_at < previous.created_at || (event.created_at === previous.created_at && event.id < previous.id)) {
+      payments.set(paid.paymentHash, {event, ...paid})
+    }
   }
   return [...payments.values()]
 }
 
-// Resolve the authorized signer once per endpoint and verify each immutable event once per target.
+export type PostTipGroup = {sender: string | null; millisats: number; count: number; latest: number}
+export type PostTipSummary = {status: 'ready' | 'unavailable'; totalMillisats: number; groups: PostTipGroup[]}
+
+export async function postTipSummary(target: NostrEvent, profile: ZapProfile, receipts: readonly NostrEvent[]): Promise<PostTipSummary> {
+  const candidates = receipts.filter(event => event.tags.some(tag => tag[0] === 'e' && tag[1] === target.id))
+  if (!candidates.length) return {status: 'ready', totalMillisats: 0, groups: []}
+  const endpoint = lightningEndpoint(profile)
+  if (!endpoint) return {status: 'unavailable', totalMillisats: 0, groups: []}
+  let payments
+  try {
+    payments = await receivedTips(target.pubkey, endpoint, candidates)
+  } catch {
+    return {status: 'unavailable', totalMillisats: 0, groups: []}
+  }
+  const bySender = new Map<string | null, PostTipGroup>()
+  let totalMillisats = 0
+  for (const {sender, millisats, event} of payments) {
+    const group = bySender.get(sender) ?? {sender, millisats: 0, count: 0, latest: event.created_at}
+    group.millisats += millisats
+    group.count++
+    group.latest = Math.max(group.latest, event.created_at)
+    bySender.set(sender, group)
+    totalMillisats += millisats
+  }
+  const groups = [...bySender.values()].sort((a,b) => b.millisats - a.millisats || b.latest - a.latest
+    || (a.sender ?? '').localeCompare(b.sender ?? ''))
+  return {status: 'ready', totalMillisats, groups}
+}
+
 export async function receivedZapSats(target: NostrEvent, profile: ZapProfile, receipts: readonly NostrEvent[]) {
-  const payments = await receivedTips(target.pubkey, lightningEndpoint(profile), receipts.filter(event =>
-    event.tags.some(tag => tag[0] === 'e' && tag[1] === target.id)))
-  return payments.reduce((sum, payment) => sum + payment.millisats, 0) / 1000
+  const result = await postTipSummary(target, profile, receipts)
+  if (result.status === 'unavailable') {
+    if (!lightningEndpoint(profile)) return 0
+    throw new Error('The tip receipts could not be verified.')
+  }
+  return result.totalMillisats / 1000
 }

@@ -166,6 +166,8 @@
     alertTimer: ReturnType<typeof setTimeout>,
     busy = new Set<string>(),
     zapPost: Post | undefined;
+  let reactionView: {post:Post; tab:'upvotes'|'tips'} | undefined;
+  let pressedBackdrop = false;
   let saved = readLocal<Post[]>('saved', []),
     sorting = readLocal<string>('sort', 'Hot');
   let showPreviews = readLocal<boolean>('showPreviews', true);
@@ -283,7 +285,13 @@
     if (a.dataset.historyBack) { history.back(); return; }
     go(a.pathname + a.search);
   }
+  function onBackdrop(event: MouseEvent) {
+    if (event.target !== dialog) return false;
+    const {left, right, top, bottom} = dialog.getBoundingClientRect();
+    return event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom;
+  }
   function showModal(name: string) {
+    pressedBackdrop = false;
     if (!modal) dialogPrev = document.activeElement as HTMLElement;
     modal = name;
     menu = false;
@@ -301,6 +309,7 @@
     showAccountAfter = '';
     modal = '';
     zapPost = undefined;
+    reactionView = undefined;
     dialog?.close();
     tick().then(() => dialogPrev?.focus());
     if (removedFeed && active) go('/');
@@ -562,6 +571,11 @@
       } catch {
         window.prompt('Copy post link', url);
       }
+      return;
+    }
+    if (kind === 'upvotes' || kind === 'tips') {
+      reactionView = {post:p, tab:kind};
+      showModal('reactions');
       return;
     }
     if (kind === 'zap') {
@@ -1071,7 +1085,7 @@
     bind:this={dialog}
     class="modal"
     class:post-modal={modal==='compose'}
-    aria-label={modal === 'feeds' ? 'Customize feeds' : modal === 'account'
+    aria-label={modal === 'reactions' ? 'Reactions' : modal === 'feeds' ? 'Customize feeds' : modal === 'account'
       ? 'Nostr profile'
       : modal === 'compose'
         ? 'Create post'
@@ -1082,23 +1096,23 @@
       e.preventDefault();
       closeModal();
     }}
-    onclick={(e) => {
-      if (e.target === dialog) {
-        const r = dialog.getBoundingClientRect();
-        if (
-          e.clientX < r.left ||
-          e.clientX > r.right ||
-          e.clientY < r.top ||
-          e.clientY > r.bottom
-        )
-          closeModal();
-      }
+    onpointerdown={event => { pressedBackdrop = onBackdrop(event); }}
+    onpointercancel={() => { pressedBackdrop = false; }}
+    onclick={event => {
+      if (pressedBackdrop && onBackdrop(event)) closeModal();
+      pressedBackdrop = false;
     }}
   >
     <button class="modal-close" aria-label="Close dialog" onclick={closeModal}
       ><Icon name="close" size={18} /></button
     >
-    {#if modal === 'feeds'}
+    {#if modal === 'reactions' && reactionView}
+      {#await import('./components/PostReactions.svelte')}
+        <p class="state loading-state" role="status">Loading…</p>
+      {:then {default: PostReactions}}
+        <PostReactions post={reactionView.post} initialTab={reactionView.tab}/>
+      {:catch}{@render componentError()}{/await}
+    {:else if modal === 'feeds'}
       {#await import('./components/FeedManager.svelte')}
         <p class="state loading-state" role="status">Loading…</p>
       {:then {default: FeedManager}}

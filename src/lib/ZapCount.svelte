@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { NostrEvent } from 'nostr-tools/pure'
-  import { receivedZapSats, type ZapProfile } from './zaps'
+  import { postTipSummary, type ZapProfile } from './zaps'
   import TipAmount from '../components/TipAmount.svelte'
   let { event, profile, receipts }: { event: NostrEvent; profile: ZapProfile; receipts: readonly NostrEvent[] } = $props()
   let sats = $state(0)
@@ -16,7 +16,7 @@
     let active = true
     sats = 0
     if (visible && receipts.length) {
-      void receivedZapSats(event, profile, receipts).then(amount => { if (active) sats = amount }).catch(() => {})
+      void postTipSummary(event, profile, receipts).then(result => { if (active) sats = result.totalMillisats / 1000 })
     }
     return () => { active = false }
   })

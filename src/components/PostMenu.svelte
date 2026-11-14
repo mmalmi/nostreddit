@@ -96,6 +96,7 @@
     <button role="menuitem" onclick={() => choose('copy-link')}><Icon name="link" size={17}/>Copy post link</button>
     <button role="menuitem" onclick={() => copyFromMenu(noteEncode(post.id),'Note ID')}><Icon name="copy" size={17}/>Copy note ID</button>
     <button role="menuitem" onclick={() => choose('save')}><Icon name="save" size={17}/>{saved ? 'Remove bookmark' : 'Save post'}</button>
+    <button role="menuitem" onclick={() => choose('upvotes')}><Icon name="wave" size={17}/>View reactions</button>
     <div class="divider"></div>
     <button role="menuitem" onclick={showRaw}><Icon name="tech" size={17}/>View raw event</button>
     <button role="menuitem" onclick={() => copyFromMenu(eventJSON(),'Event JSON')}><Icon name="copy" size={17}/>Copy event JSON</button>
