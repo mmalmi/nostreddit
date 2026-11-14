@@ -81,15 +81,17 @@ export function matchesTopic(post:Post, topic:string):boolean {
   return postTopics(post).has(topic);
 }
 
-export function postDraft(input: {topic:string; title:string; body:string; url?:string}) {
-  const topic = topicSlug(input.topic);
-  const title = input.title.trim(), body = input.body.trim(), rawUrl = input.url?.trim() || '';
-  if (!topic) throw new Error('Use a topic of 1–48 letters, numbers, hyphens, or underscores.');
-  if (!title || title.length > 300) throw new Error('Give your post a title of up to 300 characters.');
+export function postDraft(input: {topic?:string; title?:string; body:string; url?:string}) {
+  const rawTopic = input.topic?.trim().replace(/^[tr]\//i,'') || '', topic = topicSlug(rawTopic);
+  const title = input.title?.trim() || '', body = input.body.trim(), rawUrl = input.url?.trim() || '';
+  if (rawTopic && !topic) throw new Error('Use a topic of 1–48 letters, numbers, hyphens, or underscores.');
+  if (title.length > 300) throw new Error('Keep the title under 300 characters.');
   if (body.length > 20000) throw new Error('Keep the post under 20,000 characters.');
   const link = postLink(rawUrl);
   if (rawUrl && !link) throw new Error('Enter a web or Hashtree link.');
-  const tags = [...topicTags(topic,title+'\n'+body), ['subject',title]];
+  if (!title && !body && !link) throw new Error('Write something to post.');
+  const tags = topicTags(topic,title+'\n'+body);
+  if (title) tags.push(['subject',title]);
   if (link) tags.push(['r',link]);
   // Title, body and link must be readable even in clients that ignore subject/r tags.
   return {kind:1, tags, content:[title, body, link && !body.includes(rawUrl) ? link : ''].filter(Boolean).join('\n\n')};

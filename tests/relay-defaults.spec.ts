@@ -79,8 +79,7 @@ for (const scenario of cases) test(`relay defaults preserve ${scenario.name} set
     if (scenario.name === 'absent') {
       await page.getByRole('button', { name: 'Create post', exact: true }).first().click();
       await page.getByRole('combobox', { name: 'Topic', exact: true }).fill('nostr');
-      await page.getByLabel('Title', { exact: true }).fill('Loopback relay routing fixture');
-      await page.getByLabel(/Body/).fill('This event stays inside the isolated test relay.');
+      await page.getByLabel('Post',{exact:true}).fill('Loopback relay routing fixture'+'\n\n'+'This event stays inside the isolated test relay.');
       await page.getByRole('button', { name: 'Publish post', exact: true }).click();
       await expect.poll(() => frames.filter(row => row.frame[0] === 'EVENT').length).toBeGreaterThanOrEqual(shipped.length);
       const published = frames.filter(row => row.frame[0] === 'EVENT');

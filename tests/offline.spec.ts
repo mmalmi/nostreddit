@@ -87,7 +87,7 @@ test('offline posts, replies and reaction changes survive reload and reach the r
   const reply = 'The tide turned before the ferry arrived.';
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
   await page.getByLabel('Topic',{exact:true}).fill('nostr');
-  await page.getByLabel('Title',{exact:true}).fill(title);
+  await page.getByLabel('Post',{exact:true}).fill(title);
   await page.getByRole('button',{name:'Publish post',exact:true}).click();
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
   const permalink = page.url();

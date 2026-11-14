@@ -75,8 +75,7 @@ test('an established reader and two new friends connect and discover each other 
       const title=`${name}'s first post`;
       await reader.getByRole('button',{name:'Create post',exact:true}).first().click();
       await reader.getByRole('combobox',{name:'Topic',exact:true}).fill('new-friends');
-      await reader.getByLabel('Title',{exact:true}).fill(title);
-      await reader.getByLabel(/Body/).fill('Hello friends, I made it here.');
+      await reader.getByLabel('Post',{exact:true}).fill(title+'\n\n'+'Hello friends, I made it here.');
       await reader.getByRole('button',{name:'Publish post',exact:true}).click();
       await expect(reader.getByRole('heading',{name:title,exact:true})).toBeVisible();
       friends.push({page:reader,name,npub,title});

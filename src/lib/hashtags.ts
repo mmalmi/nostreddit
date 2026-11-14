@@ -32,7 +32,7 @@ export function contentTopics(text:string) {
 }
 
 export function topicTags(topic:string, text:string) {
-  const topics=new Set([topic,...contentTopics(text)]);
+  const topics=new Set([topic,...contentTopics(text)].filter(Boolean));
   if (topics.size>128) throw new Error('Use up to 128 topics in one post or reply.');
   return [...topics].map(topic=>['t',topic]);
 }

@@ -50,6 +50,7 @@
     (c) => (comment ? c.parent : c.root) === post.id,
   ).length;
   $: topic = contextTopic && matchesTopic(post,contextTopic) ? contextTopic : post.topic;
+  $: tagged = matchesTopic(post,topic);
   $: permalink = postUrl(post.id, contextTopic && topic===contextTopic ? topic : undefined);
   $: body = post.body || '';
   $: link = hasTreeCapability(post.url) ? '' : safeURL(post.url);
@@ -103,9 +104,9 @@
 
 <article data-translation-item class="post-card" class:detail={full} class:comment-card={comment}
   data-post-href={!full && !comment && !preview ? permalink : undefined}>
-  {#if preview}<div class="byline"><span class="topic-link"><TopicIcon slug={topic} small />t/{topic}</span><span class="sep">·</span><span>{name}</span><span class="sep">·</span><span>Draft</span></div>
+  {#if preview}<div class="byline">{#if tagged}<span class="topic-link"><TopicIcon slug={topic} small />t/{topic}</span><span class="sep">·</span>{/if}<span>{name}</span><span class="sep">·</span><span>Draft</span></div>
   {:else}<div class="byline">
-    {#if !comment}<a
+    {#if !comment && tagged}<a
         class="topic-link"
         href={topicPath(topic)}
         ><TopicIcon slug={topic} small />t/{topic}</a

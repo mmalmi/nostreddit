@@ -30,8 +30,7 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
   await page.getByRole('button',{name:'Create profile',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Create a post',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);
-  await page.getByLabel('Title', {exact:true}).fill('Where do shorebirds shelter?');
-  await page.getByLabel(/Body/).fill('I saw a flock just before the storm.');
+  await page.getByLabel('Post', {exact:true}).fill('Where do shorebirds shelter?\n\nI saw a flock just before the storm.');
   await page.getByRole('button',{name:'Publish post'}).click();
   await expect(page.getByRole('heading',{name:'Where do shorebirds shelter?'})).toBeVisible();
   await expect(page).toHaveURL(/\/post\/note1[023456789acdefghjklmnpqrstuvwxyz]{58}$/);
@@ -71,7 +70,7 @@ test('a relay-rejected post stays local and its delivery can be retried from Set
   await page.getByRole('button',{name:'Create post',exact:true}).first().click();
   await page.getByRole('button',{name:'Create profile',exact:true}).click();
   await page.getByLabel('Topic',{exact:true}).fill('nostr');
-  await page.getByLabel('Title',{exact:true}).fill(title);
+  await page.getByLabel('Post',{exact:true}).fill(title);
   await page.getByRole('button',{name:'Publish post'}).click();
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
   const permalink = page.url();

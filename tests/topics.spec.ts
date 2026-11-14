@@ -19,7 +19,7 @@ test('a guest starts an open topic offline, publishes its first post and another
   await expect(page.getByLabel('Display name',{exact:true})).not.toHaveValue('');
   await page.getByRole('button',{name:'Create profile',exact:true}).click();
   await expect(page.getByRole('combobox',{name:'Topic',exact:true})).toHaveValue('quiet-gardens');
-  await page.getByLabel('Title',{exact:true}).fill('What are you growing this winter?');
+  await page.getByLabel('Post',{exact:true}).fill('What are you growing this winter?');
   await page.screenshot({path:info.outputPath('topic-composer-mobile.png')});
   await page.getByRole('button',{name:'Publish post',exact:true}).click();
   await expect(page.getByRole('heading',{name:'What are you growing this winter?',exact:true})).toBeVisible();

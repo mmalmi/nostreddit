@@ -33,8 +33,7 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
     const headlineTag='Tides-'+device, bodyTag='Sunrise-'+device, replyTag='Waterline-'+device;
     const title='Watching #'+headlineTag, body='Meet at the inlet for #'+bodyTag+'. #MOSTRO #'+bodyTag;
     await expect(page.getByRole('dialog').getByRole('combobox')).toHaveValue('mostro');
-    await page.getByLabel('Title',{exact:true}).fill(title);
-    await page.getByLabel(/Body/).fill(body);
+    await page.getByLabel('Post',{exact:true}).fill(title+'\n\n'+body);
     await page.getByRole('button',{name:'Publish post',exact:true}).click();
     await expect(page.getByRole('heading',{name:title})).toBeVisible();
     await expect(page).toHaveURL(/\/post\/note1[0-9a-z]+(?:[?#].*)?$/);

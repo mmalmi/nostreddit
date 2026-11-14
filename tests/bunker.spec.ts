@@ -47,7 +47,7 @@ for (const width of [1440,390]) test(`bunker publishes, resumes after reload and
     await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).click();
     const editor = page.getByRole('dialog',{name:'Create post',exact:true});
     const title = `Bunker field notes ${width}`;
-    await editor.getByLabel('Title',{exact:true}).fill(title);
+    await editor.getByLabel('Post',{exact:true}).fill(title);
     await editor.getByRole('button',{name:'Publish post',exact:true}).click();
     await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
     await page.reload();
@@ -104,7 +104,7 @@ test('signer approval links require a click and work above the post editor', asy
     await expect(page.getByRole('dialog',{name:'Nostr profile'})).toHaveCount(0);
     await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).click();
     const editor = page.getByRole('dialog',{name:'Create post',exact:true});
-    await editor.getByLabel('Title',{exact:true}).fill('Explicit approval');
+    await editor.getByLabel('Post',{exact:true}).fill('Explicit approval');
     await editor.getByRole('button',{name:'Publish post',exact:true}).click();
     const approval = page.getByRole('dialog',{name:'Signer approval',exact:true});
     await expect(approval.getByRole('link',{name:'Approve in signer'})).toBeVisible();
@@ -129,10 +129,10 @@ test('denied pairing and altered signed posts are rejected', async ({page}) => {
     signer.control.mutate = true;
     await page.getByRole('main').getByRole('button',{name:'Create a post',exact:true}).click();
     const editor = page.getByRole('dialog',{name:'Create post',exact:true});
-    await editor.getByLabel('Title',{exact:true}).fill('Must remain unchanged');
+    await editor.getByLabel('Post',{exact:true}).fill('Must remain unchanged');
     await editor.getByRole('button',{name:'Publish post',exact:true}).click();
     await expect(editor.getByRole('alert')).toContainText('Check your signer');
-    await expect(editor.getByLabel('Title',{exact:true})).toHaveValue('Must remain unchanged');
+    await expect(editor.getByLabel('Post',{exact:true})).toHaveValue('Must remain unchanged');
     await expect.poll(() => signer.connections).toBe(0);
     signer.control.mutate = false;
     await editor.getByRole('button',{name:'Publish post',exact:true}).click();
