@@ -21,10 +21,12 @@ for (const [device,width,height] of [['desktop',1440,1000],['mobile',390,844]] a
     const prose='This is a long unstructured note about walking through the city. '.repeat(12)+'The final sentence must remain visible.';
     const long=sign(prose,[['t',topic]]);
     const only=sign(urls.join('\n'),[['t',topic]]);
+    const afterPhoto = sign(urls[0] + '\n\nNight market opens today.\n* Evening hours\n\nhttps://market.example.test',
+      [['t',topic], ['imeta','url '+urls[0],'alt Market entrance']]);
     const relay=new WebSocket(process.env.NOSTREDDIT_TEST_RELAY_URL || 'ws://127.0.0.1:43164');
     try {
       await once(relay,'open');
-      for (const event of [album,long,only]) {
+      for (const event of [album,long,only,afterPhoto]) {
         const ack=once(relay,'message');relay.send(JSON.stringify(['EVENT',event]));
         expect(JSON.parse(String((await ack)[0])).slice(0,3)).toEqual(['OK',event.id,true]);
       }
@@ -113,9 +115,22 @@ for (const [device,width,height] of [['desktop',1440,1000],['mobile',390,844]] a
     await expect(card.locator('h2')).toHaveCount(0);
     await expect(card.locator('.note-text')).toHaveText(prose);
     await page.goto(postUrl(only.id));
-    await expect(card.locator('h2')).toHaveText('Photo in t/'+topic);
+    await expect(card.locator('h2')).toHaveCount(0);
     await expect(card.locator('.image-link')).toHaveCount(12);
     await expect(card.locator('.note-text')).toHaveCount(0);
+    await page.goto('/t/'+topic);
+    const untitled = page.locator('[data-route-active="true"] article[data-post-href]').filter({
+      has: page.getByRole('link',{name:/Open post by/}),
+    });
+    await untitled.getByRole('link',{name:/Open post by/}).click();
+    await expect(page).toHaveURL(new RegExp(postUrl(only.id).split('/').at(-1)!));
+    await page.goto(postUrl(afterPhoto.id));
+    await expect(card.getByRole('heading',{name:'Night market opens today.',exact:true})).toBeVisible();
+    await expect(card.getByText('Night market opens today.',{exact:true})).toHaveCount(1);
+    await expect(card.locator('.note-text')).toContainText('* Evening hours');
+    await expect(card.locator('.note-text').getByRole('link')).toHaveAttribute('href',/^https:\/\/market.example.test/);
+    await expect(card.locator('.image-link')).toHaveCount(1);
+    await page.screenshot({path:info.outputPath('caption-after-first-image-'+device+'.png')});
     expect(new URL(baseURL!).hostname).toBe('127.0.0.1');
   });
 }

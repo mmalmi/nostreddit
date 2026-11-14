@@ -4,6 +4,7 @@ import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type Nostr
 import { WebSocket } from 'ws'
 import { authorKey, bolt11, metadata, preimage, providerKey, target } from './helpers/zapInvoice'
 import { profileUrl } from '../src/lib/profile-url'
+import { postUrl } from '../src/lib/post-url'
 const rateURL = 'https://api.coinbase.com/v2/exchange-rates?currency=BTC'
 import { allowFixtureAuthors } from './helpers/graphPreferences';
 
@@ -168,4 +169,67 @@ test('inbox shows a verified tip once, in the chosen currency, and links its sen
   await expect(tips.first().getByRole('link', {name:'Harbor visitor'})).toBeVisible()
   await expect(tips.first().getByText('Unread')).toHaveCount(0)
   await expect(feed.getByText('Ignored sender')).toHaveCount(0)
+})
+
+test('five tips weeks apart share a post notification, total, discussion link and unseen badge', async ({ page }, info) => {
+  const owner=generateSecretKey(), pubkey=getPublicKey(owner), now=Math.floor(Date.now()/1000)-10
+  const sign=(key:Uint8Array,kind:number,content:string,tags:string[][],at=now) =>
+    finalizeEvent({kind,content,tags,created_at:at},key)
+  const names=['River','Jetty','Reed','Cove','Bay'], senders=names.map(()=>generateSecretKey())
+  const post=sign(owner,1,'A launch at the harbor',[]), other=sign(owner,1,'Harbor birds',[])
+  const tip=(sender:Uint8Array, id:string, sats:number, daysAgo:number, anonymous=false) => {
+    const at=now-daysAgo*86400
+    const tags=[['p',pubkey],['e',id],['relays','wss://relay.example'],['amount',String(1000*sats)]]
+    if (anonymous) tags.push(['anon'])
+    const request=sign(sender,9734,'',tags,at)
+    const description=JSON.stringify(request)
+    return sign(providerKey,9735,'',[['e',id],['p',pubkey],['P',request.pubkey],['description',description],
+      ['bolt11',bolt11(description,{sats,proof:generateSecretKey()})]],at)
+  }
+  const payments=[1980,20,400,480,40].map((sats,i)=>tip(senders[i],post.id,sats,[2,2,17,24,26][i],i===4))
+  await publish([post,other,sign(owner,0,JSON.stringify({name:'Harbor keeper',lud16:'keeper@lightning.example'}),[]),
+    ...names.map((name,i)=>sign(senders[i],0,JSON.stringify({name}),[])),...payments,
+    finalizeEvent({...payments[0],created_at:now},providerKey),tip(senders[0],other.id,100,1),
+    sign(senders[0],7,'+',[['e',post.id],['p',pubkey]])])
+  await page.route('https://lightning.example/**', route=>route.fulfill({json:metadata}))
+  await page.route(rateURL, route=>route.fulfill({json:{data:{currency:'BTC',rates:{GBP:'50000',BTC:'1'}}}}))
+  await page.addInitScript(key=>{
+    localStorage.setItem('nostreddit.account.v1',JSON.stringify({pubkey:key,method:'extension'}))
+    localStorage.setItem('nostreddit.ui.tipCurrency',JSON.stringify('GBP'))
+  },pubkey)
+  await page.goto('/settings/appearance')
+  const badge=page.locator('[data-route-active="true"] .nav-row[href="/notifications"] .unread-count')
+  await expect(badge).toHaveText('3')
+  await page.goto(postUrl(post.id))
+  await expect(page.getByRole('heading',{name:post.content})).toBeVisible()
+  await expect(badge).toHaveText('1')
+  await page.goto('/notifications')
+  const inbox=page.getByRole('region',{name:'Recent notifications'})
+  const group=inbox.locator('article').filter({hasText:'5 tips on your post'})
+  await expect(inbox.locator('article')).toHaveCount(3)
+  await expect(group.getByText('£1.46',{exact:true})).toBeVisible()
+  await expect(group.getByRole('link',{name:post.content})).toHaveAttribute('href',postUrl(post.id))
+  await expect(group.getByRole('listitem')).toHaveCount(0)
+  await group.getByText('View tips',{exact:true}).click()
+  await expect(group.getByRole('listitem')).toHaveCount(5)
+  for (const [i,name] of names.slice(0,4).entries()) {
+    await expect(group.getByRole('link',{name,exact:true})).toHaveAttribute('href',profileUrl(getPublicKey(senders[i])))
+  }
+  const anon=group.getByRole('listitem').filter({hasText:'Anonymous'})
+  await expect(anon).toContainText('£0.02')
+  await expect(anon.getByRole('link')).toHaveCount(0)
+  for (const payment of payments) await expect(group.locator('li time[datetime="'+new Date(payment.created_at*1000).toISOString()+'"]').first()).toBeVisible()
+  await page.screenshot({path:info.outputPath('grouped-post-tips.png')})
+  await expect(badge).toHaveCount(0)
+  await page.goto('/settings/appearance')
+  await publish([tip(senders[0],post.id,200,0)])
+  await expect(badge).toHaveText('1')
+  await page.goto('/notifications')
+  await expect(inbox.locator('article').filter({hasText:'6 tips on your post'})).toContainText('£1.56')
+  await expect(badge).toHaveCount(0)
+  await page.evaluate(()=>localStorage.setItem('nostreddit.relays.v1',''))
+  await page.route('https://lightning.example/**', route=>route.abort())
+  await page.reload()
+  await expect(inbox.locator('article').filter({hasText:'6 tips on your post'})).toContainText('£1.56')
+  await expect(badge).toHaveCount(0)
 })

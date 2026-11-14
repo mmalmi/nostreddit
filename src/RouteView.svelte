@@ -58,7 +58,7 @@
   import Card from './components/Card.svelte';
   import { topicPath, topicSlug } from './lib/hashtags';
   import { seenTopics } from './lib/topic-catalog-store';
-  import { matchesTopic, mentionsTopic } from './lib/posts';
+  import { asPost, matchesTopic, mentionsTopic } from './lib/posts';
   import { isEventId, postIdFromPath, postUrl } from './lib/post-url';
   import { profileUrl, profileKeyFromPath, type Relationship } from './lib/profile-url';
   import { hotPreferences } from './lib/hot-preferences';
@@ -178,7 +178,14 @@
     zapPost: Post | undefined;
   let reactionView: {post:Post; tab:'upvotes'|'tips'} | undefined;
   let pressedBackdrop = false;
-  let saved = readLocal<Post[]>('saved', []),
+  function savedPosts() {
+    return readLocal<Post[]>('saved', []).map(post => {
+      const parsed = post.event && asPost(post.event);
+      return parsed && (post.title !== parsed.title || post.body !== parsed.body)
+        ? {...post, title:parsed.title, body:parsed.body} : post;
+    });
+  }
+  let saved = savedPosts(),
     sorting = readLocal<string>('sort', 'Hot');
   let showPreviews = readLocal<boolean>('showPreviews', true);
   let limit = 24,
@@ -443,7 +450,7 @@
     searchRun++; searching = false;
   }
   $: if (active && mounted) {
-    saved = readLocal<Post[]>('saved', []);
+    saved = savedPosts();
     showPreviews = readLocal<boolean>('showPreviews', true);
   }
   $: pageVisible = active && documentVisible;

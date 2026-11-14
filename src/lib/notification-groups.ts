@@ -19,6 +19,7 @@ export interface NotificationGroup {
   events: InboxEvent[];
   authors: string[];
   targets: string[];
+  tipMillisats: number;
 }
 
 export function groupNotifications(events: readonly InboxEvent[]): NotificationGroup[] {
@@ -26,7 +27,7 @@ export function groupNotifications(events: readonly InboxEvent[]): NotificationG
   // together if moving the sender out of them would only add another row.
   const actorTargets = new Map<string, Set<string>>();
   const targetActors = new Map<string, Set<string>>();
-  const byKey = new Map<string, {latest: InboxEvent; events: InboxEvent[]; authors: Set<string>; targets: Set<string>}>();
+  const byKey = new Map<string, {latest: InboxEvent; events: InboxEvent[]; authors: Set<string>; targets: Set<string>; tipMillisats:number}>();
   const ordered = [...events].sort((a,b) => b.created_at - a.created_at || a.id.localeCompare(b.id));
   const entries = ordered.map(event => {
     const target = notificationPostId(event);
@@ -47,12 +48,14 @@ export function groupNotifications(events: readonly InboxEvent[]): NotificationG
   for (const {event, target, actorDay} of entries) {
     let key = event.id;
     if (event.kind === 7 && target) key = bursts.has(actorDay) ? 'actor:' + actorDay : 'post:' + target;
+    if (event.kind === 9735 && event.tip && target) key = 'tip:post:' + target;
     let row = byKey.get(key);
     if (!row) {
-      row = {latest:event, events:[], authors:new Set(), targets:new Set()};
+      row = {latest:event, events:[], authors:new Set(), targets:new Set(), tipMillisats:0};
       byKey.set(key, row);
     }
     row.events.push(event);
+    row.tipMillisats += event.tip?.millisats ?? 0;
     const author = notificationAuthor(event);
     if (author) row.authors.add(author);
     if (target) row.targets.add(target);

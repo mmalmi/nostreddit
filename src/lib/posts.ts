@@ -3,6 +3,7 @@ import type { NostrEvent } from 'nostr-pubsub';
 import { contentTopics, topicSlug, topicTags } from './hashtags';
 export { topicSlug } from './hashtags';
 import { hasTreeCapability, parseTreeAttachment } from './tree-embeds';
+import { collectMedia, stripMediaUrls } from './media';
 
 export const discussionKinds = [1,20,21,22,1111];
 export interface Post {
@@ -44,12 +45,19 @@ export function asPost(event: NostrEvent): Post | undefined {
   const subject = (tag('subject') || tag('title')).trim();
   const mediaOnly = [20,21,22].includes(event.kind) && event.tags.some(t=>t[0]==='imeta' && t.some(v=>v.startsWith('url ')));
   if (!content && !subject && !mediaOnly) return;
-  const firstLine = content.split('\n', 1)[0].trim();
-  const title = subject || (firstLine.length > 160 ? firstLine.slice(0, 157) + '…' : firstLine) || (event.kind===20 ? 'Photo' : 'Video');
+  // Media URLs can precede a caption, sharing a line or standing in their
+  // own paragraph. The signed content still supplies the original embeds.
+  let prose = content;
+  if (!subject && /https?:\/\//i.test(content.split('\n', 1)[0])) {
+    const media = collectMedia(content, event.tags, '', event.kind);
+    if (media.length) prose = stripMediaUrls(content, media.map(item => item.url));
+  }
+  const firstLine = prose.split('\n', 1)[0].trim();
+  const title = subject || (firstLine.length > 160 ? firstLine.slice(0, 157) + '…' : firstLine);
   const url = postLink(tag('r')) || httpUrl(content.match(/https?:\/\/[^\s<>"\]]+/)?.[0]?.replace(/[.,;!?)]$/, ''));
-  let body = content;
-  if (!parent && content.startsWith(title) && (content === title || /^\s*\n/.test(content.slice(title.length)))) {
-    body = content.slice(title.length).trim();
+  let body = prose;
+  if (title && !parent && prose.startsWith(title) && (prose === title || /^\s*\n/.test(prose.slice(title.length)))) {
+    body = prose.slice(title.length).trim();
   }
   return {event, id:event.id, pubkey:event.pubkey, created_at:event.created_at, title, body, topic, url, root, parent};
 }

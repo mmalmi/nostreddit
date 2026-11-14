@@ -1,13 +1,14 @@
 <script lang="ts">
   import { postUrl } from '../lib/post-url';
   import { profileUrl } from '../lib/profile-url';
-  import { account, profiles, notificationGroups, observeNotificationAuthors, unreadNotificationIds } from '../lib/network';
+  import { account, profiles, notificationGroups, observeNotificationAuthors, observeNotificationPosts, unreadNotificationIds } from '../lib/network';
   import { displayName, age } from '../lib/ui';
   import type { NostrEvent } from 'nostr-pubsub';
   import { notificationReadId } from '../lib/notification-groups';
   import { referencePosts } from '../lib/note-references';
   import { seeNotification } from '../lib/notification-visibility';
   import NotificationPosts from './NotificationPosts.svelte';
+  import NotificationTips from './NotificationTips.svelte';
   import TipAmount from './TipAmount.svelte';
   import Icon from './Icon.svelte';
   import ProxyAvatar from './ProxyAvatar.svelte';
@@ -16,6 +17,10 @@
   let { active = true, onSignIn }: { active?: boolean; onSignIn: () => void } = $props();
   $effect(() => {
     if (active && $account) return observeNotificationAuthors();
+  });
+  let tippedPostIds = $derived($notificationGroups.filter(group => group.latest.tip).flatMap(group => group.targets).sort().join(','));
+  $effect(() => {
+    if (active && tippedPostIds) return observeNotificationPosts(tippedPostIds.split(','));
   });
   function detail(event: NostrEvent) {
     const reply = event.tags.some(t => t[0] === 'e' && !['mention'].includes(t[3])) || event.kind === 1111;
@@ -49,22 +54,30 @@
       {@const event = group.latest}
       {@const item = detail(event)}
       {@const id = group.targets[0]}
+      {@const groupedTips = event.tip && group.events.length > 1}
       {@const unread = group.events.map(notificationReadId).filter(id => $unreadNotificationIds.has(id))}
       <article class="activity">
         <span class="activity-icon"><Icon name={item.icon} size={18}/></span>
         <div class="activity-body">
           <div use:seeNotification={{owner:$account.pubkey, active, unread}}>
-            {#if !group.authors.length}Someone{/if}
-            {#each group.authors.slice(0,2) as author, index (author)}
-              {#if index}{group.authors.length > 2 ? ', ' : ' and '}{/if}
-              {@render authorLink(author)}{/each}
-            {#if group.authors.length > 2} and {group.authors.length - 2} {group.authors.length === 3 ? 'other' : 'others'}{/if}
-            {event.kind === 7 && id
-              ? 'reacted to ' + (group.targets.length > 1 ? group.targets.length + ' posts' : $referencePosts.get(id)?.pubkey === $account.pubkey ? 'your post' : 'a post')
-              : item.title}{#if event.tip} · <TipAmount sats={event.tip.millisats / 1000} {active}/>{/if}
+            {#if groupedTips}
+              <strong>{group.events.length} tips</strong> on your post
+            {:else}
+              {#if !group.authors.length}Someone{/if}
+              {#each group.authors.slice(0,2) as author, index (author)}
+                {#if index}{group.authors.length > 2 ? ', ' : ' and '}{/if}
+                {@render authorLink(author)}{/each}
+              {#if group.authors.length > 2} and {group.authors.length - 2} {group.authors.length === 3 ? 'other' : 'others'}{/if}
+              {event.kind === 7 && id
+                ? 'reacted to ' + (group.targets.length > 1 ? group.targets.length + ' posts' : $referencePosts.get(id)?.pubkey === $account.pubkey ? 'your post' : 'a post')
+                : item.title}
+            {/if}
+            {#if event.tip} · <TipAmount sats={group.tipMillisats / 1000} {active}/>{/if}
           </div>
           {#if unread.length}<span class="unread">Unread</span>{/if}
-          {#if group.authors.length > 2}
+          {#if groupedTips}
+            <NotificationTips events={group.events} {active} {authorLink}/>
+          {:else if group.authors.length > 2}
             <details class="people">
               <summary>View people</summary>
               {#each group.authors as author (author)}
@@ -75,7 +88,7 @@
           {#if event.kind !== 7 && event.kind !== 9735}<p>{event.content.slice(0,180)}</p>{/if}
           {#if group.targets.length > 1}
             <NotificationPosts targets={group.targets} {active}/>
-          {:else if id}<a class="activity-link" href={postUrl(id)}>Open discussion ↗</a>{/if}
+          {:else if id}<a class="activity-link" href={postUrl(id)}>{(event.tip && $referencePosts.get(id)?.title) || 'Open discussion'} ↗</a>{/if}
         </div><time datetime={new Date(event.created_at*1000).toISOString()}>{age(event.created_at)}</time>
       </article>
     {/each}

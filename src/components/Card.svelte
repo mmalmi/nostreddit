@@ -107,7 +107,7 @@
   $: longProse = autoShortened && strippedHeading.length > 180 && !referenceHeading;
   $: heading = comment || (full && (post.parent || longProse)) ? '' :
     strippedHeading === link && link ? new URL(link).hostname :
-    strippedHeading || (trees.length ? trees[0].name : media.length ? (media[0].kind==='image' ? 'Photo' : media[0].kind==='audio' ? 'Audio' : 'Video')+' in t/'+topic : chosenHeading);
+    strippedHeading || (trees.length ? trees[0].name : '');
   $: remainder = (titleFromBody || (!comment && autoShortened && !(full && longProse))) ? body.split('\n').slice(1).join('\n').trim() : body;
   $: excerpt = post.parent && !full && !comment && remainder.startsWith(chosenHeading) ? remainder.slice(chosenHeading.length).trim() : remainder;
   $: cleanBody = renderEmbeds ? stripAttachments(excerpt,[...attachments,...(link ? [link] : [])]) : excerpt;
@@ -141,7 +141,7 @@
       ><span class="sep">·</span>{/if}
     <a class="author" href={profileUrl(post.pubkey)} aria-label={name}>{@render authorIdentity()}</a>
     <span class="sep">·</span>
-    <a class="stamp" href={permalink}
+    <a class="stamp" href={permalink} aria-label={!renderedHeading && !full ? 'Open post by ' + name : undefined}
       ><time datetime={new Date(post.created_at * 1000).toISOString()}
         >{age(post.created_at)}</time
       ></a
@@ -169,7 +169,10 @@
       {#each trees as attachment (attachment.url)}<TreeEmbed {attachment}/>{/each}
     </div>
     {#if shownMedia.length < media.length}<a class="album-more" href={permalink}>View all {media.length} photos <Icon name="next" size={14}/></a>{/if}
-  {:else if !renderEmbeds && trees.length}
+  {:else if !renderEmbeds}
+    {#each media.filter(item => item.url !== link && !excerpt.includes(item.url)) as item (item.url)}
+      <a class="external-post" href={item.url} target="_blank" rel="noopener noreferrer">{item.alt || 'Open ' + item.kind}</a>
+    {/each}
     {#each trees as attachment (attachment.url)}<a class="external-post" href={attachment.viewerUrl} target="_blank" rel="noopener noreferrer">Open attachment</a>{/each}
   {/if}
   {#if link && (!renderEmbeds || !embeddedLink)}<a

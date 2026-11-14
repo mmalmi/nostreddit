@@ -91,6 +91,23 @@ test('post links can carry a Hashtree attachment in a signed note', () => {
   assert.throws(()=>postDraft({topic:'art',title:'X',body:'',url:'https://elsewhere.test/%6ehash1'+root.slice(6)}));
 });
 
+test('media-first notes use the author’s caption and preserve a standalone link', () => {
+  const url = 'https://files.example/' + 'a'.repeat(64) + '.png', caption = 'New version is out.';
+  const imeta = ['imeta', 'url ' + url, 'alt An app on a phone'];
+  for (const text of [url+'\n\n'+caption, url+' '+caption, caption+' '+url]) {
+    const post = asPost(sign({kind:1, content:text+'\n\n* Native apps\n\nhttps://product.example', tags:[imeta]}))!;
+    assert.equal(post.title, caption);
+    assert.equal(post.body, '* Native apps\n\nhttps://product.example');
+    assert.equal(post.event.content.startsWith(text), true);
+  }
+  for (const [kind,content] of [[1,url],[20,'']] as const) {
+    const post = asPost(sign({kind,content,tags:[imeta]}))!;
+    assert.equal(post.title, '');
+    assert.equal(post.body, '');
+  }
+  assert.equal(asPost(sign({kind:1,content:url,tags:[imeta,['subject','Official title']]}))!.title,'Official title');
+});
+
 test('native picture and video posts accept metadata-only attachments and replies use their event scope', () => {
   for (const kind of [20,21,22]) {
     const post=asPost(sign({kind,content:'',tags:[['t','art'],['imeta','url https://files.example/item','m '+(kind===20?'image/jpeg':'video/mp4')]]}))!;
