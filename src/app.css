@@ -1208,6 +1208,17 @@ main > .feed-heading:first-child { margin-top: 0; }
     gap: 5px;
     max-width: 215px;
   }
+  .search-box:focus-within {
+    position: absolute;
+    inset-inline: 8px;
+    width: auto;
+    max-width: none;
+    height: 44px;
+    padding-inline: 12px;
+    z-index: 2;
+    background: var(--paper);
+    border-color: var(--strong-line);
+  }
   .search-box kbd {
     display: none;
   }
@@ -1258,15 +1269,6 @@ main > .feed-heading:first-child { margin-top: 0; }
     background: transparent;
     border-color: transparent;
     margin: 0 0 0 auto;
-  }
-  .search-box:focus-within {
-    position: absolute;
-    left: 40px;
-    right: 11px;
-    width: auto;
-    z-index: 2;
-    background: var(--paper);
-    border-color: var(--strong-line);
   }
   .search-box input {
     position: absolute;
