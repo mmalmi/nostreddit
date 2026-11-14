@@ -3,7 +3,7 @@ import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type Event
 import { decode, nsecEncode } from 'nostr-tools/nip19';
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
 import { graphViewer, graphInfo, graphStatus, networkAuthors, observeEventAuthors, observeGraphEvent, observeDirectoryLists, observeProfile, profileRelations, setPendingEdges, setGraphPeers, setGraphRoot, setGraphRelays } from './graph';
-import { asPost, discussionKinds, commentDraft, hexKey, postDraft, resolveCommunityThreads, topicSlug, type Post } from './posts';
+import { asPost, discussionKinds, commentDraft, hexKey, postDraft, matchesTopic, mentionsTopic, resolveCommunityThreads, topicSlug, type Post } from './posts';
 import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
 import { lightningEndpoint, matchesZapReceipt, receivedTips, postTipActor, type PostTipActor, type ZapInvoice } from './zaps';
@@ -11,11 +11,12 @@ import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './w
 import { cacheOwnEvents, type Change } from './local-writes';
 import { noExpansion, type Expansion } from './discovery/discussions';
 import type { SearchCursors } from './discovery/relay-search';
-import { relayUrls, type ContactQuery, type RelayConnection, type Request, type Response } from './relayTypes';
+import { relayUrls, type ContactQuery, type TopicPageEnd, type RelayConnection, type Request, type Response } from './relayTypes';
 import { readStoredRelayUrls, validateRelayUrls } from './relay-settings';
 import { readLocal, writeLocal } from './ui';
 import { isBulkAddressed, isDirectNotificationReply } from './notification-audience';
 import { groupNotifications, notificationAuthor, notificationPostId, notificationReadId, type InboxEvent } from './notification-groups';
+import { openTopicHistory, type TopicHistoryState } from './topic-history';
 import { startTopicCatalog } from './topic-catalog-store';
 import type { HotSignal } from './hot';
 import { pairBunker, readBunkerSession, signWithBunker, type BunkerSession } from './bunker';
@@ -65,6 +66,7 @@ const inboxReceipts = writable<NostrEvent[]>([]);
 let relaySearchVersion = 0;
 const relaySearchIds = new Set<string>();
 let notificationOwner = '', pinnedThread = '', pinnedTopic = '', pinnedAuthor = '';
+let pinnedTopicLimit = 160;
 const roots = new Map<string,Post>(), replies = new Map<string,Post>();
 const metadata = new Map<string,NostrEvent>(), contacts = new Map<string,NostrEvent>();
 const muteEvents = new Map<string,NostrEvent>();
@@ -196,7 +198,11 @@ function ordered(map: Map<string,Post>, limit:number) {
   const result = [...map.values()].sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id));
   if (result.length <= limit) return result;
   const retained = new Set(result.filter(p => p.id===pinnedThread || p.root===pinnedThread && !!pinnedThread ||
-    p.parent===pinnedThread && !!pinnedThread || p.topic===pinnedTopic || p.pubkey===pinnedAuthor).slice(0,160).map(p=>p.id));
+    p.parent===pinnedThread && !!pinnedThread || p.pubkey===pinnedAuthor).slice(0,160).map(p=>p.id));
+  if (pinnedTopic) {
+    const topicRows = result.filter(p => p.parent ? mentionsTopic(p,pinnedTopic) : matchesTopic(p,pinnedTopic));
+    for (const post of topicRows.slice(0,pinnedTopicLimit)) retained.add(post.id);
+  }
   for (const id of relaySearchIds) if (map.has(id)) retained.add(id);
   if (map.has(pinnedThread)) retained.add(pinnedThread);
   for (const post of result) {
@@ -358,6 +364,7 @@ function apply(events:NostrEvent[]) {
 
 type Interest = Extract<Request,{type:'watch'}>;
 const interests = new Map<number,Interest>();
+const topicPages = new Map<number,(page:TopicPageEnd)=>void>();
 type Result = Extract<Response,{type:'result'}>;
 const waiting = new Map<number,{resolve:(result:Result)=>void; reject:(reason:Error)=>void; found?:(events:NostrEvent[])=>void}>();
 let seq = 0, worker: Worker|undefined, active = false, watching = false;
@@ -376,6 +383,7 @@ function connect() {
   next.onmessage = ({data}:MessageEvent<Response>) => {
     if (worker !== next) return;
     if (data.type === 'events') apply(data.events);
+    else if (data.type === 'topicPageEnd') topicPages.get(data.id)?.(data.page);
     else if (data.type === 'status') relayConnections.set(data.relays);
     else if (data.type === 'found') waiting.get(data.id)?.found?.(data.events);
     else {
@@ -385,21 +393,26 @@ function connect() {
       if (!visible() && !waiting.size) shutdown();
     }
   };
-  next.onerror = () => { if (worker === next) shutdown(); };
+  next.onerror = () => {
+    if (worker !== next) return;
+    shutdown();
+    for (const done of [...topicPages.values()]) done({state:'retry'});
+  };
   watching = visible();
   if (watching) for (const interest of interests.values()) next.postMessage(interest);
   return next;
 }
-function watch(filters:NostrFilter[], live = false) {
+function watch(filters:NostrFilter[], live = false, topicPage?: {relay:string; done:(page:TopicPageEnd)=>void}) {
   if (!filters.length) return noop;
-  const id = ++seq, interest:Interest = {type:'watch',id,filters,live};
+  const id = ++seq, interest:Interest = {type:'watch',id,filters,live,topicRelay:topicPage?.relay};
+  if (topicPage) topicPages.set(id,topicPage.done);
   if (active && visible()) {
     const existing = worker;
     if (!existing) connect();
     worker?.postMessage(interest);
   }
   interests.set(id,interest);
-  return () => { interests.delete(id); worker?.postMessage({type:'close',id} satisfies Request); };
+  return () => { interests.delete(id); topicPages.delete(id); worker?.postMessage({type:'close',id} satisfies Request); };
 }
 type RequestPayload = ContactQuery|{type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}|
   {type:'search';query:string;expansion:Expansion;cursors?:SearchCursors};
@@ -531,12 +544,23 @@ export function refreshFeed() {
     worker.postMessage(interest);
   }
 }
-export function loadTopic(topic:string) {
+export function loadTopic(topic:string, changed:(state:TopicHistoryState)=>void) {
   const slug = topicSlug(topic);
-  if (!slug) return noop;
   pinnedTopic = slug;
-  const stop = watch([{kinds:discussionKinds,'#t':[slug],limit:90}], true);
-  return () => { stop(); if (pinnedTopic === slug) pinnedTopic = ''; };
+  let history: ReturnType<typeof openTopicHistory>;
+  const unsubscribe = configuredRelays.subscribe(relays => {
+    history?.close();
+    pinnedTopicLimit = 160;
+    history = openTopicHistory(slug ? relays : [], (relay, until, limit, live, done) => {
+      // Keep the requested depth available even when the shared feed cache is full.
+      pinnedTopicLimit += limit;
+      return watch([{kinds:discussionKinds,'#t':[slug],limit,...(until === undefined ? {} : {until})}],live,{relay,done});
+    },changed);
+  });
+  return {
+    more: () => history.more(),
+    close() { unsubscribe(); history.close(); if (pinnedTopic === slug) pinnedTopic = ''; },
+  };
 }
 export function loadFeed(filters: NostrFilter[]) {
   return filters.length ? watch(filters, true) : noop;

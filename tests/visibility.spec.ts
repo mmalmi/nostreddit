@@ -57,12 +57,12 @@ test.beforeEach(async ({page}) => {
 
 async function setDistance(page: Page, value: string) {
   await page.getByRole('link',{name:'Settings',exact:true}).click();
-  await page.getByRole('link',{name:'Network',exact:true}).click();
+  await page.getByRole('link',{name:'Content filters',exact:true}).click();
   await page.getByLabel('Maximum follow distance').selectOption(value);
 }
 async function expectFiltered(page: Page, path: string, content: string) {
   await page.goto(path);
-  await expect(page.locator('[data-route-active=\"true\"] main a[href="/settings/network"]').first()).toBeVisible();
+  await expect(page.locator('[data-route-active=\"true\"] main a[href="/settings/filters"]').first()).toBeVisible();
   await expect(page.locator('[data-route-active=\"true\"] main')).not.toContainText(content);
   expect(await page.title()).not.toContain(content);
 }
@@ -135,7 +135,7 @@ test('background graph updates preserve the card a reader is focused on', async 
 });
 
 test('guests can widen and restore the same graph limit across home, topic, saved, search and direct links', async ({page}) => {
-  await page.goto('/settings/network');
+  await page.goto('/settings/filters');
   await expect(page.getByLabel('Maximum follow distance')).toHaveValue('5');
   await expect(page.getByLabel('Hide overmuted profiles')).toBeChecked();
   await page.getByRole('link',{name:'Nostreddit home',exact:true}).click();

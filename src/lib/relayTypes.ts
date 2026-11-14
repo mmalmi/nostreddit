@@ -10,8 +10,9 @@ export const relayUrls = override ? [...new Set<string>(override.split(/[\s,]+/)
 export const searchRelayUrls = testRelays ? relayUrls : ['wss://relay.ditto.pub', 'wss://search.nos.today'];
 export type RelayConnection = 'connected' | 'connecting' | 'disconnected';
 export type ContactQuery = { type:'contacts'; subject:string; mode:'followers'|'following'|'mutual'|'check'; authors?: string[]; cacheOnly?: boolean };
+export type TopicPageEnd = {state:'more'; until:number; limit:number; boundaryOnly:boolean} | {state:'end'|'limited'|'retry'};
 export type Request =
-  | { type: 'watch'; id: number; filters: NostrFilter[]; live: boolean }
+  | { type: 'watch'; id: number; filters: NostrFilter[]; live: boolean; topicRelay?: string }
   | { type: 'configure'; urls: string[] }
   | { type: 'close'; id: number }
   | { type: 'publish'; id: number; event: NostrEvent }
@@ -20,6 +21,7 @@ export type Request =
   | { type: 'latest'; id: number; kind: number; pubkey: string };
 export type Response =
   | { type: 'events'; events: NostrEvent[] }
+  | { type: 'topicPageEnd'; id: number; page: TopicPageEnd }
   | { type: 'status'; relays: Record<string, RelayConnection> }
   // Results of a request that is still reading relays. Its 'result' follows.
   | { type: 'found'; id: number; events: NostrEvent[] }

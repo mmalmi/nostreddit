@@ -216,7 +216,7 @@ test('changing a follow offline immediately changes which cached discussions pas
   const post=sign(author,1,'Notes from the direct graph',[['t','nostr']],time);
   await supply([sign(owner,3,'',[['p',target],['p',freshKey()]],time),post]);
   await signIn(page,owner);
-  await page.goto('/settings/network');
+  await page.goto('/settings/filters');
   await page.getByLabel('Maximum follow distance').selectOption('1');
   await page.goto('/post/'+post.id);
   await expect(page.getByRole('heading',{name:post.content})).toBeVisible();

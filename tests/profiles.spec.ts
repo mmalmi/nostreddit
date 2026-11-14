@@ -57,7 +57,7 @@ test('profile context links the viewer’s mutuals and uses Iris Kit names for u
   await header.getByRole('link',{name:'Coast Wren'}).click();
   await expect(page).toHaveURL(new RegExp('/u/'+npubEncode(f)+'$'));
   await expect(page.getByRole('heading',{name:'Coast Wren',exact:true})).toBeVisible();
-  await page.goto('/settings/network');
+  await page.goto('/settings/filters');
   await page.getByLabel('Maximum follow distance').selectOption('1');
   await page.goto('/u/'+npubEncode(t)+'/followers');
   const directory=page.getByRole('list',{name:'Known followers'});
@@ -67,7 +67,7 @@ test('profile context links the viewer’s mutuals and uses Iris Kit names for u
   await expect(directory.locator('a[href="/u/'+npubEncode(v)+'"]')).toBeVisible();
   await expect(directory.getByRole('listitem')).toHaveCount(5);
   await page.goto('/u/'+npubEncode(getPublicKey(unrelated))+'/following');
-  await expect(page.getByRole('link',{name:'graph settings'})).toBeVisible({timeout:20000});
+  await expect(page.getByRole('link',{name:'content filters'})).toBeVisible({timeout:20000});
   await expect(page.getByText('Far Shore',{exact:true})).toHaveCount(0);
 });
 

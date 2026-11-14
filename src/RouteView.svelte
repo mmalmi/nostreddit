@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isSettingsTab, type SettingsTab } from './lib/settings-tabs';
+  import type { TopicHistoryState } from './lib/topic-history';
   import { onMount, tick } from 'svelte';
   import * as nip19 from 'nostr-tools/nip19';
   import {
@@ -68,6 +69,9 @@
   import { feedPreferences, saveFeed } from './lib/feed-preferences';
   import { defaultFeeds, feedPath, feedIcon, feedSummary, feedRelayFilters, matchesFeed, type Feed, type FeedOrder } from './lib/feeds';
   let feedList: HTMLElement;
+  let topicHistory: ReturnType<typeof loadTopic> | undefined;
+  let topicState: TopicHistoryState = 'loading';
+  let requestedOlder = false;
   function viewportSlots() {
     if (!pageVisible || !feedList) return 0;
     const cards = feedList.children;
@@ -78,7 +82,7 @@
       if (cards[middle].getBoundingClientRect().top < innerHeight) start = middle + 1;
       else end = middle;
     }
-    if (start && start === cards.length && start < limit) {
+    if (!requestedOlder && start && start === cards.length && start < limit) {
       const nextTop = feedList.getBoundingClientRect().bottom + parseFloat(getComputedStyle(feedList).rowGap);
       if (nextTop < innerHeight) return start + 1;
     }
@@ -359,10 +363,11 @@
   }
   function subscribeRoute(page: string, value: string, connections: Relationship | undefined, feedFilters: string, networkFeed: boolean) {
     activeCleanup?.();
+    topicHistory = page === 'topic' ? loadTopic(value, state => topicState = state) : undefined;
     const closeRoute =
       page === 'home' ? loadHome()
-      : page === 'topic'
-        ? loadTopic(value)
+      : topicHistory
+        ? topicHistory.close
         : page === 'thread'
           ? loadThread(value)
           : page === 'profile'
@@ -370,6 +375,12 @@
             : page && feedFilters ? loadFeed(JSON.parse(feedFilters)) : undefined;
     const closeNetwork = page && networkFeed ? loadNetwork() : undefined;
     activeCleanup = () => { closeRoute?.(); closeNetwork?.(); };
+  }
+  function loadMoreTopic() {
+    requestedOlder = true;
+    limit = Math.max(limit, ordered.length + 24);
+    topicHistory?.more();
+    feedPresentation.viewportChanged();
   }
   function watch(ids: string) {
     observedCleanup?.();
@@ -880,7 +891,7 @@
         {/key}
       {:else if $hiddenPostIds.has(route.value) || saved.some(p => p.id === route.value && !$canSeeAuthor(p.pubkey))}
         <div class="empty loading-state"><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
-          <p>Visibility depends on the author’s follow distance and mutes.</p><a href="/settings/network">Graph settings</a></div>
+          <p>Visibility depends on the author’s follow distance and mutes.</p><a href="/settings/filters">Content filters</a></div>
       {:else}<div class="empty loading-state">
           <Icon name="comment" size={28} />
           <h2>Discussion not seen yet</h2>
@@ -1043,7 +1054,16 @@
           class="load-more outline"
           onclick={() => (limit += 24)}
           >Load more discussions <Icon name="down" size={15} /></button
-        >{:else if route.page === 'search' && route.value.length >= 2 && searched && !searching && !searchMessage}
+        >{:else if route.page === 'topic'}
+        {#if topicState === 'more' || topicState === 'retry' || (requestedOlder && topicState === 'loading')}
+          <button class="load-more outline" disabled={topicState === 'loading'} onclick={loadMoreTopic}>
+            {topicState === 'loading' ? 'Loading older discussions…' : topicState === 'retry' ? 'Retry loading discussions' : 'Load more discussions'}
+            <Icon name="down" size={15}/>
+          </button>
+        {:else if requestedOlder && (topicState === 'end' || topicState === 'limited')}
+          <div class="search-more"><p class="quiet" role="status">{topicState === 'end' ? 'No more discussions.' : 'Relay history limit reached.'}</p></div>
+        {/if}
+        {:else if route.page === 'search' && route.value.length >= 2 && searched && !searching && !searchMessage}
         <div class="search-more">
           {#if canSearchMore}
             <button class="load-more outline" disabled={searching} onclick={() => expandSearch(searched)}>

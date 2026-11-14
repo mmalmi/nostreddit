@@ -46,8 +46,9 @@
       </section>
       <TranslationSettings/>
       <HotSettings/>
-    {:else if current === 'network'}
+    {:else if current === 'filters'}
       <GraphSettings/>
+    {:else if current === 'network'}
       <RelaySettings/>
       <ImageProxySettings/>
     {:else if current === 'account'}

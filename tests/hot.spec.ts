@@ -145,7 +145,7 @@ test('a signed-in reader discovers a post liked by a follow while graph settings
     {method:'local',pubkey:getPublicKey(viewer),nsec:nsecEncode(viewer)});
   await page.goto('/');
   await expect(page.getByRole('link',{name:liked.content,exact:true})).toBeVisible({timeout:15_000});
-  await page.goto('/settings/network');
+  await page.goto('/settings/filters');
   await page.getByLabel('Maximum follow distance').selectOption('1');
   await page.goto('/');
   await expect(page.getByRole('link',{name:liked.content,exact:true})).toHaveCount(0);

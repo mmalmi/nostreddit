@@ -9,7 +9,7 @@
 </script>
 
 <section class="preferences graph-settings" aria-labelledby="graph-visibility">
-  <h2 id="graph-visibility">Social graph</h2>
+  <h2 id="graph-visibility">Content filters</h2>
   <p class="graph-root">Guests and profiles without follows use the public Iris graph.</p>
   <label><span>Maximum follow distance</span>
     <select value={String($visibilitySettings.maxDistance ?? 'unlimited')} onchange={(event) => changeDistance(event.currentTarget.value)}>
@@ -28,7 +28,6 @@
 </section>
 
 <style>
-  .graph-settings { margin-top:14px; }
   .graph-root {margin:0 0 12px}
   p { color:var(--muted);font-size:13px; }
 </style>
