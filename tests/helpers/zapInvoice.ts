@@ -17,7 +17,7 @@ export const metadata = {
 }
 const charset = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
 
-export function bolt11(description: string, { sats = 21, expired = false, invalidSig = false }: { sats?: number; expired?: boolean; invalidSig?: boolean } = {}) {
+export function bolt11(description: string, { sats = 21, expired = false, invalidSig = false, proof = preimage }: { sats?: number; expired?: boolean; invalidSig?: boolean; proof?: Uint8Array } = {}) {
   const prefix = 'lnbc' + sats * 10 + 'n'
   const timestamp = Math.floor(Date.now() / 1000) - (expired ? 4000 : 0)
   const payload = Array.from({ length: 7 }, (_, index) => Math.floor(timestamp / 32 ** (6 - index)) % 32)
@@ -26,7 +26,7 @@ export function bolt11(description: string, { sats = 21, expired = false, invali
     payload.push(charset.indexOf(tag), words.length >> 5, words.length % 32, ...words)
   }
   push('h', sha256(encoder.encode(description)))
-  push('p', sha256(preimage))
+  push('p', sha256(proof))
   push('s', generateSecretKey())
   push('n', secp256k1.getPublicKey(providerKey))
   const body = Uint8Array.from([...encoder.encode(prefix), ...utils.convertRadix2(payload, 5, 8, true)])

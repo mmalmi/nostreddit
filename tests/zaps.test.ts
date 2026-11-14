@@ -58,6 +58,11 @@ test('signed and guest requests produce bound invoices and only matching payment
       finalizeEvent({ ...receipt, created_at: receipt.created_at + 1 }, providerKey),
       finalizeEvent(receipt, authorKey),
     ]), 21)
+    const reserialized = JSON.stringify(JSON.parse(signed.description), null, 1)
+    const statement = finalizeEvent({...receipt, tags:receipt.tags.map(tag =>
+      tag[0] === 'description' ? ['description', reserialized] : tag)},providerKey)
+    assert.equal(await receivedZapSats(target, recipient, [statement]),21)
+    assert.throws(() => inspectZapInvoice(signed.invoice,21000,reserialized), /bound/)
     assert.equal(matchesZapReceipt(finalizeEvent(receipt, authorKey), signed), false)
     assert.equal(matchesZapReceipt(finalizeEvent(receipt, providerKey), guest), false)
     assert.equal(matchesZapReceipt(finalizeEvent({ ...receipt, tags: [...receipt.tags, ['preimage', '0'.repeat(64)]] }, providerKey), signed), false)

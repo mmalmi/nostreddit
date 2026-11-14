@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import type { NostrEvent } from 'nostr-tools/pure'
   import { receivedZapSats, type ZapProfile } from './zaps'
+  import TipAmount from '../components/TipAmount.svelte'
   let { event, profile, receipts }: { event: NostrEvent; profile: ZapProfile; receipts: readonly NostrEvent[] } = $props()
   let sats = $state(0)
   let element: HTMLSpanElement
@@ -20,4 +21,4 @@
     return () => { active = false }
   })
 </script>
-<span bind:this={element}>{sats > 0 ? sats.toLocaleString() + ' sats' : 'Zap'}</span>
+<span bind:this={element}>{#if sats > 0}<TipAmount {sats} active={visible}/>{:else}Tip{/if}</span>

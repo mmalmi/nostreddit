@@ -1,6 +1,9 @@
 <script lang="ts">
   import { appearance, modes, themes, setAppearance } from '../lib/appearance';
   import Icon from './Icon.svelte';
+  import { setTipCurrency, tipCurrencies, tipCurrency } from '../lib/tip-currency';
+
+  const names = new Intl.DisplayNames(undefined, { type: 'currency' });
 
   const title = (word: string) => word[0].toUpperCase() + word.slice(1);
 </script>
@@ -15,6 +18,14 @@
       if (mode) setAppearance({ ...$appearance, mode });
     }}>
       {#each modes as mode}<option value={mode}>{title(mode)}</option>{/each}
+    </select>
+  </label>
+  <label>
+    <span>Tip currency</span>
+    <select value={$tipCurrency} onchange={event => setTipCurrency(event.currentTarget.value)}>
+      {#each tipCurrencies as code}
+        <option value={code}>{code === 'SATS' ? 'Satoshis (sats)' : code === 'BTC' ? 'Bitcoin (BTC)' : names.of(code) + ' (' + code + ')'}</option>
+      {/each}
     </select>
   </label>
   <fieldset>

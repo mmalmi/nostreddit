@@ -7,6 +7,10 @@
   } from './zaps'
 
   import { watchZapPayment } from './network'
+  import {
+    formatTip, formatTipUnit, loadingTipRates, loadTipRates, satsForAmount, tipCurrency, tipQuote,
+    unitRate, type TipCurrency,
+  } from './tip-currency'
 
   let { event, profile, relays, sign }: {
     event: NostrEvent
@@ -15,7 +19,24 @@
     sign?: ZapSigner
   } = $props()
 
-  let sats = $state<number | undefined>(21)
+  let useSats = $state(false)
+  let draft = $state<{ currency: TipCurrency; amount: number | undefined }>()
+  let currency = $derived(useSats ? 'SATS' : $tipCurrency)
+  let choices = $derived.by(() => {
+    if (currency === 'SATS') return [21, 100, 500, 1000]
+    if (currency === 'BTC') return [0.00000021, 0.000001, 0.000005, 0.00001]
+    if (currency === 'JPY' || currency === 'INR') return [10, 50, 100, 500]
+    if (['SEK', 'NOK', 'DKK', 'CNY'].includes(currency)) return [1, 5, 10, 50]
+    return [0.10, 0.50, 1, 5]
+  })
+  let amount = $derived(draft?.currency === currency ? draft.amount : choices[0])
+  let step = $derived(currency === 'SATS' || currency === 'JPY' ? 1 : currency === 'BTC' ? 0.00000001 : 0.01)
+  let rate = $derived(unitRate(currency, $tipQuote))
+  let sats = $derived(satsForAmount(amount, rate))
+
+  $effect(() => {
+    if (!unitRate(currency, $tipQuote) && lightningEndpoint(profile)) void loadTipRates(currency)
+  })
   let comment = $state('')
   let zap = $state<ZapInvoice>()
   let busy = $state(false)
@@ -52,10 +73,17 @@
 
   async function prepare() {
     if (busy) return
+    // A replacement invoice must request the same sat amount as the original.
+    const paymentSats = zap?.sats ?? satsForAmount(amount, unitRate(currency, $tipQuote))
+    if (!paymentSats) {
+      error = 'Check the amount and exchange rate before requesting an invoice.'
+      void loadTipRates(currency)
+      return
+    }
     busy = true
     error = ''
     try {
-      zap = await requestZap({ event, profile, relays, sign, sats: Number(sats), comment })
+      zap = await requestZap({ event, profile, relays, sign, sats: paymentSats, comment })
       attempted = false
       copied = false
     } catch (cause) { error = cause instanceof Error ? cause.message : 'Unable to request an invoice.' }
@@ -70,7 +98,7 @@
     error = ''
     try {
       paidByWallet = await payWithWallet(zap, wallet)
-      if (!paidByWallet) error = 'Check your wallet for the payment result. We’re waiting for the zap receipt.'
+      if (!paidByWallet) error = 'Check your wallet for the payment result. We’re waiting for the payment receipt.'
     } catch (cause) { error = cause instanceof Error ? cause.message : 'Check the payment status in your wallet.' }
     finally { busy = false }
   }
@@ -86,13 +114,13 @@
   <span class="bolt" aria-hidden="true">
     <svg viewBox="0 0 24 24" width="25" height="25"><path d="M13.8 1.7 3.4 13.8h6.9l-1.1 8.5L20.6 9.5h-7.3z" fill="currentColor"/></svg>
   </span>
-  <h2>Zap this post</h2>
+  <h2>Tip this post</h2>
   {#if confirmed}
-    <div class="success" role="status"><strong>Zap confirmed</strong><p>{zap?.sats} sats to the author. Thanks for supporting their work.</p></div>
+    <div class="success" role="status"><strong>Tip confirmed</strong><p>{formatTip(zap!.sats, currency, $tipQuote, true)} to the author.</p></div>
   {:else if !lightningEndpoint(profile)}
     <p>{profile ? 'This author hasn’t added a Lightning address to their profile.' : 'A Lightning address isn’t available for this author yet.'}</p>
   {:else if zap}
-    <p>Pay <strong>{zap.sats} sats</strong> to the author in your Lightning wallet.</p>
+    <p>Pay <strong>{formatTip(zap.sats, currency, $tipQuote, true)}</strong> to the author in your Lightning wallet.</p>
     {#if expired}
       <p role="status">This invoice has expired.</p>
       <button class="primary" onclick={prepare} disabled={busy}>{busy ? 'Requesting…' : 'Get a fresh invoice'}</button>
@@ -109,16 +137,25 @@
       <small role="status">Waiting for a payment confirmation…</small>
     {/if}
   {:else}
-    <p>Send sats directly to the author{sign ? '.' : ' using a one-time guest identity.'}</p>
+    <p>Tip the author{sign ? '.' : ' using a one-time guest identity.'}</p>
     <form onsubmit={(event) => { event.preventDefault(); void prepare() }}>
-      <label for="zap-amount">Amount in sats</label>
-      <div class="choices">{#each [21, 100, 500, 1000] as choice}
-        <button type="button" class:selected={sats === choice} aria-pressed={sats === choice} onclick={() => { sats = choice }}>{choice}</button>
+      <label for="zap-amount">Amount in {currency === 'SATS' ? 'sats' : currency}</label>
+      <div class="choices">{#each choices as choice}
+        <button type="button" class:selected={amount === choice} aria-pressed={amount === choice}
+          onclick={() => { draft = { currency, amount: choice } }}>{formatTipUnit(choice, currency)}</button>
       {/each}</div>
-      <input id="zap-amount" bind:value={sats} type="number" min="1" max="2100000000000" step="1" required />
+      <input id="zap-amount" value={amount ?? ''} type="number" min={step} {step} required
+        oninput={event => { draft = { currency, amount: event.currentTarget.value ? event.currentTarget.valueAsNumber : undefined } }} />
+      {#if !rate}
+        <small role="status">{$loadingTipRates ? 'Getting the exchange rate…' : 'Exchange rate unavailable.'}
+          <button class="switch-unit" type="button" onclick={() => { useSats = true }}>Enter sats instead</button>
+        </small>
+      {:else if currency !== 'SATS' && sats}
+        <small>{formatTipUnit(sats, 'SATS')} via Lightning</small>
+      {/if}
       <label for="zap-comment">Public message <small>(optional)</small></label>
       <input id="zap-comment" bind:value={comment} maxlength="240" placeholder="Nice post!" />
-      <button class="primary" type="submit" disabled={busy}>{busy ? 'Requesting invoice…' : 'Get Lightning invoice'}</button>
+      <button class="primary" type="submit" disabled={busy || !sats}>{busy ? 'Requesting invoice…' : 'Get Lightning invoice'}</button>
     </form>
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -139,6 +176,7 @@
   button,a,input {border:1px solid var(--line);border-radius:9px;background:transparent;color:inherit;font:inherit}
   button,a {padding:9px 14px;font-size:.9rem;font-weight:650;cursor:pointer;text-align:center;text-decoration:none}
   .choices button {flex:1;padding:7px 6px}
+  .switch-unit {padding:0;border:0;color:var(--accent);text-decoration:underline}
   .selected {border-color:var(--gold);color:var(--gold);background:var(--gold-bg)}
   input {width:100%;box-sizing:border-box;padding:10px 12px}
   .primary {background:var(--accent);color:var(--on-accent);border-color:var(--accent)}

@@ -89,11 +89,11 @@ async function readProvider(endpoint: string): Promise<Provider> {
   const value = (async () => {
     const metadata = await walletJson(endpoint)
     if (metadata.tag !== 'payRequest' || metadata.allowsNostr !== true || typeof metadata.callback !== 'string') {
-      throw new Error('This Lightning address does not support Nostr zaps.')
+      throw new Error('This Lightning address does not support Lightning tips.')
     }
     const provider = metadata.nostrPubkey
-    if (typeof provider !== 'string' || !/^[a-f0-9]{64}$/.test(provider)) throw new Error('This provider has no valid zap signing key.')
-    try { schnorr.utils.lift_x(BigInt('0x' + provider)) } catch { throw new Error('This provider has no valid zap signing key.') }
+    if (typeof provider !== 'string' || !/^[a-f0-9]{64}$/.test(provider)) throw new Error('This provider has no valid tip signing key.')
+    try { schnorr.utils.lift_x(BigInt('0x' + provider)) } catch { throw new Error('This provider has no valid tip signing key.') }
     const min = Number(metadata.minSendable)
     const max = Number(metadata.maxSendable)
     if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min < 1 || max < min) throw new Error('The provider has invalid payment limits.')
@@ -114,6 +114,10 @@ const alphabet = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
 const integer = (words: number[]) => words.reduce((sum, word) => sum * 32 + word, 0)
 
 export function inspectZapInvoice(invoice: string, millisats: number | undefined, description: string, requireUnexpired = true) {
+  return readInvoice(invoice, millisats, description, requireUnexpired)
+}
+
+function readInvoice(invoice: string, millisats: number | undefined, description: string | undefined, requireUnexpired: boolean) {
   const decoded = bech32.decodeUnsafe(invoice, 20_000)
   const amount = decoded?.prefix.match(/^ln(?:bc|tb|bcrt|tbs)([1-9]\d{0,17})([munp]?)$/)
   if (!decoded || !amount) throw new Error('The Lightning provider returned an invalid invoice.')
@@ -121,7 +125,7 @@ export function inspectZapInvoice(invoice: string, millisats: number | undefined
   if (picoBtc % 10n || picoBtc / 10n > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('The invoice has an invalid amount.')
   const invoiceMillisats = Number(picoBtc / 10n)
   if (millisats !== undefined && millisats !== invoiceMillisats) {
-    throw new Error('The invoice amount does not match your zap.')
+    throw new Error('The invoice amount does not match your tip.')
   }
   const payload = decoded.words.slice(0, -104)
   if (payload.length < 7) throw new Error('The invoice is missing its payment details.')
@@ -138,8 +142,8 @@ export function inspectZapInvoice(invoice: string, millisats: number | undefined
     i += length
   }
   const fieldBytes = (tag: string) => bech32.fromWords(fields.get(tag) ?? [])
-  if (fields.has('d') || fieldBytes('h').length !== 32 || hex.encode(fieldBytes('h')) !== hash(utf8.encode(description))) {
-    throw new Error('The invoice is not bound to this zap request.')
+  if (fields.has('d') || fieldBytes('h').length !== 32 || (description !== undefined && hex.encode(fieldBytes('h')) !== hash(utf8.encode(description)))) {
+    throw new Error('The invoice is not bound to this tip request.')
   }
   if (fieldBytes('p').length !== 32 || fieldBytes('s').length !== 32) throw new Error('The invoice is missing payment details.')
   const signature = bech32.fromWords(decoded.words.slice(-104))
@@ -177,7 +181,7 @@ export async function requestZap(options: {
   const expected = JSON.stringify(template.tags)
   const request = sign ? await sign(template) : finalizeEvent(template, generateSecretKey())
   if (!verifyEvent(JSON.parse(JSON.stringify(request))) || request.kind !== 9734 || request.content !== comment || JSON.stringify(request.tags) !== expected) {
-    throw new Error('The signer returned an invalid zap request.')
+    throw new Error('The signer returned an invalid tip request.')
   }
   const description = JSON.stringify(request)
   url.searchParams.set('amount', String(amount))
@@ -234,6 +238,7 @@ export function matchesZapReceipt(event: NostrEvent, zap: ZapInvoice) {
     return tags.length === 1 ? tags[0][1] : undefined
   }
   if (event.kind !== 9735 || event.pubkey !== zap.provider || !verifyEvent(JSON.parse(JSON.stringify(event)))) return false
+  if (['p','e','a','P','description','bolt11','preimage'].some(key => event.tags.filter(t => t[0] === key).length > 1)) return false
   const target = (name: string) => zap.request.tags.find(([key]) => key === name)?.[1]
   return tag('e') === target('e') && tag('p') === target('p') && tag('a') === target('a') &&
     (!event.tags.some(([key]) => key === 'P') || tag('P') === zap.request.pubkey) &&
@@ -243,16 +248,19 @@ export function matchesZapReceipt(event: NostrEvent, zap: ZapInvoice) {
 
 
 type PaidInvoice = { paymentHash: string; millisats: number }
-const checked = new WeakMap<NostrEvent, { key: string; payment: PaidInvoice | null }>()
+const checked = new WeakMap<NostrEvent, { key: string; payment: TipPayment | null }>()
 
-function receiptPayment(event: NostrEvent, target: NostrEvent, provider: string, endpoint: string): PaidInvoice | null {
+type TipPayment = PaidInvoice & {sender: string | null}
+function receiptPayment(event: NostrEvent, recipient: string, targetId: string | undefined, provider: string, endpoint: string): TipPayment | null {
   const description = event.tags.find(([name]) => name === 'description')?.[1]
   const invoice = event.tags.find(([name]) => name === 'bolt11')?.[1]
   if (!description || !invoice || invoice.length > 20_000 || description.length > 32_000) return null
   const request: NostrEvent = JSON.parse(description)
   if (request.kind !== 9734 || !verifyEvent(request)) return null
   const tags = (key: string) => request.tags.filter(([name]) => name === key)
-  if (tags('p').length !== 1 || tags('p')[0][1] !== target.pubkey || tags('e').length !== 1 || tags('e')[0][1] !== target.id) return null
+  if (tags('p').length !== 1 || tags('p')[0][1] !== recipient) return null
+  if (tags('e').length !== (targetId ? 1 : 0) || tags('e')[0]?.[1] !== targetId) return null
+  if (event.tags.filter(tag => tag[0] === 'e').length !== tags('e').length || tags('a').length > 1) return null
   if (tags('relays').length !== 1 || tags('relays')[0].length < 2) return null
   if (tags('P').length && (tags('P').length !== 1 || tags('P')[0][1] !== provider)) return null
   const lnurl = tags('lnurl')
@@ -263,28 +271,46 @@ function receiptPayment(event: NostrEvent, target: NostrEvent, provider: string,
   }
   const amount = tags('amount')
   if (amount.length > 1 || amount.length && !/^[1-9]\d{0,15}$/.test(amount[0][1])) return null
-  const details = inspectZapInvoice(invoice, amount.length ? Number(amount[0][1]) : undefined, description, false)
+  // NIP-57 Appendix F: the recipient's authorized provider attests to the
+  // signed request and invoice together. Some providers reserialize the JSON
+  // in a receipt. Outgoing payments always require the exact request hash.
+  const details = readInvoice(invoice, amount.length ? Number(amount[0][1]) : undefined, undefined, false)
   const zap = { ...details, description, invoice, request, provider, sats: details.millisats / 1000 }
-  return matchesZapReceipt(event, zap) ? details : null
+  return matchesZapReceipt(event, zap)
+    ? {paymentHash: details.paymentHash, millisats: details.millisats, sender: tags('anon').length ? null : request.pubkey}
+    : null
+}
+
+function checkedReceipt(event: NostrEvent, recipient: string, targetId: string | undefined, provider: string, endpoint: string) {
+  if (event.kind !== 9735 || event.pubkey !== provider) return null
+  const key = [recipient, targetId, provider, endpoint].join('|')
+  let record = checked.get(event)
+  if (record?.key !== key) {
+    let payment: TipPayment | null = null
+    try { payment = receiptPayment(event, recipient, targetId, provider, endpoint) } catch { /* Ignore malformed relay receipts. */ }
+    record = { key, payment }
+    checked.set(event, record)
+  }
+  return record.payment
+}
+
+export async function receivedTips(recipient: string, endpoint: string | null, receipts: readonly NostrEvent[]) {
+  if (!endpoint || !receipts.length) return []
+  const { provider } = await readProvider(endpoint)
+  const payments = new Map<string, TipPayment & {event: NostrEvent}>()
+  for (const event of receipts) {
+    const targetId = event.tags.find(tag => tag[0] === 'e')?.[1]
+    if (targetId !== undefined && !/^[a-f0-9]{64}$/.test(targetId)) continue
+    const paid = checkedReceipt(event, recipient, targetId, provider, endpoint)
+    if (!paid || payments.has(paid.paymentHash)) continue
+    payments.set(paid.paymentHash, {event, ...paid})
+  }
+  return [...payments.values()]
 }
 
 // Resolve the authorized signer once per endpoint and verify each immutable event once per target.
 export async function receivedZapSats(target: NostrEvent, profile: ZapProfile, receipts: readonly NostrEvent[]) {
-  const endpoint = lightningEndpoint(profile)
-  if (!endpoint || !receipts.length) return 0
-  const { provider } = await readProvider(endpoint)
-  const key = target.id + ':' + provider + ':' + endpoint
-  const payments = new Map<string, number>()
-  for (const event of receipts) {
-    if (event.kind !== 9735 || event.pubkey !== provider) continue
-    let record = checked.get(event)
-    if (record?.key !== key) {
-      let payment: PaidInvoice | null = null
-      try { payment = receiptPayment(event, target, provider, endpoint) } catch { /* Ignore malformed relay events. */ }
-      record = { key, payment }
-      checked.set(event, record)
-    }
-    if (record.payment) payments.set(record.payment.paymentHash, record.payment.millisats)
-  }
-  return Math.floor([...payments.values()].reduce((sum, value) => sum + value, 0) / 1000)
+  const payments = await receivedTips(target.pubkey, lightningEndpoint(profile), receipts.filter(event =>
+    event.tags.some(tag => tag[0] === 'e' && tag[1] === target.id)))
+  return payments.reduce((sum, payment) => sum + payment.millisats, 0) / 1000
 }

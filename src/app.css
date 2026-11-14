@@ -255,14 +255,29 @@ a {
 .outline:hover {
   background: var(--light);
 }
-.account-button span {
+.account-button .account-name {
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.header-actions .account-button.signed-in {
+  padding-left: 4px;
+}
+.account-avatar {
+  display: flex;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--light);
+}
 .menu-button {
   display: none;
+}
+.menu-unread {
+  position:absolute; top:-4px; right:-3px; min-width:15px; padding:0 3px;
+  border-radius:8px; background:var(--accent); color:var(--on-accent);
+  font:700 10px/15px var(--sans, sans-serif);
 }
 .shell {
   display: grid;
@@ -329,6 +344,11 @@ a {
 .nav-row.active:not(.topic-row) svg {
   fill: var(--strong-line);
   stroke: var(--accent);
+}
+.nav-row.has-count {
+  gap: 5px;
+  padding-right: 4px;
+  overflow-wrap: normal;
 }
 .unread-count {
   margin-left: auto;
@@ -1174,6 +1194,7 @@ main > .feed-heading:first-child { margin-top: 0; }
     font-size: 12px;
   }
   .menu-button {
+    position: relative;
     display: grid;
     place-items: center;
     width: 27px;
@@ -1294,8 +1315,14 @@ main > .feed-heading:first-child { margin-top: 0; }
   .header-actions .account-button {
     max-width: 90px;
   }
-  .topbar .account-button svg {
+  .topbar .account-button:not(.signed-in) svg,
+  .topbar .account-button.signed-in .account-name {
     display: none;
+  }
+  .header-actions .account-button.signed-in {
+    width: 36px;
+    padding: 0;
+    border-radius: 50%;
   }
   .hero {
     padding: 17px;

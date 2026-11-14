@@ -3,7 +3,7 @@
 </script>
 <section class="preferences hot-settings" aria-labelledby="hot-settings">
   <h2 id="hot-settings">Hot feed</h2>
-  <p>Fresh posts and a mix of authors. Each profile counts once across likes, zaps, and replies. Replies have half the weight of a like.</p>
+  <p>Fresh posts and a mix of authors. Each profile counts once across likes, tips, and replies. Replies have half the weight of a like.</p>
   <label><span>Weight reactions by connection strength</span><input type="checkbox" checked={$hotPreferences.connectionStrength}
     onchange={e=>setHotPreferences({...$hotPreferences,connectionStrength:e.currentTarget.checked})}/></label>
   <small>People you follow count most. Others share influence through their connections. Turning this off uses follow distance instead.</small>

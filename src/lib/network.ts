@@ -6,7 +6,7 @@ import { graphViewer, graphInfo, graphStatus, networkAuthors, observeEventAuthor
 import { asPost, discussionKinds, commentDraft, hexKey, postDraft, resolveCommunityThreads, topicSlug, type Post } from './posts';
 import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
-import { matchesZapReceipt, signedZapAuthor, type ZapInvoice } from './zaps';
+import { lightningEndpoint, matchesZapReceipt, receivedTips, signedZapAuthor, type ZapInvoice } from './zaps';
 import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './write-sync';
 import { cacheOwnEvents, type Change } from './local-writes';
 import { noExpansion, type Expansion } from './discovery/discussions';
@@ -14,6 +14,7 @@ import type { SearchCursors } from './discovery/relay-search';
 import { relayUrls, type ContactQuery, type RelayConnection, type Request, type Response } from './relayTypes';
 import { readStoredRelayUrls, validateRelayUrls } from './relay-settings';
 import { readLocal, writeLocal } from './ui';
+import { groupNotifications, notificationAuthor, notificationPostId, notificationReadId, type InboxEvent } from './notification-groups';
 import { startTopicCatalog } from './topic-catalog-store';
 import type { HotSignal } from './hot';
 import { pairBunker, readBunkerSession, signWithBunker, type BunkerSession } from './bunker';
@@ -55,6 +56,7 @@ export const status = derived([configuredRelays, relayConnections], ([urls, conn
   return 'offline';
 });
 const rawNotifications = writable<NostrEvent[]>([]);
+const inboxReceipts = writable<NostrEvent[]>([]);
 let relaySearchVersion = 0;
 const relaySearchIds = new Set<string>();
 let notificationOwner = '', pinnedThread = '', pinnedTopic = '', pinnedAuthor = '';
@@ -102,10 +104,6 @@ function visibleList<T extends {pubkey:string}>(raw: Writable<T[]>) {
   return derived([raw, canSeeAuthor], ([items, allowed]) => items.filter(item => allowed(item.pubkey)));
 }
 export const posts = visibleList(rawPosts), comments = visibleList(rawComments);
-export const notifications = visibleList(rawNotifications);
-const readNotificationIds = writable(new Set<string>());
-export const unreadNotificationIds = derived([notifications, readNotificationIds], ([events, read]) =>
-  new Set(events.filter(event => !read.has(event.id)).map(event => event.id)));
 export const profiles = derived([rawProfiles, canSeeAuthor, changesForViewer, account], ([items, allowed,changes,session]) => {
   const visible = Object.fromEntries(Object.entries(items).filter(([key]) => allowed(key)));
   if (session) for (const change of changes) if (change.kind===0) {
@@ -113,6 +111,31 @@ export const profiles = derived([rawProfiles, canSeeAuthor, changesForViewer, ac
   }
   return visible;
 });
+const ownLightningEndpoint = derived([profiles, account], ([known, viewer]) =>
+  viewer ? lightningEndpoint(known[viewer.pubkey]) : null);
+const incomingTips = derived([inboxReceipts, ownLightningEndpoint, account], ([receipts, endpoint, viewer], set) => {
+  let current = true;
+  if (!viewer || !endpoint || !receipts.length) { set([]); return; }
+  void receivedTips(viewer.pubkey, endpoint, receipts).then(payments => {
+    if (current) set(payments.filter(tip => tip.sender !== viewer.pubkey)
+      .map(({event, ...tip}) => ({...event, tip})));
+  }).catch(() => { if (current) set([]); });
+  return () => { current = false; };
+}, [] as InboxEvent[]);
+export const notifications = derived([rawNotifications, incomingTips, canSeeAuthor, account], ([events, tips, allowed, viewer]) => {
+  if (!viewer) return [];
+  return [...events, ...tips].filter(event => {
+    const author = notificationAuthor(event);
+    return (author === null || allowed(author)) && event.tags.some(tag => tag[0] === 'p' && tag[1] === viewer.pubkey);
+  })
+    .sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id)).slice(0,100);
+});
+export const notificationGroups = derived(notifications, groupNotifications);
+const readNotificationIds = writable(new Set<string>());
+export const unreadNotificationIds = derived([notifications, readNotificationIds], ([events, read]) =>
+  new Set(events.filter(event => !read.has(notificationReadId(event))).map(notificationReadId)));
+export const unreadNotificationCount = derived([notificationGroups, unreadNotificationIds], ([groups, unread]) =>
+  groups.filter(group => group.events.some(event => unread.has(notificationReadId(event)))).length);
 export const likes = derived([rawLikes, canSeeAuthor], ([items, allowed]) =>
   Object.fromEntries(Object.entries(items).map(([id, keys]) => [id, keys.filter(allowed)])) as Record<string,string[]>);
 
@@ -177,6 +200,14 @@ function trimRecord<T>(record:Record<string,T>, limit:number) {
   const keys = Object.keys(record);
   for (const key of keys.slice(0,Math.max(0,keys.length-limit))) delete record[key];
 }
+function addInboxEvents(store: Writable<NostrEvent[]>, events: NostrEvent[]) {
+  if (!events.length) return;
+  const previous = get(store), byId = new Map(previous.map(e => [e.id, e]));
+  for (const event of events) byId.set(event.id, event);
+  if (byId.size !== previous.length) {
+    store.set([...byId.values()].sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id)).slice(0,100));
+  }
+}
 function apply(events:NostrEvent[]) {
   const authors = new Set<string>();
   for (const event of events) {
@@ -187,13 +218,9 @@ function apply(events:NostrEvent[]) {
   }
   if (authors.size) observeEventAuthors([...authors]);
   if (notificationOwner && get(account)?.pubkey === notificationOwner) {
-    const matches = events.filter(e => [1,7,1111].includes(e.kind) && e.pubkey !== notificationOwner &&
-      e.tags.some(t => t[0] === 'p' && t[1] === notificationOwner));
-    if (matches.length) {
-      const previous = get(rawNotifications), byId = new Map(previous.map(e => [e.id,e]));
-      for (const event of matches) byId.set(event.id,event);
-      if (byId.size !== previous.length) rawNotifications.set([...byId.values()].sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id)).slice(0,100));
-    }
+    const addressed = events.filter(e => e.tags.some(t => t[0] === 'p' && t[1] === notificationOwner));
+    addInboxEvents(rawNotifications, addressed.filter(e => [1,7,1111].includes(e.kind) && e.pubkey !== notificationOwner));
+    addInboxEvents(inboxReceipts, addressed.filter(e => e.kind === 9735));
   }
   let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, receiptsDirty = false, hotDirty = false;
   const ps = get(rawProfiles), ls = get(rawLikes), rs = get(rawReceipts);
@@ -683,41 +710,54 @@ export function loadThread(id:string) {
   const stopRoots = rawPosts.subscribe(check), stopReplies = rawComments.subscribe(check);
   return () => { stop(); stopRoots(); stopReplies(); closeScope(); if (pinnedThread === id) pinnedThread = ''; };
 }
-export function notificationPostId(event:NostrEvent) {
-  return event.kind === 7 ? event.tags.filter(t => t[0] === 'e' && hexKey.test(t[1])).at(-1)?.[1] : event.id;
+export function observeNotificationPosts(ids: string[]) {
+  const missing = ids.filter(id => !roots.has(id) && !replies.has(id));
+  return missing.length ? watch([{ids:missing, limit:missing.length}]) : noop;
 }
 function storedReadIds(pubkey:string): string[] {
   const ids = readLocal<unknown>('readNotifications.'+pubkey, []);
   return Array.isArray(ids) ? ids.filter(id => typeof id === 'string' && hexKey.test(id)) : [];
 }
-export function readPostNotifications(id:string, events:NostrEvent[]) {
-  if (!notificationOwner || get(account)?.pubkey !== notificationOwner) return;
+export function markNotificationsSeen(owner:string, eventIds:string[]) {
+  if (!owner || notificationOwner !== owner || get(account)?.pubkey !== owner) return;
   const read = get(readNotificationIds);
-  const matches = events.filter(event => !read.has(event.id) &&
-    (notificationPostId(event) === id || (event.kind !== 7 && asPost(event)?.parent === id)));
-  if (!matches.length) return;
-  const ids = new Set([...storedReadIds(notificationOwner), ...read, ...matches.map(event => event.id)]);
-  // Keep room for older relay pages as well as the 100 events in the inbox.
-  const recent = [...ids].slice(-1000);
+  const added = eventIds.filter(id => !read.has(id));
+  if (!added.length) return;
+  const recent = [...new Set([...storedReadIds(owner), ...read, ...added])].slice(-1000);
   readNotificationIds.set(new Set(recent));
-  writeLocal('readNotifications.'+notificationOwner, recent);
+  writeLocal('readNotifications.'+owner, recent);
+}
+export function readPostNotifications(id:string, events:NostrEvent[]) {
+  const matches = events.filter(event => notificationPostId(event) === id || (event.kind !== 7 && asPost(event)?.parent === id));
+  markNotificationsSeen(notificationOwner, matches.map(notificationReadId));
 }
 export function loadNotifications(pubkey:string) {
   if (!hexKey.test(pubkey) || get(account)?.pubkey !== pubkey) return noop;
-  notificationOwner = pubkey; rawNotifications.set([]);
+  notificationOwner = pubkey; rawNotifications.set([]); inboxReceipts.set([]);
   const syncRead = () => readNotificationIds.set(new Set(storedReadIds(pubkey)));
   syncRead();
   const storageChanged = (event:StorageEvent) => {
-    if (event.key === 'nostreddit.ui.readNotifications.'+pubkey || event.key === null) syncRead();
+    if (event.key === null || (event.key === 'nostreddit.ui.readNotifications.'+pubkey && event.newValue === null)) {
+      syncRead();
+    } else if (event.key === 'nostreddit.ui.readNotifications.'+pubkey) {
+      // Two tabs can append before either receives a storage event. Preserve
+      // seen events still in this inbox when reconciling the bounded history.
+      const stored = new Set(storedReadIds(pubkey));
+      const prior = get(readNotificationIds);
+      const missing = get(notifications).map(notificationReadId).filter(id => prior.has(id) && !stored.has(id));
+      const merged = [...stored, ...missing].slice(-1000);
+      readNotificationIds.set(new Set(merged));
+      if (missing.length) writeLocal('readNotifications.'+pubkey, merged);
+    }
   };
   globalThis.addEventListener?.('storage',storageChanged);
-  const stop = watch([{kinds:[1,7,1111],'#p':[pubkey],limit:100}],true);
+  const stop = watch([{kinds:[1,7,1111],'#p':[pubkey],limit:100},{kinds:[9735],'#p':[pubkey],limit:100}],true);
   let closed = false;
   const close = () => {
     if (closed) return;
     closed = true; stop();
     globalThis.removeEventListener?.('storage',storageChanged);
-    if (notificationOwner === pubkey) { notificationOwner = ''; rawNotifications.set([]); readNotificationIds.set(new Set()); }
+    if (notificationOwner === pubkey) { notificationOwner = ''; rawNotifications.set([]); inboxReceipts.set([]); readNotificationIds.set(new Set()); }
   };
   const stopAccount = account.subscribe(current => { if (current?.pubkey !== pubkey) close(); });
   return () => { stopAccount(); close(); };
@@ -727,7 +767,7 @@ export function observeNotificationAuthors() {
   const stopNames = notifications.subscribe(events => {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      const authors = [...new Set(events.map(e => e.pubkey))].sort().slice(0,60);
+      const authors = [...new Set(events.map(notificationAuthor).filter((key): key is string => !!key))].sort().slice(0,60);
       if (authorKey === authors.join()) return;
       authorKey = authors.join(); stopAuthors();
       stopAuthors = authors.length ? watch([{kinds:[0],authors,limit:authors.length}]) : noop;

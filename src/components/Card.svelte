@@ -197,8 +197,8 @@
         ><Icon name="comment" size={16} /><span>{replyCount}</span></a
       >{/if}
     <button
-      title="Zap with Lightning"
-      aria-label="Zap with Lightning"
+      title="Tip with Lightning"
+      aria-label="Tip with Lightning"
       onclick={() => onaction('zap', post)}
       ><Icon name="zap" size={15} /><ZapCount
         event={post.event}

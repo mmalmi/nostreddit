@@ -12,7 +12,7 @@
     account,
     status,
     notifications,
-    unreadNotificationIds,
+    unreadNotificationCount,
     readPostNotifications,
     likes,
     hotSignals,
@@ -52,6 +52,7 @@
   import TopicIntro from './components/TopicIntro.svelte';
   import Mark from './components/Mark.svelte';
   import Icon from './components/Icon.svelte';
+  import ProxyAvatar from './components/ProxyAvatar.svelte';
   import TopicIcon from './components/TopicIcon.svelte';
   import Card from './components/Card.svelte';
   import { topicPath, topicSlug } from './lib/hashtags';
@@ -529,7 +530,7 @@
             : route.page === 'saved'
               ? 'Posts bookmarked in this browser.'
               : route.page === 'notifications'
-                ? 'Replies, mentions, and likes for your profile.'
+                ? 'Replies, mentions, reactions, and tips for your profile.'
                 : route.page === 'topics'
                   ? 'Browse a topic or enter any tag to open it.'
                   : route.page === 'search'
@@ -653,10 +654,11 @@
   <div class="bar-inner">
     <button
       class="menu-button"
-      aria-label="Toggle navigation"
+      aria-label={$unreadNotificationCount ? "Toggle navigation, " + $unreadNotificationCount + " unread notifications" : "Toggle navigation"}
       aria-expanded={menu}
       onclick={() => (menu = !menu)}
-      ><Icon name={menu ? 'close' : 'menu'} /></button
+      ><Icon name={menu ? 'close' : 'menu'} />
+      {#if $unreadNotificationCount && !menu}<span class="menu-unread" aria-hidden="true">{$unreadNotificationCount}</span>{/if}</button
     >
     <a class="brand" href="/" aria-label="Nostreddit home"
       ><Mark size={36} /><span>nostreddit<span class="brand-dot">.</span></span
@@ -683,16 +685,21 @@
       >
       <button
         class="account-button"
+        class:signed-in={!!$account}
+        aria-label={$account ? displayName($account.pubkey, $profiles[$account.pubkey]) : 'Sign in'}
+        aria-haspopup="dialog"
         onclick={() => {
           showAccountAfter = '';
           showModal('account');
         }}
-        ><Icon name="user" size={16} /><span
-          >{$account
-            ? displayName($account.pubkey, $profiles[$account.pubkey])
-            : 'Sign in'}</span
-        ></button
       >
+        {#if $account}
+          <span class="account-avatar" aria-hidden="true"><ProxyAvatar pubkey={$account.pubkey} profile={$profiles[$account.pubkey]} size={28}/></span>
+          <span class="account-name">{displayName($account.pubkey, $profiles[$account.pubkey])}</span>
+        {:else}
+          <Icon name="user" size={16}/><span>Sign in</span>
+        {/if}
+      </button>
     </div>
   </div>
 </header>
@@ -708,11 +715,12 @@
       <div class="feed-nav-heading"><div class="side-label">FEEDS</div><button aria-label="Customize feeds" title="Customize feeds" onclick={() => customize()}><Icon name="settings" size={15}/></button></div>
       {#each $feedPreferences as item (item.id)}<a
           class="nav-row"
+          class:has-count={item.id === 'notifications' && $unreadNotificationCount > 0}
           class:active={selectedFeed?.id === item.id}
           aria-current={selectedFeed?.id === item.id ? 'page' : undefined}
           href={feedPath(item)}><Icon name={feedIcon(item)} size={18} />{item.name}
-          {#if item.id === 'notifications' && $unreadNotificationIds.size}
-            <span class="unread-count" aria-label={$unreadNotificationIds.size + ' unread'}>{$unreadNotificationIds.size}</span>
+          {#if item.id === 'notifications' && $unreadNotificationCount}
+            <span class="unread-count" aria-label={$unreadNotificationCount + ' unread'}>{$unreadNotificationCount}</span>
           {/if}</a
         >{/each}
     </div>
@@ -792,7 +800,7 @@
             {#await import('./components/Notifications.svelte')}
         <p class="state loading-state" role="status">Loading…</p>
       {:then {default: Notifications}}
-        <Notifications {active} onSignIn={() => showModal('account')} />
+        <Notifications active={pageVisible && !modal && !menu} onSignIn={() => showModal('account')} />
       {:catch}
         {@render componentError()}
       {/await}
@@ -1068,7 +1076,7 @@
       : modal === 'compose'
         ? 'Create post'
         : modal === 'zap'
-          ? 'Zap post'
+          ? 'Tip post'
           : 'Edit profile'}
     oncancel={(e) => {
       e.preventDefault();
