@@ -36,3 +36,17 @@ test('an unusable fiat quote leaves exact satoshi display available', () => {
   assert.equal(parseTipRates({data:{currency:'BTC', rates:{BTC:'1',EUR:'junk'}}}), null);
   assert.equal(formatTip(100, 'EUR', null, true), '100 sats');
 });
+
+test('positive tips below the smallest displayed fiat unit get a less-than label before rounding', () => {
+  const quote = {at:Date.now(), rates:{USD:100000, EUR:100000, GBP:100000, JPY:100000}};
+  for (const [code, symbol] of [['USD','$'], ['EUR','€'], ['GBP','£']] as const) {
+    assert.equal(formatTip(9.999, code, quote), '<' + symbol + '0.01');
+    assert.equal(formatTip(10, code, quote), symbol + '0.01');
+    assert.equal(formatTip(11, code, quote), symbol + '0.01');
+  }
+  assert.equal(formatTip(0, 'USD', quote), '$0.00');
+  assert.equal(formatTip(0, 'JPY', quote), '¥0');
+  assert.equal(formatTip(1, 'JPY', quote), '<¥1');
+  assert.equal(formatTip(999.999, 'JPY', quote), '<¥1');
+  assert.equal(formatTip(1000, 'JPY', quote), '¥1');
+});

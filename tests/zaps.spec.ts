@@ -125,7 +125,7 @@ test('inbox shows a verified tip once, in the chosen currency, and links its sen
     return {kind: 9735, created_at: at, tags: [['p', pubkey], ['e', post.id], ['P', req.pubkey],
       ['description', description], ['bolt11', invoice]], content: ''}
   }
-  const payment = receipt(sender, 400, now)
+  const payment = receipt(sender, 1, now)
   await publish([
     signedProfile(recipient, {name: 'Harbor keeper', lud16: 'keeper@lightning.example'}),
     signedProfile(sender, {name: 'Harbor visitor'}),
@@ -135,7 +135,7 @@ test('inbox shows a verified tip once, in the chosen currency, and links its sen
   ])
   let rateLookups = 0
   await page.route(rateURL, route => { rateLookups++; return route.fulfill({
-    json: {data:{currency:'BTC',rates:{BTC:'1',EUR:'50000'}}},
+    json: {data:{currency:'BTC',rates:{BTC:'1',EUR:'50000',USD:'100000',JPY:'15000000'}}},
   }) })
   await page.route('https://lightning.example/**', route => route.fulfill({json: metadata}))
   await page.addInitScript(key => {
@@ -150,7 +150,14 @@ test('inbox shows a verified tip once, in the chosen currency, and links its sen
   const tips = feed.locator('article').filter({hasText: 'sent you a tip'})
   await expect(tips).toHaveCount(1)
   await expect(tips.first().getByRole('link', {name: 'Harbor visitor'})).toHaveAttribute('href', profileUrl(getPublicKey(sender)))
-  await expect(tips.first().getByText('€0.20', {exact:true})).toHaveAttribute('title', '400 sats')
+  await expect(tips.first().getByText('<€0.01', {exact:true})).toHaveAttribute('title', '1 sat')
   await expect(feed.getByText('Ignored sender')).toHaveCount(0)
   await page.screenshot({path: testInfo.outputPath('tip-inbox-eur.png')})
+  const settings = await page.context().newPage()
+  await settings.goto('/settings/appearance')
+  for (const [code,label] of [['USD','<$0.01'],['JPY','<¥1']]) {
+    await settings.getByLabel('Tip currency').selectOption(code)
+    await expect(tips.first().getByText(label, {exact:true})).toHaveAttribute('title', '1 sat')
+  }
+  await settings.close()
 })
