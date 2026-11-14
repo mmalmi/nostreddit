@@ -22,10 +22,10 @@ const poll = sign(author, 1, 'Who saw the kingfisher?', []);
 const reader = generateSecretKey(), bridge = generateSecretKey(), neighbor = generateSecretKey();
 const [quiet, familiar] = [generateSecretKey(), generateSecretKey()].sort((a,b) => getPublicKey(a).localeCompare(getPublicKey(b)));
 
-function paid(target: NostrEvent, sender: Uint8Array, sats: number, offset: number, isAnonymous = false) {
+function paid(target: NostrEvent, sender: Uint8Array, sats: number, offset: number, message = '', isAnonymous = false) {
   const tags = [['p', target.pubkey], ['e', target.id], ['relays', 'wss://relay.example'], ['amount', String(sats * 1000)]];
   if (isAnonymous) tags.push(['anon']);
-  const request = sign(sender, 9734, '', tags, offset);
+  const request = sign(sender, 9734, message, tags, offset);
   const description = JSON.stringify(request);
   return [
     ['e', target.id], ['p', target.pubkey], ['P', request.pubkey], ['description', description],
@@ -34,17 +34,18 @@ function paid(target: NostrEvent, sender: Uint8Array, sats: number, offset: numb
 }
 
 test.beforeAll(async () => {
-  const first = paid(post, tipper, 200, 1);
+  const first = paid(post, tipper, 200, 3, 'A smaller tip');
   const profile = (key: Uint8Array, name: string, fields = {}) =>
     sign(key, 0, JSON.stringify({ name, ...fields }), []);
   const events = [
     profile(author, 'River Journal', { lud16: lightning }), profile(tipper, 'June Park'),
     profile(voter, 'Robin Vale'), profile(anonymous, 'Private tip signer'), profile(outsider, 'Wrong issuer'),
     post, comment, sign(voter, 7, '+', [['e', post.id], ['p', post.pubkey]]),
-    sign(providerKey, 9735, '', first, 1), sign(providerKey, 9735, '', first, 2),
-    sign(providerKey, 9735, '', paid(post, tipper, 400, 3), 3),
-    sign(providerKey, 9735, '', paid(post, anonymous, 100, 4, true), 4),
-    sign(outsider, 9735, '', paid(post, outsider, 9000, 5), 5),
+    sign(providerKey, 9735, '', first, 3), sign(providerKey, 9735, '', first, 4),
+    sign(providerKey, 9735, 'Provider text', paid(post, tipper, 400, 1, 'Worth getting up early for that light.'), 1),
+    sign(providerKey, 9735, '', paid(post, voter, 500, 2, 'Thanks for sharing!'), 2),
+    sign(providerKey, 9735, '', paid(post, anonymous, 100, 4, 'Anonymous text', true), 4),
+    sign(outsider, 9735, '', paid(post, outsider, 9000, 5, 'Wrong provider'), 5),
     sign(providerKey, 9735, '', paid(comment, voter, 1000, 6), 6),
     poll, profile(reader,'You'), profile(quiet,'Ada'), profile(familiar,'Bea'), profile(neighbor,'Cora'),
     sign(reader,3,'',[quiet,familiar,bridge].map(key=>['p',getPublicKey(key)])),
@@ -101,7 +102,7 @@ test('upvotes put familiar follows ahead of other follows, then neighbors and st
 test('post and comment menus list their own upvotes and verified tips', async ({ page }, testInfo) => {
   await openThread(page, post);
   const card = rootCard(page), dialog = reactions(page);
-  await expect(card.getByRole('button', { name: 'Tip with Lightning' })).toHaveText('€0.35');
+  await expect(card.getByRole('button', { name: 'Tip with Lightning' })).toHaveText('€0.60');
   await openMenu(card);
   await expect(tab(dialog, 'Upvotes')).toHaveAttribute('aria-selected', 'true');
   await expect(person(dialog, voter)).toContainText('Robin Vale');
@@ -112,10 +113,14 @@ test('post and comment menus list their own upvotes and verified tips', async ({
   await expect(tab(dialog, 'Tips')).toBeFocused();
   await expect(tab(dialog, 'Tips')).toHaveAttribute('aria-selected', 'true');
   const panel = dialog.getByRole('tabpanel');
-  await expect(panel.getByRole('listitem')).toHaveCount(2);
+  await expect(panel.getByRole('listitem')).toHaveCount(3);
+  await expect(panel.getByRole('listitem').first()).toContainText('June Park');
+  await expect(panel.getByRole('listitem').nth(1)).toContainText('Thanks for sharing!');
   const repeat = panel.getByRole('listitem').filter({ hasText: 'June Park' });
   await expect(repeat).toContainText('€0.30');
   await expect(repeat).toContainText(/2 tips/i);
+  await expect(repeat).toContainText('Worth getting up early for that light.');
+  await expect(panel).not.toContainText(/A smaller tip|Anonymous text|Provider text|Wrong provider/);
   await expect(person(repeat, tipper)).toBeVisible();
   const privateRow = panel.getByRole('listitem').filter({ hasText: /anonymous/i });
   await expect(privateRow).toContainText('€0.05');
@@ -191,7 +196,8 @@ test('a busy post lists 1,000 upvoters and combines 1,000 payments from one tipp
   const events = [...notes];
   for (let i = 0; i < 1000; i++) {
     events.push(sign(generateSecretKey(), 7, '+', [['e',popular.id], ['p',popular.pubkey]], -i));
-    events.push(sign(providerKey, 9735, '', paid(popular, tipper, 1, -i), -i));
+    const biggest = i === 999;
+    events.push(sign(providerKey, 9735, '', paid(popular, tipper, biggest ? 2 : 1, -i, biggest ? 'The view from the bridge!' : ''), -i));
   }
   // Keep the large history private to this test and respect each query's limit.
   const detailKinds = new Set<number>();
@@ -231,6 +237,7 @@ test('a busy post lists 1,000 upvoters and combines 1,000 payments from one tipp
     const row = dialog.getByRole('listitem');
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('1000 tips', {timeout:60_000});
+    await expect(row).toContainText('The view from the bridge!');
     expect(detailKinds.has(9735)).toBe(true);
     await expect(row).toContainText('€0.50');
     await expect(person(row, tipper)).toContainText('June Park');

@@ -95,20 +95,20 @@ test('post tip groups reconcile to the visible total, preserve anonymous receipt
   const fetcher = mock.method(globalThis, 'fetch', async () => Response.json(metadata))
   const senderA = generateSecretKey(), senderB = generateSecretKey(), publicA = getPublicKey(senderA), publicB = getPublicKey(senderB)
   const now = Math.floor(Date.now() / 1000)
-  const receipt = (key: Uint8Array, sats: number, at: number, anonymous = false, post = target.id) => {
+  const receipt = (key: Uint8Array, sats: number, at: number, {anonymous = false, post = target.id, message = ''} = {}) => {
     const tags = [['p',target.pubkey], ['e',post], ['amount',String(sats * 1000)], ['relays','wss://relay.example']]
     if (anonymous) tags.push(['anon'])
-    const request = finalizeEvent({kind:9734,tags,content:'',created_at:at}, key)
+    const request = finalizeEvent({kind:9734,tags,content:message,created_at:at}, key)
     const description = JSON.stringify(request), invoice = bolt11(description, {sats,proof:generateSecretKey()})
     return finalizeEvent({kind:9735,content:'',created_at:at,tags:[
       ['e',post], ['p',target.pubkey], ['P',request.pubkey], ['description',description], ['bolt11',invoice],
     ]}, providerKey)
   }
-  const first = receipt(senderA, 100, now - 10), second = receipt(senderA, 200, now - 9)
+  const first = receipt(senderA, 100, now - 9, {message:'Smaller, later tip'}), second = receipt(senderA, 200, now - 10, {message:'  Thank you for the photographs.  '})
   const duplicate = finalizeEvent({...first, created_at: now + 1}, providerKey)
   const other = receipt(senderB, 300, now - 8)
-  const anonA = receipt(generateSecretKey(), 10, now - 7, true), anonB = receipt(senderA, 0.5, now - 6, true)
-  const wrongPost = receipt(senderB, 1000, now, false, 'a'.repeat(64))
+  const anonA = receipt(generateSecretKey(), 10, now - 7, {anonymous:true, message:'Anonymous text'}), anonB = receipt(senderA, 0.5, now - 6, {anonymous:true})
+  const wrongPost = receipt(senderB, 1000, now, {post:'a'.repeat(64),message:'Different post'})
   const forgery = finalizeEvent({...first, created_at: now}, generateSecretKey())
   try {
     assert.deepEqual(postTipActor(anonA), {sender:null})
@@ -116,11 +116,20 @@ test('post tip groups reconcile to the visible total, preserve anonymous receipt
     const records = [duplicate, other, first, anonA, second, anonB, wrongPost, forgery]
     const summary = await postTipSummary(target, groupRecipient, records)
     assert.deepEqual(summary, {status:'ready', totalMillisats:610500, groups:[
-      {sender:publicB, millisats:300000, count:1, latest:now-8},
-      {sender:publicA, millisats:300000, count:2, latest:now-9},
-      {sender:null, millisats:10500, count:2, latest:now-6},
+      {sender:publicB, millisats:300000, count:1, latest:now-8, message:''},
+      {sender:publicA, millisats:300000, count:2, latest:now-9, message:'Thank you for the photographs.'},
+      {sender:null, millisats:10500, count:2, latest:now-6, message:''},
     ]})
     assert.deepEqual(await postTipSummary(target, groupRecipient, [...records].reverse()), summary)
+    const silentMax = receipt(senderA, 200.1, now - 8, {message:'  '})
+    assert.equal((await postTipSummary(target, groupRecipient, [second,silentMax])).groups[0].message, '')
+    const silentTie = receipt(senderA, 200, now, {message:' '})
+    const tiedA = receipt(senderA, 200, now - 1, {message:'First message'})
+    const tiedB = receipt(senderA, 200, now - 1, {message:'Second message'})
+    const expected = tiedA.id < tiedB.id ? 'First message' : 'Second message'
+    const equal = [second,tiedA,tiedB,silentTie]
+    assert.equal((await postTipSummary(target, groupRecipient, equal)).groups[0].message, expected)
+    assert.equal((await postTipSummary(target, groupRecipient, equal.reverse())).groups[0].message, expected)
     assert.equal(await receivedZapSats(target, groupRecipient, records), 610.5)
     // Match the network's named-author policy: a hidden sender's anonymous
     // payment remains anonymous even when their named payments are hidden.

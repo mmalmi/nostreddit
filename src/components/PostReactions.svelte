@@ -91,6 +91,7 @@
             {/if}
             {#if row.tip}
               <div class="amount"><TipAmount sats={row.tip.millisats/1000}/><small>{row.tip.count} {row.tip.count === 1 ? 'tip' : 'tips'}</small></div>
+              {#if row.tip.message}<p class="tip-message" dir="auto">{row.tip.message}</p>{/if}
             {/if}
           </li>
         {/each}
@@ -108,17 +109,17 @@
   .tabs button {display:inline-flex;align-items:center;gap:6px;padding:10px 2px;border-bottom:2px solid transparent;color:var(--muted);font-weight:650}
   .tabs button[aria-selected=true] {border-color:var(--accent);color:var(--accent)}
   .panel {max-height:min(55dvh,460px);overflow:auto}
-  .total,li {display:flex;justify-content:space-between;align-items:center;gap:12px}
-  .total {font-size:.79rem;color:var(--muted);padding:14px 0 8px}
+  .total {display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:.79rem;color:var(--muted);padding:14px 0 8px}
   .total strong {color:var(--ink)}
   ul {margin:0;padding:0;list-style:none}
-  li {padding:10px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+  li {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:12px;row-gap:3px;padding:10px 0;border-bottom:1px solid var(--line);font-size:.9rem}
   li:last-child {border-bottom:0}
   li a,.anonymous {display:flex;align-items:center;gap:10px;min-width:0;color:var(--ink);text-decoration:none}
   li a:hover b {text-decoration:underline}
   li b {overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
   .anon-icon {display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;background:var(--light);color:var(--muted)}
   .amount {flex:none;text-align:right;font-weight:650;font-variant-numeric:tabular-nums}
+  .tip-message {grid-column:1/-1;margin:0 0 0 42px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.86rem;line-height:1.45}
   small {display:block;color:var(--muted);font-size:.72rem;font-weight:400}
   .quiet {margin:18px 0 2px;color:var(--muted);font-size:.88rem}
   .more {margin-top:8px;padding:6px 0;color:var(--accent);font-weight:650}

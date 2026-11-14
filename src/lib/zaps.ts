@@ -258,7 +258,8 @@ export function matchesZapReceipt(event: NostrEvent, zap: ZapInvoice) {
 type PaidInvoice = { paymentHash: string; millisats: number }
 const checked = new WeakMap<NostrEvent, { key: string; payment: TipPayment | null }>()
 
-type TipPayment = PaidInvoice & {sender: string | null}
+type TipPayment = PaidInvoice & {sender: string | null; message: string}
+type ReceivedTip = TipPayment & {event: NostrEvent}
 function receiptPayment(event: NostrEvent, recipient: string, targetId: string | undefined, provider: string, endpoint: string): TipPayment | null {
   const description = event.tags.find(([name]) => name === 'description')?.[1]
   const invoice = event.tags.find(([name]) => name === 'bolt11')?.[1]
@@ -284,9 +285,9 @@ function receiptPayment(event: NostrEvent, recipient: string, targetId: string |
   // in a receipt. Outgoing payments always require the exact request hash.
   const details = readInvoice(invoice, amount.length ? Number(amount[0][1]) : undefined, undefined, false)
   const zap = { ...details, description, invoice, request, provider, sats: details.millisats / 1000 }
-  return matchesZapReceipt(event, zap)
-    ? {paymentHash: details.paymentHash, millisats: details.millisats, sender: tags('anon').length ? null : request.pubkey}
-    : null
+  if (!matchesZapReceipt(event, zap)) return null
+  const sender = tags('anon').length ? null : request.pubkey
+  return {paymentHash:details.paymentHash, millisats:details.millisats, sender, message:sender ? request.content.trim() : ''}
 }
 
 function checkedReceipt(event: NostrEvent, recipient: string, targetId: string | undefined, provider: string, endpoint: string) {
@@ -305,7 +306,7 @@ function checkedReceipt(event: NostrEvent, recipient: string, targetId: string |
 export async function receivedTips(recipient: string, endpoint: string | null, receipts: readonly NostrEvent[]) {
   if (!endpoint || !receipts.length) return []
   const { provider } = await readProvider(endpoint)
-  const payments = new Map<string, TipPayment & {event: NostrEvent}>()
+  const payments = new Map<string, ReceivedTip>()
   for (const event of receipts) {
     const targetId = event.tags.find(tag => tag[0] === 'e')?.[1]
     if (targetId !== undefined && !/^[a-f0-9]{64}$/.test(targetId)) continue
@@ -321,8 +322,15 @@ export async function receivedTips(recipient: string, endpoint: string | null, r
   return [...payments.values()]
 }
 
-export type PostTipGroup = {sender: string | null; millisats: number; count: number; latest: number}
+export type PostTipGroup = {sender: string | null; millisats: number; count: number; latest: number; message: string}
 export type PostTipSummary = {status: 'ready' | 'unavailable'; totalMillisats: number; groups: PostTipGroup[]}
+
+function preferTip(candidate: ReceivedTip, current: ReceivedTip) {
+  if (candidate.millisats !== current.millisats) return candidate.millisats > current.millisats
+  if (Boolean(candidate.message) !== Boolean(current.message)) return Boolean(candidate.message)
+  return candidate.event.created_at > current.event.created_at
+    || (candidate.event.created_at === current.event.created_at && candidate.event.id < current.event.id)
+}
 
 export async function postTipSummary(target: NostrEvent, profile: ZapProfile, receipts: readonly NostrEvent[]): Promise<PostTipSummary> {
   const candidates = receipts.filter(event => event.tags.some(tag => tag[0] === 'e' && tag[1] === target.id))
@@ -335,18 +343,25 @@ export async function postTipSummary(target: NostrEvent, profile: ZapProfile, re
   } catch {
     return {status: 'unavailable', totalMillisats: 0, groups: []}
   }
-  const bySender = new Map<string | null, PostTipGroup>()
+  const bySender = new Map<string | null, {millisats:number; count:number; latest:number; largest:ReceivedTip}>()
   let totalMillisats = 0
-  for (const {sender, millisats, event} of payments) {
-    const group = bySender.get(sender) ?? {sender, millisats: 0, count: 0, latest: event.created_at}
-    group.millisats += millisats
-    group.count++
-    group.latest = Math.max(group.latest, event.created_at)
-    bySender.set(sender, group)
+  for (const payment of payments) {
+    const {sender, millisats, event} = payment
+    const group = bySender.get(sender)
+    if (group) {
+      group.millisats += millisats
+      group.count++
+      group.latest = Math.max(group.latest, event.created_at)
+      if (sender && preferTip(payment, group.largest)) group.largest = payment
+    } else {
+      bySender.set(sender, {millisats, count:1, latest:event.created_at, largest:payment})
+    }
     totalMillisats += millisats
   }
-  const groups = [...bySender.values()].sort((a,b) => b.millisats - a.millisats || b.latest - a.latest
-    || (a.sender ?? '').localeCompare(b.sender ?? ''))
+  const groups = Array.from(bySender, ([sender,{millisats,count,latest,largest}]) => ({
+    sender, millisats, count, latest, message:largest.message,
+  }))
+  groups.sort((a,b) => b.millisats - a.millisats || b.latest - a.latest || (a.sender ?? '').localeCompare(b.sender ?? ''))
   return {status: 'ready', totalMillisats, groups}
 }
 
