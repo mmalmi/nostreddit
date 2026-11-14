@@ -8,6 +8,7 @@ export const previousRelayUrls = ['wss://relay.damus.io', 'wss://nos.lol', 'wss:
 export const relayUrls = override ? [...new Set<string>(override.split(/[\s,]+/))].slice(0, 8) :
   ['wss://relay.ditto.pub', ...previousRelayUrls];
 export const searchRelayUrls = testRelays ? relayUrls : ['wss://relay.ditto.pub', 'wss://search.nos.today'];
+export type RelayConnection = 'connected' | 'connecting' | 'disconnected';
 export type ContactQuery = { type:'contacts'; subject:string; mode:'followers'|'following'|'mutual'|'check'; authors?: string[]; cacheOnly?: boolean };
 export type Request =
   | { type: 'watch'; id: number; filters: NostrFilter[]; live: boolean }
@@ -19,7 +20,7 @@ export type Request =
   | { type: 'latest'; id: number; kind: number; pubkey: string };
 export type Response =
   | { type: 'events'; events: NostrEvent[] }
-  | { type: 'status'; value: 'live' | 'offline' }
+  | { type: 'status'; relays: Record<string, RelayConnection> }
   // Results of a request that is still reading relays. Its 'result' follows.
   | { type: 'found'; id: number; events: NostrEvent[] }
   | { type: 'result'; id: number; events: NostrEvent[]; cursors?: SearchCursors; error?: string };

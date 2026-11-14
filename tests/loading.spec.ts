@@ -21,12 +21,14 @@ async function controlledWorkers(page: Page, options: { content?: 'feed' | 'comm
   const mention = finalizeEvent({ kind: 1, content: 'An arriving notification', created_at: post.created_at,
     tags: [['p', owner]] }, generateSecretKey());
   await page.route('**/relay.worker-*.js', route => route.fulfill({ contentType: 'text/javascript', body: `
-    let started = false;
+    let started = false, urls = [];
     self.onmessage = ({data}) => {
+      if (data.type === 'configure') urls = data.urls;
+      const report = state => self.postMessage({type:'status', relays:Object.fromEntries(urls.map(url => [url, state]))});
       if (data.type === 'watch' && !started) {
         started = true;
-        self.postMessage({type:'status',value:'live'});
-        ${options.offline ? "setTimeout(() => self.postMessage({type:'status',value:'offline'}), 300);" : ''}
+        report('connected');
+        ${options.offline ? "setTimeout(() => report('disconnected'), 300);" : ''}
         ${options.content === 'comments' ? `self.postMessage({type:'events',events:[${JSON.stringify(post)}]});` : ''}
         ${options.content ? `setTimeout(() => self.postMessage({type:'events',events:${JSON.stringify([options.content === 'feed' ? post : options.content === 'comments' ? reply : mention])}}), 700);` : ''}
       }

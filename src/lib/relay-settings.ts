@@ -1,5 +1,10 @@
-export function validateRelayUrls(input: string, allowEmpty = false): string[] {
-  const urls = [...new Set(input.split(/[\s,]+/).filter(Boolean).map(value => {
+export const maxRelays = 8;
+
+export function validateRelayUrls(input: string | readonly string[], allowEmpty = false): string[] {
+  const addresses = typeof input === 'string' ? input.split(/[\s,]+/).filter(Boolean) : input;
+  const urls = [...new Set(addresses.map(address => {
+    const value = address.trim();
+    if (!value || /[\s,]/.test(value)) throw new Error('Enter one relay address in each row.');
     let url: URL;
     try { url = new URL(value); } catch { throw new Error('Enter valid wss:// relay addresses.'); }
     if (!['wss:', 'ws:'].includes(url.protocol) || url.username || url.password || url.hash ||
@@ -7,7 +12,7 @@ export function validateRelayUrls(input: string, allowEmpty = false): string[] {
       throw new Error('Use wss:// addresses (ws:// is allowed for local relays).');
     return url.href.replace(/\/$/, '');
   }))];
-  if ((!allowEmpty && !urls.length) || urls.length > 8) throw new Error('Choose between 1 and 8 relays.');
+  if ((!allowEmpty && !urls.length) || urls.length > maxRelays) throw new Error(`Choose between 1 and ${maxRelays} relays.`);
   return urls;
 }
 

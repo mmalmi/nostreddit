@@ -62,12 +62,18 @@ for (const scenario of cases) test(`relay defaults preserve ${scenario.name} set
       localStorage.setItem('nostreddit.account.v1', JSON.stringify(account));
       localStorage.setItem('nostreddit.ui.graphVisibility', JSON.stringify({maxDistance:null,hideOvermuted:false}));
     }, { saved: scenario.saved, account: { pubkey: getPublicKey(secret), method: 'local', nsec: nsecEncode(secret) } });
+    const expectRows = async () => {
+      await expect(page.getByRole('button', { name: 'Add relay' })).toBeVisible();
+      const inputs = page.getByRole('textbox', { name: /^Relay address / });
+      await expect(inputs).toHaveCount(scenario.expected.length);
+      for (const [i, url] of scenario.expected.entries()) await expect(inputs.nth(i)).toHaveValue(url);
+    };
     await page.goto('/settings/network');
-    await expect(page.getByLabel('One relay address per line')).toHaveValue(scenario.expected.join('\n'));
+    await expectRows();
     await expect.poll(() => configured.at(-1)).toEqual(scenario.expected);
     expect(workersInstrumented).toBeGreaterThan(0);
     await page.reload();
-    await expect(page.getByLabel('One relay address per line')).toHaveValue(scenario.expected.join('\n'));
+    await expectRows();
     expect(await page.evaluate(() => localStorage.getItem('nostreddit.relays.v1'))).toBe(scenario.saved);
     await expect.poll(() => configured.length).toBeGreaterThan(1);
     if (scenario.name === 'absent') {

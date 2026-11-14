@@ -4,6 +4,14 @@ import {once} from 'node:events';
 import {writeFile} from 'node:fs/promises';
 const base=process.argv[2],out=process.argv[3];
 const rows=[]; const browser=await chromium.launch();
+async function replaceRelays(page, url) {
+ await page.getByRole('link',{name:'Network',exact:true}).click();
+ const section=page.getByRole('region',{name:'Relays',exact:true});
+ const addresses=section.getByRole('textbox');
+ while(await addresses.count()>1) await section.getByRole('button',{name:/^Remove relay /}).last().click();
+ await addresses.first().fill(url);
+ await section.getByRole('button',{name:'Save relays',exact:true}).click();
+}
 try {
  for(let i=0;i<2;i++){
   const server=new WebSocketServer({host:'127.0.0.1',port:0});await once(server,'listening');
@@ -31,8 +39,7 @@ try {
  expect(bootstrap).toBe(0);expect(publicSockets).toEqual([]);
  await page.locator('[data-route-active="true"]').getByRole('link',{name:'Settings',exact:true}).click();
  expect(rows[0].closedGraph).toBe(0);
- await page.getByLabel('One relay address per line').fill(rows[1].url);
- await page.getByRole('button',{name:'Save relays',exact:true}).click();
+ await replaceRelays(page,rows[1].url);
  await expect.poll(()=>rows[1].neg).toBeGreaterThan(0);
  await expect.poll(()=>rows[0].closedGraph).toBeGreaterThan(0);
  const oldCount=rows[0].neg;await page.reload({waitUntil:'domcontentloaded'});
@@ -51,8 +58,7 @@ try {
   await second.goto(base,{waitUntil:'domcontentloaded'});
   await expect.poll(()=>requested).toBe(true);
   await second.locator('[data-route-active="true"]').getByRole('link',{name:'Settings',exact:true}).click();
-  await second.getByLabel('One relay address per line').fill(rows[1].url);
-  await second.getByRole('button',{name:'Save relays',exact:true}).click();
+  await replaceRelays(second,rows[1].url);
   await expect.poll(()=>aborted,{timeout:1500}).toBe(true);
  }finally{release();await switched.close();}
  await writeFile(out,JSON.stringify({passed:true,bootstrap,publicSockets,errors,relays:rows.map(({neg,closedGraph})=>({neg,closedGraph})),customReload:true,oldScopeClosed:true,pendingBootstrapAborted:true},null,2));

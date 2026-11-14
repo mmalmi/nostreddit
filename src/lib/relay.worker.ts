@@ -1,4 +1,5 @@
 import { MemoryEventStore, NostrRuntime, type NostrEvent, type NostrFilter, type RuntimeSubscribeOptions, type RuntimeSubscription } from 'nostr-pubsub';
+import { normalizeURL } from 'nostr-tools/utils';
 import { discussionKinds } from './posts';
 import { focusedThread, VisitedThreads } from './visited-threads';
 import { queryDirectory } from './contactDirectory';
@@ -6,16 +7,45 @@ import { relayFilters } from './discovery/discussions';
 import { readSearchPage, type SearchHistory } from './discovery/relay-search';
 import { planPostSearch } from './discovery/query';
 import { checkSearch } from './search';
-import { relayUrls, searchRelayUrls, testRelays, type Request, type Response } from './relayTypes';
+import { relayUrls, searchRelayUrls, testRelays, type RelayConnection, type Request, type Response } from './relayTypes';
+
+const reply = (data: Response) => self.postMessage(data);
+let configuredRelayUrls: string[] = [];
+const sockets = new Map<string, WebSocket>();
+
+function reportConnections() {
+  const relays: Record<string, RelayConnection> = {};
+  for (const url of configuredRelayUrls) {
+    const state = sockets.get(normalizeURL(url))?.readyState;
+    relays[url] = state === WebSocket.OPEN ? 'connected' : state === WebSocket.CONNECTING ? 'connecting' : 'disconnected';
+  }
+  reply({type: 'status', relays});
+}
+
+// Observe the runtime's own sockets, including retries and idle disconnects.
+class RelaySocket extends WebSocket {
+  constructor(url: string | URL, protocols?: string | string[]) {
+    super(url, protocols);
+    const key = String(url); // The relay pool passes its normalized URL.
+    sockets.set(key, this);
+    reportConnections();
+    this.addEventListener('open', reportConnections);
+    this.addEventListener('close', () => {
+      if (sockets.get(key) === this) {
+        sockets.delete(key);
+        reportConnections();
+      }
+    });
+  }
+}
 
 const runtime = new NostrRuntime({
   relays: [], store: new MemoryEventStore(2300), batchWindowMs: 50,
   historyTimeoutMs: 6500, publishTimeoutMs: 8500, maxSubscriptions: 80,
+  websocketImplementation: RelaySocket,
 });
-let configuredRelayUrls = [...relayUrls];
 let configuredSearchRelayUrls = [...searchRelayUrls];
 let searchController = new AbortController();
-const reply = (data: Response) => self.postMessage(data);
 // Hand a request's results over as relays deliver them, a frame's worth at a time.
 function streamTo(id: number) {
   let batch: NostrEvent[] = [], timer: ReturnType<typeof setTimeout> | undefined;
@@ -37,11 +67,6 @@ function readHistory(filters: NostrFilter[], history: SearchHistory, options: Ru
 }
 const watches = new Map<number, RuntimeSubscription>();
 const queue = new Map<string, NostrEvent>();
-let connectionState: 'live' | 'offline' | undefined;
-function setConnection(connected:boolean) {
-  const value = connected ? 'live' : 'offline';
-  if (value !== connectionState) { connectionState = value; reply({type:'status',value}); }
-}
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let cacheTimer: ReturnType<typeof setTimeout> | undefined;
 const cacheKey = testRelays ? relayUrls.join(',') : 'public';
@@ -135,6 +160,7 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     const usingDefaults = defaults.size === selected.size && [...defaults].every(url => selected.has(url));
     configuredSearchRelayUrls = usingDefaults ? [...searchRelayUrls] : [...req.urls];
     runtime.setRelays(req.urls);
+    reportConnections();
     return;
   }
   try {
@@ -146,11 +172,10 @@ self.onmessage = async (message: MessageEvent<Request>) => {
         onEvent(event, info) {
           emit(event);
           if (!info.cached && /^wss?:/.test(info.source)) {
-            scheduleSnapshot(); setConnection(true);
+            scheduleSnapshot();
           }
         },
         onEose() {
-          setConnection(runtime.getRelayStats().some(r => r.connected));
           if (!req.live) { sub.close(); watches.delete(req.id); }
         },
       }, {deadline: Date.now() + 6500});

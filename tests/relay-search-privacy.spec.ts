@@ -66,7 +66,7 @@ test('custom relays contain keyword search on startup, live switch and reload', 
     await expect.poll(() => first.state.pending.size).toBeGreaterThan(0);
     await page.locator('[data-route-active="true"]').getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByRole('link', { name: 'Network', exact: true }).click();
-    await page.getByLabel('One relay address per line').fill(second.state.url);
+    await page.getByRole('textbox', { name: 'Relay address 1', exact: true }).fill(second.state.url);
     await page.getByRole('button', { name: 'Save relays', exact: true }).click();
     await expect.poll(() => first.state.pending.size).toBe(0);
     const oldSearches = first.state.searches;

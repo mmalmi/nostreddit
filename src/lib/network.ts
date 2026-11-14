@@ -11,7 +11,7 @@ import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './w
 import { cacheOwnEvents, type Change } from './local-writes';
 import { noExpansion, type Expansion } from './discovery/discussions';
 import type { SearchCursors } from './discovery/relay-search';
-import { relayUrls, type ContactQuery, type Request, type Response } from './relayTypes';
+import { relayUrls, type ContactQuery, type RelayConnection, type Request, type Response } from './relayTypes';
 import { readStoredRelayUrls, validateRelayUrls } from './relay-settings';
 import { readLocal, writeLocal } from './ui';
 import { startTopicCatalog } from './topic-catalog-store';
@@ -25,8 +25,9 @@ function savedRelays() {
   return readStoredRelayUrls(() => localStorage.getItem(relayStorageKey), relayUrls);
 }
 export const configuredRelays = writable(savedRelays());
+export const relayConnections = writable<Record<string, RelayConnection>>({});
 configuredRelays.subscribe(setGraphRelays);
-export function saveRelays(input: string) {
+export function saveRelays(input: string | readonly string[]) {
   const urls = validateRelayUrls(input);
   localStorage.setItem(relayStorageKey, urls.join('\n'));
   configuredRelays.set(urls);
@@ -48,7 +49,11 @@ const rawLikes = writable<Record<string,string[]>>({});
 const rawReceipts = writable<Record<string,NostrEvent[]>>({});
 const rawHotSignals = writable<HotSignal[]>([]);
 export const follows = writable<string[]>([]), mutes = writable<string[]>([]);
-export const status = writable<'loading'|'live'|'offline'>('loading');
+export const status = derived([configuredRelays, relayConnections], ([urls, connections]) => {
+  if (urls.some(url => connections[url] === 'connected')) return 'live';
+  if (urls.some(url => connections[url] === 'connecting')) return 'loading';
+  return 'offline';
+});
 const rawNotifications = writable<NostrEvent[]>([]);
 let relaySearchVersion = 0;
 const relaySearchIds = new Set<string>();
@@ -303,6 +308,7 @@ const waiting = new Map<number,{resolve:(result:Result)=>void; reject:(reason:Er
 let seq = 0, worker: Worker|undefined, active = false, watching = false;
 function shutdown() {
   worker?.terminate(); worker = undefined; watching = false;
+  relayConnections.set({});
   for (const {reject} of waiting.values()) reject(new Error('The connection closed. Please try again.'));
   waiting.clear();
 }
@@ -315,7 +321,7 @@ function connect() {
   next.onmessage = ({data}:MessageEvent<Response>) => {
     if (worker !== next) return;
     if (data.type === 'events') apply(data.events);
-    else if (data.type === 'status') status.set(data.value);
+    else if (data.type === 'status') relayConnections.set(data.relays);
     else if (data.type === 'found') waiting.get(data.id)?.found?.(data.events);
     else {
       const pending = waiting.get(data.id); waiting.delete(data.id);
@@ -324,7 +330,7 @@ function connect() {
       if (!visible() && !waiting.size) shutdown();
     }
   };
-  next.onerror = () => { if (worker === next) { shutdown(); status.set('offline'); } };
+  next.onerror = () => { if (worker === next) shutdown(); };
   watching = visible();
   if (watching) for (const interest of interests.values()) next.postMessage(interest);
   return next;
