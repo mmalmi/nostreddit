@@ -49,9 +49,16 @@ for (const [device,width,height] of [['desktop',1440,1000],['mobile',390,844]] a
     await expect(page.getByRole('dialog',{name:'Expanded image'}).getByRole('link',{name:'Open original'})).toHaveAttribute('href',urls[11]);
     const viewer=page.getByRole('dialog',{name:'Expanded image'}), original=viewer.getByRole('link',{name:'Open original'});
     await expect(viewer.getByText('12 / 12',{exact:true})).toBeVisible();
+    const neighbors=viewer.locator('div[hidden] > img');
+    await expect(neighbors).toHaveCount(2);
+    await expect.poll(()=>neighbors.evaluateAll(nodes=>nodes.filter(node=>node instanceof HTMLImageElement && node.complete && node.naturalWidth>0).map(node=>node.getAttribute('alt')).sort())).toEqual(['Vienna view 1','Vienna view 11']);
+    const preloaded=await viewer.locator('img[alt="Vienna view 1"]').elementHandle();
     await page.keyboard.press('ArrowRight');
     await expect(original).toHaveAttribute('href',urls[0]);
     await expect(viewer.getByRole('img',{name:'Vienna view 1',exact:true})).toBeVisible();
+    expect(await preloaded!.evaluate(node=>node.isConnected && node.checkVisibility())).toBe(true);
+    await expect(viewer.locator('img[alt="Vienna view 2"]')).toBeAttached();
+    await expect(viewer.locator('img[alt="Vienna view 11"]')).toHaveCount(0);
     await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowLeft');
     await expect(original).toHaveAttribute('href',urls[10]);
     await viewer.getByRole('button',{name:'Next image'}).click();

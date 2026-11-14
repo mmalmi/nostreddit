@@ -4,14 +4,20 @@
 
   export let url = '';
   export let alt = '';
-  export let items: {url: string; alt: string}[] = [];
+  export let items: {url: string; alt: string; clickToLoad?: boolean}[] = [];
   export let start = 0;
   export let enlargeSmall = false;
   export let onclose: () => void;
-  let index = start;
+  let index = Math.max(0, start);
   $: list = items.length ? items : [{url, alt}];
   $: multi = list.length > 1;
   $: current = list[Math.min(index, list.length - 1)];
+
+  $: slides = [...new Set([
+    current,
+    list[(index + 1) % list.length],
+    list[(index + list.length - 1) % list.length],
+  ])].filter(slide => slide === current || !slide.clickToLoad);
 
   function step(by: number) { index = (index + by + list.length) % list.length; }
   function arrowKeys(event: KeyboardEvent) {
@@ -50,9 +56,12 @@
     <button type="button" aria-label="Close image" onclick={onclose}><Icon name="close" size={20}/></button>
   </div>
   <div class="stage" class:multi>
-    {#key current.url}
-      <img class:enlargeSmall use:proxyImage={{url:current.url,offline:true,remember:true}} alt={current.alt} referrerpolicy="no-referrer"/>
-    {/key}
+    {#each slides as slide (slide.url)}
+      <div hidden={slide !== current}>
+        <img class:enlargeSmall use:proxyImage={{url:slide.url,offline:true,remember:slide === current}}
+          alt={slide.alt} referrerpolicy="no-referrer"/>
+      </div>
+    {/each}
     {#if multi}
       <button type="button" class="step previous" aria-label="Previous image" onclick={() => step(-1)}><Icon name="back" size={22}/></button>
       <button type="button" class="step" aria-label="Next image" onclick={() => step(1)}><Icon name="next" size={22}/></button>
@@ -65,8 +74,8 @@
   .viewer::backdrop {background:#0b1510dd}
   .stage {position:relative;display:grid;place-items:center}
   .stage.multi {width:90vw;height:79dvh}
-  .stage > img {display:block;max-width:90vw;max-height:79dvh;object-fit:contain;margin:auto}
-  .stage > .enlargeSmall {min-width:min(320px,90vw)}
+  .stage img {display:block;max-width:90vw;max-height:79dvh;object-fit:contain;margin:auto}
+  .stage .enlargeSmall {min-width:min(320px,90vw)}
   .step {position:absolute;top:50%;right:6px;transform:translateY(-50%);display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#0b1510cc;color:white}
   .step.previous {right:auto;left:6px}
   .step:hover {background:#0b1510}

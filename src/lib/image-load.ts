@@ -37,7 +37,7 @@ export function proxyImage(node:HTMLImageElement, initial:LoadOptions) {
   }
   function refresh() {
     const chosen=imageRequest(options.url,options,settings);
-    const next=JSON.stringify([options.url,chosen.src,chosen.fallback,options.offline,options.remember]);
+    const next=JSON.stringify([options.url,chosen.src,chosen.fallback,options.offline]);
     if (next===signature) return;
     signature=next;
     const revision=++version;
@@ -72,7 +72,12 @@ export function proxyImage(node:HTMLImageElement, initial:LoadOptions) {
   node.addEventListener('load',loaded);
   const stop=imageProxySettings.subscribe(value=>{settings=value; refresh();});
   return {
-    update(next:LoadOptions) { options=next; refresh(); },
+    update(next:LoadOptions) {
+      const newlyOpened=next.remember && !options.remember;
+      const previousVersion=version;
+      options=next; refresh();
+      if (newlyOpened && version===previousVersion && node.complete && node.naturalWidth) loaded();
+    },
     destroy() {
       version++; stop(); observer?.disconnect(); clearTimeoutForLoad(); node.removeEventListener('error',error); node.removeEventListener('load',loaded);
       releaseObject();

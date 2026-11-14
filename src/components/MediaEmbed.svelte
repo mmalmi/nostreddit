@@ -22,7 +22,7 @@
   $: label = item.kind === 'youtube' ? 'YouTube' : item.kind === 'vimeo' ? 'Vimeo' : item.kind;
   $: host = new URL(item.url).hostname;
   const viewerAlt = (image: MediaItem) => image.alt || 'Photo from ' + new URL(image.url).hostname;
-  $: viewerItems = gallery.some(image => image.url === item.url) ? gallery.map(image => ({url: image.url, alt: viewerAlt(image)})) : [];
+  $: viewerItems = gallery.some(image => image.url === item.url) ? gallery.map(image => ({url: image.url, alt: viewerAlt(image), clickToLoad: image.clickToLoad})) : [];
 
   function enlarge(e: MouseEvent) {
     if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || typeof HTMLDialogElement === 'undefined' || !HTMLDialogElement.prototype.showModal) return;
