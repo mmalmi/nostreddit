@@ -369,6 +369,10 @@ a {
 main {
   min-width: 0;
 }
+/* The router focuses main when opening a page. */
+main[tabindex="-1"]:focus {
+  outline: none;
+}
 .hero {
   position: relative;
   isolation: isolate;
@@ -1418,4 +1422,13 @@ main > .feed-heading:first-child { margin-top: 0; }
   .refine-search:focus-within {border-color:var(--accent)}
   .refine-search input {flex:1; min-width:0; background:transparent; border:0; color:var(--ink); font:inherit; padding:.65rem .8rem}
   .refine-search button {display:grid; width:44px; height:44px; place-items:center; color:var(--accent); border:0; background:transparent; cursor:pointer}
+}
+
+/* iOS zooms when a small text field receives focus. */
+@media (any-pointer: coarse) {
+  .search-box input,
+  .directory-input input,
+  .refine-search input {
+    font-size: max(16px, 1rem);
+  }
 }
