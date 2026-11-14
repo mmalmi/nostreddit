@@ -132,3 +132,40 @@ test('ten reactions count as one unseen row and scrolling reads only the visible
   await observerTab.reload();
   await expect(badge(observerTab)).toHaveText(await badge(page).textContent() || '',{timeout:10000});
 });
+
+test('bulk tags stay out of the badge while direct replies and followed authors get through', async ({page}) => {
+  const owner = generateSecretKey(), pubkey = getPublicKey(owner), sender = generateSecretKey();
+  const at = Math.floor(Date.now()/1000) - 30;
+  const sign = (key:Uint8Array, kind:number, content:string, tags:string[][], time=at) =>
+    finalizeEvent({kind, content, tags, created_at:time},key);
+  const parent = sign(owner,1,'Reader’s field note',[]);
+  const other = sign(sender,1,'A different thread',[]);
+  const ten = [['p',pubkey], ...Array.from({length:9},()=>['p',getPublicKey(generateSecretKey())])];
+  const eleven = [...ten, ['p',getPublicKey(generateSecretKey())]];
+  const ordinary = sign(sender,1,'Ten people invited',ten);
+  const broad = sign(sender,1,'Open invitation to eleven',eleven);
+  const direct = sign(sender,1,'Direct reply with many tags',[...eleven,['e',parent.id,'','reply']]);
+  const nested = sign(sender,1,'A reply addressed to another participant',[...eleven,['e',parent.id,'','root',pubkey],['e',other.id,'','reply',other.pubkey]]);
+  const reaction = sign(sender,7,'+',[...eleven,['e',parent.id]]);
+  await allowFixtureAuthors(page.context());
+  await page.addInitScript(key => localStorage.setItem('nostreddit.account.v1',JSON.stringify({pubkey:key,method:'extension'})),pubkey);
+  await publish([ordinary,broad,direct,nested,reaction]);
+  await page.goto('/saved');
+  const badge=page.locator('[data-route-active="true"] .nav-row[href="/notifications"] .unread-count');
+  await expect(badge).toHaveText('2');
+  // Its reply arrived before the signed parent. Recognition uses normal relay
+  // traffic and does not require the reader to re-open the inbox.
+  await publish([parent]);
+  await expect(badge).toHaveText('3');
+  await page.getByRole('link',{name:/Notifications/}).click();
+  const rows=page.locator('[data-route-active="true"] article.activity');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.filter({hasText:direct.content})).toBeVisible();
+  await expect(rows.filter({hasText:broad.content})).toHaveCount(0);
+  await expect(rows.filter({hasText:nested.content})).toHaveCount(0);
+  await publish([sign(owner,3,'',[['p',getPublicKey(sender)]],at+1)]);
+  await expect(rows).toHaveCount(5);
+  await expect(rows.filter({hasText:broad.content})).toBeVisible();
+  await publish([sign(owner,3,'',[],at+2)]);
+  await expect(rows).toHaveCount(3);
+});

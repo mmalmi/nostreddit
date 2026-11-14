@@ -14,6 +14,7 @@ import type { SearchCursors } from './discovery/relay-search';
 import { relayUrls, type ContactQuery, type RelayConnection, type Request, type Response } from './relayTypes';
 import { readStoredRelayUrls, validateRelayUrls } from './relay-settings';
 import { readLocal, writeLocal } from './ui';
+import { isBulkAddressed, isDirectNotificationReply } from './notification-audience';
 import { groupNotifications, notificationAuthor, notificationPostId, notificationReadId, type InboxEvent } from './notification-groups';
 import { startTopicCatalog } from './topic-catalog-store';
 import type { HotSignal } from './hot';
@@ -56,6 +57,9 @@ export const status = derived([configuredRelays, relayConnections], ([urls, conn
   return 'offline';
 });
 const rawNotifications = writable<NostrEvent[]>([]);
+// Keep a separate bounded history for bulk posts. A run of suppressed
+// notifications must not evict ordinary activity already in the inbox.
+const bulkInboxPosts = writable<NostrEvent[]>([]);
 const inboxReceipts = writable<NostrEvent[]>([]);
 let relaySearchVersion = 0;
 const relaySearchIds = new Set<string>();
@@ -122,9 +126,13 @@ const incomingTips = derived([inboxReceipts, ownLightningEndpoint, account], ([r
   }).catch(() => { if (current) set([]); });
   return () => { current = false; };
 }, [] as InboxEvent[]);
-export const notifications = derived([rawNotifications, incomingTips, canSeeAuthor, account], ([events, tips, allowed, viewer]) => {
+const allowedBulkInboxPosts = derived([bulkInboxPosts, viewerLists, rawPosts, rawComments], ([candidates, lists]) => {
+  const authorOf = (id: string) => (roots.get(id) ?? replies.get(id))?.pubkey;
+  return candidates.filter(event => lists.follows.has(event.pubkey) || isDirectNotificationReply(event, lists.viewer, authorOf));
+});
+export const notifications = derived([rawNotifications, allowedBulkInboxPosts, incomingTips, canSeeAuthor, account], ([events, bulkPosts, tips, allowed, viewer]) => {
   if (!viewer) return [];
-  return [...events, ...tips].filter(event => {
+  return [...events, ...bulkPosts, ...tips].filter(event => {
     const author = notificationAuthor(event);
     return (author === null || allowed(author)) && event.tags.some(tag => tag[0] === 'p' && tag[1] === viewer.pubkey);
   })
@@ -219,7 +227,9 @@ function apply(events:NostrEvent[]) {
   if (authors.size) observeEventAuthors([...authors]);
   if (notificationOwner && get(account)?.pubkey === notificationOwner) {
     const addressed = events.filter(e => e.tags.some(t => t[0] === 'p' && t[1] === notificationOwner));
-    addInboxEvents(rawNotifications, addressed.filter(e => [1,7,1111].includes(e.kind) && e.pubkey !== notificationOwner));
+    const posts = addressed.filter(e => [1,7,1111].includes(e.kind) && e.pubkey !== notificationOwner);
+    addInboxEvents(rawNotifications, posts.filter(e => !isBulkAddressed(e)));
+    addInboxEvents(bulkInboxPosts, posts.filter(isBulkAddressed));
     addInboxEvents(inboxReceipts, addressed.filter(e => e.kind === 9735));
   }
   let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, receiptsDirty = false, hotDirty = false;
@@ -733,7 +743,7 @@ export function readPostNotifications(id:string, events:NostrEvent[]) {
 }
 export function loadNotifications(pubkey:string) {
   if (!hexKey.test(pubkey) || get(account)?.pubkey !== pubkey) return noop;
-  notificationOwner = pubkey; rawNotifications.set([]); inboxReceipts.set([]);
+  notificationOwner = pubkey; rawNotifications.set([]); bulkInboxPosts.set([]); inboxReceipts.set([]);
   const syncRead = () => readNotificationIds.set(new Set(storedReadIds(pubkey)));
   syncRead();
   const storageChanged = (event:StorageEvent) => {
@@ -757,7 +767,7 @@ export function loadNotifications(pubkey:string) {
     if (closed) return;
     closed = true; stop();
     globalThis.removeEventListener?.('storage',storageChanged);
-    if (notificationOwner === pubkey) { notificationOwner = ''; rawNotifications.set([]); inboxReceipts.set([]); readNotificationIds.set(new Set()); }
+    if (notificationOwner === pubkey) { notificationOwner = ''; rawNotifications.set([]); bulkInboxPosts.set([]); inboxReceipts.set([]); readNotificationIds.set(new Set()); }
   };
   const stopAccount = account.subscribe(current => { if (current?.pubkey !== pubkey) close(); });
   return () => { stopAccount(); close(); };
