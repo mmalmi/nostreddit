@@ -96,7 +96,7 @@ function mediaItem(url: URL, metadata?: readonly string[]): MediaItem | undefine
   };
 }
 
-function trimNoteUrl(raw: string): string {
+export function trimNoteUrl(raw: string): string {
   if (raw.length > 4096) return '';
   // Strip prose delimiters, but preserve balanced parentheses in filenames.
   const pairs: Record<string,string> = {'(':')', '[':']', '{':'}'};
@@ -154,4 +154,12 @@ export function stripMediaUrls(text: string, urls: readonly string[]): string {
     const token = trimNoteUrl(raw);
     return embedded.has(httpUrl(token)?.href) ? raw.slice(token.length) : raw;
   }).trim();
+}
+
+export function stripAttachments(text: string, urls: readonly string[]): string {
+  let clean = stripMediaUrls(text, urls);
+  for (const url of urls.filter(url => !/^https?:\/\//i.test(url) || hasTreeCapability(url))) {
+    clean = clean.split(url).join('');
+  }
+  return clean.trim();
 }

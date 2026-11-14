@@ -1,6 +1,7 @@
 import { hashtagParts, type TagPart } from './hashtags';
 import { decode } from 'nostr-tools/nip19';
 import { displayName, safeURL } from './ui';
+import { trimNoteUrl } from './media';
 import { hasTreeCapability, parseTreeAttachment } from './tree-embeds';
 import type { Profile } from './network';
 
@@ -14,9 +15,12 @@ export function noteParts(text: string, tags: readonly string[][]): NotePart[] {
   const named = new Set(tags.filter(tag => tag[0] === 'p' && keyPattern.test(tag[1])).map(tag => tag[1]));
   return text.split(tokens).filter(Boolean).flatMap<NotePart>(value => {
     if (/^https?:\/\//i.test(value)) {
-      const tree = hasTreeCapability(value) && parseTreeAttachment(value);
-      if (tree) return {text:tree.name,url:tree.viewerUrl};
-      return {text:value,url:hasTreeCapability(value) ? undefined : safeURL(value)};
+      const token = trimNoteUrl(value);
+      if (!token) return {text:value};
+      const capability = hasTreeCapability(token);
+      const tree = capability && parseTreeAttachment(token);
+      const link = tree ? {text:tree.name, url:tree.viewerUrl} : {text:token, url:capability ? undefined : safeURL(token)};
+      return token.length === value.length ? link : [link, {text:value.slice(token.length)}];
     }
     if (named.has(value)) return {text:value,person:value};
     if (/^(?:nostr:)?(?:npub|nprofile|note|nevent)1[a-z0-9]+$/i.test(value)) {

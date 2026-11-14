@@ -5,10 +5,11 @@
   import { postUrl } from '../lib/post-url';
   import { profiles, observeReferences } from '../lib/network';
   import { referencePosts } from '../lib/note-references';
-  import { noteParts, partText } from '../lib/mentions';
+  import { noteParts, partText, type NotePart } from '../lib/mentions';
   import SocialBadge from './SocialBadge.svelte';
   import NoteQuote from './NoteQuote.svelte';
-  export let text: string;
+  export let text = '';
+  export let parsedParts: NotePart[] | undefined = undefined;
   export let tags: string[][] = [];
   export let full = false;
   export let showPreviews = true;
@@ -17,7 +18,7 @@
   export let embeddedIds: readonly string[] = [];
   let mounted = false;
   let stop = () => {};
-  $: parts = noteParts(text, tags);
+  $: parts = parsedParts ?? noteParts(text, tags);
   $: quoteIds = showPreviews && !inline ? [...new Set(parts.flatMap(part=>part.event ? [part.event] : []))].slice(0,4) : [];
   $: embedded = new Set([...embeddedIds,...quoteIds.filter(id=>$referencePosts.has(id))]);
   $: visibleParts = parts.filter(part=>!part.event || !embedded.has(part.event));

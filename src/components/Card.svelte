@@ -12,7 +12,7 @@
     type Post,
   } from '../lib/network';
   import { displayName, age, safeURL } from '../lib/ui';
-  import { collectMedia, stripMediaUrls } from '../lib/media';
+  import { collectMedia, stripAttachments } from '../lib/media';
   import { findTreeEmbeds, hasTreeCapability } from '../lib/tree-embeds';
   import { topicPath } from '../lib/hashtags';
   import { matchesTopic } from '../lib/posts';
@@ -90,11 +90,6 @@
   $: renderEmbeds = full || showPreviews;
   $: embeddedLink = media.some(item=>item.url===link);
   $: attachments = [...media.map(item=>item.url),...trees.map(item=>item.raw)];
-  function stripAttachments(text:string, urls:string[]) {
-    let clean = stripMediaUrls(text,urls);
-    for (const url of urls.filter(url=>!/^https?:\/\//i.test(url) || hasTreeCapability(url))) clean = clean.split(url).join('');
-    return clean.trim();
-  }
   $: title = post.title || '';
   $: titleFromBody =
     !title && !comment && (body.split('\n')[0] || '').length < 150;
