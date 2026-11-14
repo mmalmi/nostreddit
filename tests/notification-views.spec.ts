@@ -93,6 +93,7 @@ test('ten reactions count as one unseen row and scrolling reads only the visible
   await page.goto('/notifications');
   const burst = page.locator('article.activity').filter({hasText:'reacted to 10 posts'});
   await expect(burst.getByText('Harbor Heron')).toBeVisible();
+  await expect(burst.getByRole('link', {name:'Harbor Heron'}).locator('.iris-minidenticon')).toBeVisible();
   const headerButton = page.locator('.topbar').getByRole('button',{name:'Sandpiper',exact:true});
   await expect(headerButton.locator('img')).toBeVisible();
   await expect.poll(() => headerButton.locator('img').evaluate(img => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
@@ -131,6 +132,64 @@ test('ten reactions count as one unseen row and scrolling reads only the visible
   await expect(page.getByText('Coastal field note 12').locator('..')).not.toContainText('Unread');
   await observerTab.reload();
   await expect(badge(observerTab)).toHaveText(await badge(page).textContent() || '',{timeout:10000});
+});
+
+test('a cold inbox restores activity, avatars and exact read state with the relays disconnected', async ({page, context, browser, baseURL}, info) => {
+  const owner = getPublicKey(generateSecretKey()), sender = generateSecretKey();
+  const time = Math.floor(Date.now() / 1000) - 10;
+  const mention = (content: string) => finalizeEvent({kind:1, created_at:time, tags:[['p',owner]], content}, sender);
+  const first = mention('Saw a goldfinch today'), second = mention('Saw a kingfisher today');
+  const legacy = mention('A heron from a previous visit');
+  const picture = 'https://avatar.example/finch.jpg';
+  const profile = finalizeEvent({kind:0, created_at:time, tags:[], content:JSON.stringify({name:'Birdwatcher', picture})}, sender);
+  await allowFixtureAuthors(context);
+  await page.addInitScript(({owner, seen}) => {
+    localStorage.setItem('nostreddit.account.v1', JSON.stringify({pubkey:owner, method:'extension'}));
+    const key = 'nostreddit.ui.readNotifications.' + owner;
+    if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify([seen]));
+  }, {owner, seen:legacy.id});
+  await page.route('https://imgproxy.iris.to/**', route => route.fulfill({contentType:'image/svg+xml',
+    body:'<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="9" fill="green"/></svg>'}));
+  await publish([first, profile]);
+  await page.goto('/notifications');
+  const author = page.getByRole('link', {name:'Birdwatcher', exact:true});
+  await expect(author.locator('img.loaded')).toHaveAttribute('src', /^https:\/\/imgproxy\.iris\.to\//);
+  await expect(page.locator('article.activity .unread')).toHaveCount(0);
+  await page.goto('/saved');
+  await publish([second, legacy]);
+  const badge = '.nav-row[href="/notifications"] .unread-count';
+  await expect(page.locator(badge)).toHaveText('1');
+
+  // Start a fresh browser with this account's durable inbox. Simulate an
+  // evicted general feed snapshot and a read ID outside the recent-ID window.
+  const state = await context.storageState({indexedDB:true});
+  for (const origin of state.origins) {
+    if ('indexedDB' in origin && Array.isArray(origin.indexedDB))
+      origin.indexedDB = origin.indexedDB.filter(db => db.name.startsWith('nostreddit-inbox:'));
+    origin.localStorage = origin.localStorage.filter(item => !item.name.includes('readNotifications.'));
+    origin.localStorage.push({name:'nostreddit.relays.v1', value:''});
+  }
+  const cold = await browser.newContext({baseURL, storageState:state, viewport:{width:390,height:780}});
+  try {
+    const reopened = await cold.newPage();
+    await reopened.route('https://imgproxy.iris.to/**', route => route.abort());
+    await reopened.goto('/saved');
+    await expect(reopened.locator(badge)).toHaveText('1');
+    // Inspect the restored flags before viewing a row can mark it seen.
+    await reopened.evaluate(() => Object.defineProperty(document, 'visibilityState', {configurable:true, value:'hidden'}));
+    await reopened.evaluate(() => document.querySelector<HTMLAnchorElement>('.nav-row[href="/notifications"]')!.click());
+    const rows = reopened.locator('article.activity');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.filter({hasText:first.content})).not.toContainText('Unread');
+    await expect(rows.filter({hasText:legacy.content})).not.toContainText('Unread');
+    await expect(rows.filter({hasText:second.content})).toContainText('Unread');
+    await expect(rows.first().getByRole('link', {name:'Birdwatcher'}).locator('.iris-minidenticon')).toBeVisible();
+    await reopened.screenshot({path:info.outputPath('restored-inbox-mobile.png')});
+    await reopened.evaluate(key => localStorage.setItem('nostreddit.account.v1', JSON.stringify({pubkey:key, method:'extension'})), getPublicKey(generateSecretKey()));
+    await reopened.reload();
+    await expect(reopened.getByRole('heading', {name:'No notifications seen yet'})).toBeVisible();
+    await expect(reopened.locator(badge)).toHaveCount(0);
+  } finally { await cold.close(); }
 });
 
 test('bulk tags stay out of the badge while direct replies and followed authors get through', async ({page}) => {

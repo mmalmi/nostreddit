@@ -160,4 +160,12 @@ test('inbox shows a verified tip once, in the chosen currency, and links its sen
     await expect(tips.first().getByText(label, {exact:true})).toHaveAttribute('title', '1 sat')
   }
   await settings.close()
+  await expect(tips.first().getByText('Unread')).toHaveCount(0)
+  await page.evaluate(() => localStorage.setItem('nostreddit.relays.v1', ''))
+  await page.route('https://lightning.example/**', route => route.abort())
+  await page.reload()
+  await expect(tips).toHaveCount(1)
+  await expect(tips.first().getByRole('link', {name:'Harbor visitor'})).toBeVisible()
+  await expect(tips.first().getByText('Unread')).toHaveCount(0)
+  await expect(feed.getByText('Ignored sender')).toHaveCount(0)
 })

@@ -10,6 +10,7 @@
   import NotificationPosts from './NotificationPosts.svelte';
   import TipAmount from './TipAmount.svelte';
   import Icon from './Icon.svelte';
+  import ProxyAvatar from './ProxyAvatar.svelte';
   import SocialBadge from './SocialBadge.svelte';
 
   let { active = true, onSignIn }: { active?: boolean; onSignIn: () => void } = $props();
@@ -25,6 +26,13 @@
     return { title: reply ? 'replied in a discussion' : 'mentioned you', icon: 'comment' };
   }
 </script>
+
+{#snippet authorLink(pubkey: string)}
+  <a class="activity-author" href={profileUrl(pubkey)}>
+    <ProxyAvatar {pubkey} profile={$profiles[pubkey]} size={18}/><SocialBadge {pubkey}/>
+    <span>{displayName(pubkey,$profiles[pubkey])}</span>
+  </a>
+{/snippet}
 
 {#if !$account}
   <section class="empty"><Icon name="comment" size={28}/><h2>Your notifications</h2>
@@ -49,7 +57,7 @@
             {#if !group.authors.length}Someone{/if}
             {#each group.authors.slice(0,2) as author, index (author)}
               {#if index}{group.authors.length > 2 ? ', ' : ' and '}{/if}
-              <a class="activity-author" href={profileUrl(author)}><SocialBadge pubkey={author}/> {displayName(author,$profiles[author])}</a>{/each}
+              {@render authorLink(author)}{/each}
             {#if group.authors.length > 2} and {group.authors.length - 2} {group.authors.length === 3 ? 'other' : 'others'}{/if}
             {event.kind === 7 && id
               ? 'reacted to ' + (group.targets.length > 1 ? group.targets.length + ' posts' : $referencePosts.get(id)?.pubkey === $account.pubkey ? 'your post' : 'a post')
@@ -60,7 +68,7 @@
             <details class="people">
               <summary>View people</summary>
               {#each group.authors as author (author)}
-                <a href={profileUrl(author)}><SocialBadge pubkey={author}/> {displayName(author,$profiles[author])}</a>
+                {@render authorLink(author)}
               {/each}
             </details>
           {/if}
@@ -80,11 +88,11 @@
   .unread {font-size:.75rem;font-weight:700;color:var(--accent)}
   .activity-icon {display:grid;place-items:center;border-radius:50%;width:2rem;height:2rem;background:var(--light)}
   .activity-body {min-width:0;overflow-wrap:anywhere}
-  .activity-author {font-weight:700;color:inherit}
+  .activity-author {display:inline-flex;align-items:center;gap:4px;vertical-align:middle;max-width:100%;font-weight:700;color:inherit}
   .activity-link {display:inline-block;margin-top:.4rem;font-size:.8rem;color:var(--accent)}
   .activity time {font-size:.75rem;color:var(--muted)}
   .people {margin-top:.4rem;font-size:.83rem}
   .people summary {cursor:pointer;color:var(--accent);width:fit-content}
-  .people a {display:block;width:fit-content;padding:.22rem 0}
+  .people .activity-author {display:flex;width:fit-content;padding:.22rem 0}
   .activity p {margin:.35rem 0;overflow-wrap:anywhere}
 </style>

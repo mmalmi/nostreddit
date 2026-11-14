@@ -303,11 +303,11 @@ function checkedReceipt(event: NostrEvent, recipient: string, targetId: string |
   return record.payment
 }
 
-export async function receivedTips(recipient: string, endpoint: string | null, receipts: readonly NostrEvent[]) {
-  if (!endpoint || !receipts.length) return []
-  const { provider } = await readProvider(endpoint)
+function receiptPayments(recipient: string, endpoint: string, receipts: readonly NostrEvent[], providerFor: (event: NostrEvent) => string | undefined) {
   const payments = new Map<string, ReceivedTip>()
   for (const event of receipts) {
+    const provider = providerFor(event)
+    if (!provider) continue
     const targetId = event.tags.find(tag => tag[0] === 'e')?.[1]
     if (targetId !== undefined && !/^[a-f0-9]{64}$/.test(targetId)) continue
     const paid = checkedReceipt(event, recipient, targetId, provider, endpoint)
@@ -320,6 +320,18 @@ export async function receivedTips(recipient: string, endpoint: string | null, r
     }
   }
   return [...payments.values()]
+}
+
+export function restoredTips(recipient: string, endpoint: string, receipts: readonly NostrEvent[], verifiedEndpoints: ReadonlyMap<string, string>) {
+  // Recheck the signed invoice and request. An earlier provider lookup applies
+  // only to the exact receipt verified on this device for this wallet.
+  return receiptPayments(recipient, endpoint, receipts, event => verifiedEndpoints.get(event.id) === endpoint ? event.pubkey : undefined)
+}
+
+export async function receivedTips(recipient: string, endpoint: string | null, receipts: readonly NostrEvent[], verifiedEndpoints?: ReadonlyMap<string, string>) {
+  if (!endpoint || !receipts.length) return []
+  const { provider } = await readProvider(endpoint)
+  return receiptPayments(recipient, endpoint, receipts, event => verifiedEndpoints?.get(event.id) === endpoint ? event.pubkey : provider)
 }
 
 export type PostTipGroup = {sender: string | null; millisats: number; count: number; latest: number; message: string}
