@@ -1,6 +1,6 @@
 import { MemoryEventStore, NostrRuntime, type NostrEvent, type NostrFilter, type NostrVerifiedEvent, type RuntimeSubscribeOptions, type RuntimeSubscription } from 'nostr-pubsub';
 import { normalizeURL } from 'nostr-tools/utils';
-import { trackTopicPage } from './topic-history';
+import { trackFeedPage } from './feed-history';
 import { discussionKinds } from './posts';
 import { focusedThread, VisitedThreads } from './visited-threads';
 import { queryDirectory } from './contactDirectory';
@@ -169,12 +169,12 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     if (req.type === 'watch') {
       const focus = req.live ? focusedThread(req.filters) : undefined;
       if (focus) void visited.open(req.id, focus, admitSnapshot).catch(() => {});
-      const topicPage = req.topicRelay ? trackTopicPage(req.topicRelay, req.filters[0]) : undefined;
+      const historyPage = req.historyRelay ? trackFeedPage(req.historyRelay, req.filters[0]) : undefined;
       let ended = false;
       const sub = runtime.subscribe(req.filters, {
         onEvent(event, info) {
           // Runtime subscriptions have already verified the signature.
-          if (topicPage && !ended) topicPage.observe(event as NostrVerifiedEvent, info.source);
+          if (historyPage && !ended) historyPage.observe(event as NostrVerifiedEvent, info.source);
           emit(event);
           if (!info.cached && /^wss?:/.test(info.source)) {
             scheduleSnapshot();
@@ -182,11 +182,11 @@ self.onmessage = async (message: MessageEvent<Request>) => {
         },
         onEose(status) {
           ended = true;
-          if (topicPage) reply({type:'topicPageEnd', id:req.id, page:topicPage.finish(status.complete)});
+          if (historyPage) reply({type:'feedPageEnd', id:req.id, page:historyPage.finish(status.complete)});
           if (!req.live) { sub.close(); watches.delete(req.id); }
         },
-      }, {deadline: Date.now() + 6500, ...(req.topicRelay && {
-        relays:[req.topicRelay], isolated:true, cache:'network-only' as const,
+      }, {deadline: Date.now() + 6500, ...(req.historyRelay && {
+        relays:[req.historyRelay], isolated:true, cache:'network-only' as const,
       })});
       watches.set(req.id, sub);
       return;
@@ -213,7 +213,7 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     }
     if (req.type === 'search') {
       const query = checkSearch(req.query);
-      const filters = relayFilters(planPostSearch(query), req.expansion);
+      const filters = relayFilters(planPostSearch(query), req.expansion, req.topic);
       if (!filters.length) { reply({type:'result', id:req.id, events:[], cursors:[]}); return; }
       // Only the newest search reads relays; its results stream to the page.
       searchController.abort();
@@ -239,8 +239,8 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     reply({type: 'result', id: req.id, events: result.events});
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Relay request failed.';
-    if (req.type === 'watch' && req.topicRelay)
-      reply({type:'topicPageEnd', id:req.id, page:{state:'retry'}});
+    if (req.type === 'watch' && req.historyRelay)
+      reply({type:'feedPageEnd', id:req.id, page:{state:'retry'}});
     if (req.type === 'latest' || req.type === 'publish' || req.type === 'search' || req.type === 'contacts')
       reply({type: 'result', id: req.id, events: [], error: message});
   }

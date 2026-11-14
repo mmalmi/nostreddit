@@ -187,6 +187,25 @@ a {
 .search-box:focus-within {
   border-color: var(--accent);
 }
+.search-topic {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  max-width: 52%;
+  min-width: 0;
+  padding: 2px 5px 2px 3px;
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--body-text);
+  font: 600 12px/1.2 var(--sans);
+}
+.search-topic:hover {border-color:var(--strong-line)}
+.search-topic .chip-name {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-topic > svg {flex:none}
+.search-box input {min-width:0}
 .search-box input,
 .directory-input input {
   background: none;
@@ -1299,6 +1318,7 @@ main > .feed-heading:first-child { margin-top: 0; }
     opacity: 1;
     cursor: text;
   }
+  .search-box:not(:focus-within) .search-topic {display:none}
   .create-button span {
     display: none;
   }
@@ -1446,7 +1466,8 @@ main > .feed-heading:first-child { margin-top: 0; }
   .refine-search {display:flex; gap:.4rem; align-items:center; margin-top:.65rem; background:var(--paper); border:1px solid var(--line); border-radius:.6rem}
   .refine-search:focus-within {border-color:var(--accent)}
   .refine-search input {flex:1; min-width:0; background:transparent; border:0; color:var(--ink); font:inherit; padding:.65rem .8rem}
-  .refine-search button {display:grid; width:44px; height:44px; place-items:center; color:var(--accent); border:0; background:transparent; cursor:pointer}
+  .refine-search button[type="submit"] {display:grid; width:44px; height:44px; place-items:center; color:var(--accent); border:0; background:transparent; cursor:pointer}
+  .refine-search .search-topic {margin-left:6px;max-width:45%}
 }
 
 /* iOS zooms when a small text field receives focus. */

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { isSettingsTab, type SettingsTab } from './lib/settings-tabs';
-  import type { TopicHistoryState } from './lib/topic-history';
+  import type { FeedHistoryState } from './lib/feed-history';
   import { onMount, tick } from 'svelte';
   import * as nip19 from 'nostr-tools/nip19';
   import {
@@ -22,7 +22,7 @@
     mutes,
     mute,
     unlike,
-    loadTopic,
+    loadDiscussionHistory,
     loadHome,
     loadFeed,
     loadNetwork,
@@ -69,8 +69,9 @@
   import { feedPreferences, saveFeed } from './lib/feed-preferences';
   import { defaultFeeds, feedPath, feedIcon, feedSummary, feedRelayFilters, matchesFeed, type Feed, type FeedOrder } from './lib/feeds';
   let feedList: HTMLElement;
-  let topicHistory: ReturnType<typeof loadTopic> | undefined;
-  let topicState: TopicHistoryState = 'loading';
+  let historyFeed: ReturnType<typeof loadDiscussionHistory> | undefined;
+  let historyState: FeedHistoryState = 'loading';
+  let canFillHistory = false;
   let requestedOlder = false;
   function viewportSlots() {
     if (!pageVisible || !feedList) return 0;
@@ -82,7 +83,7 @@
       if (cards[middle].getBoundingClientRect().top < innerHeight) start = middle + 1;
       else end = middle;
     }
-    if (!requestedOlder && start && start === cards.length && start < limit) {
+    if (route.page !== 'profile' && !requestedOlder && start && start === cards.length && start < limit) {
       const nextTop = feedList.getBoundingClientRect().bottom + parseFloat(getComputedStyle(feedList).rowGap);
       if (nextTop < innerHeight) return start + 1;
     }
@@ -97,7 +98,7 @@
   export let active = true;
   export let returnTo: string | undefined = undefined;
   export let navigate: (path: string) => void;
-  type Route = { page: string; value: string; connections?: Relationship; fromTopic?: string };
+  type Route = { page: string; value: string; connections?: Relationship; topic?: string };
   function readRoute(): Route {
     const [base, value = '', section, extra] = location.pathname
       .replace(/^\/+|\/+$/g, '')
@@ -120,7 +121,7 @@
         if (location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.search + location.hash);
         const params = new URLSearchParams(location.search);
         const from = topicSlug(params.get('t') || params.get('r') || '');
-        return {page:'thread', value:id, fromTopic:from || undefined};
+        return {page:'thread', value:id, topic:from || undefined};
       }
     }
     if (base === 'u' && !extra && (!section || section === 'followers' || section === 'following')) {
@@ -133,12 +134,14 @@
       }
     }
     if (base === 'search') {
-      const query = new URLSearchParams(location.search).get('q')?.trim() ?? '';
-      if (/nsec1[0-9a-z]+/i.test(query)) {
+      const params = new URLSearchParams(location.search);
+      const query = params.get('q')?.trim() ?? '';
+      const topic = params.get('t') || '';
+      if (/nsec1[0-9a-z]+/i.test(query) || /nsec1[0-9a-z]+/i.test(topic)) {
         history.replaceState(history.state, '', '/search');
         return {page:base, value:''};
       }
-      return {page:base, value:query.slice(0, 128)};
+      return {page:base, value:query.slice(0, 128), topic:topicSlug(topic) || undefined};
     }
     if (base === 'settings' && !section && (!value || isSettingsTab(value))) return { page: base, value };
     return {
@@ -161,8 +164,11 @@
   ];
   let documentVisible = document.visibilityState === 'visible';
   let pageVisible = active && documentVisible;
-  let route = readRoute(),
-    search = route.page === 'search' ? route.value : '',
+  const route = readRoute();
+  const feedTopic = route.page === 'topic' ? route.value : route.page === 'search' ? route.topic : undefined;
+  let searchTopic = feedTopic;
+  const chipId = 'search-topic-' + crypto.randomUUID();
+  let search = route.page === 'search' ? route.value : '',
     menu = false,
     modal = '',
     dialog: HTMLDialogElement;
@@ -210,6 +216,7 @@
       // Matches appear as each relay delivers them. The awaits below only settle
       // where older results continue, once this batch's history has finished.
       const show = (ids: Set<string>) => { if (run === searchRun) remoteIds = ids; };
+      const readPage = (expansion: Expansion, cursors?: SearchCursors) => searchRelays(query, expansion, cursors, show, route.topic);
       const settle = (found: Awaited<ReturnType<typeof searchRelays>>, expansion: Expansion) => {
         remoteIds = found.ids;
         searchCursors = found.cursors;
@@ -218,25 +225,25 @@
       };
       let pages = 1;
       if (more) {
-        const found = await searchRelays(query, searchExpansion, searchCursors, show);
+        const found = await readPage(searchExpansion, searchCursors);
         if (run !== searchRun) return;
         settle(found, searchExpansion);
       } else {
         // Show literal results first. Optional meaning expansion must never delay
         // them, and it does not wait for the literal relays to finish either.
-        const literal = searchRelays(query, noExpansion, undefined, show);
+        const literal = readPage(noExpansion);
         literal.catch(() => {});
         const expansion = related ? await assistance.relayExpansion(query) : noExpansion;
         if (run !== searchRun) return;
         const expanded = related && (expansion.terms.length || expansion.tags.length);
-        const found = await (expanded ? searchRelays(query, expansion, undefined, show) : literal);
+        const found = await (expanded ? readPage(expansion) : literal);
         if (run !== searchRun) return;
         settle(found, expanded ? expansion : noExpansion);
         // A fresh batch may consist entirely of hidden authors or loose relay
         // matches. Search a few older batches before asking the reader to continue.
         await tick();
         while (run === searchRun && pages < 3 && ordered.length < 5 && searchCursors?.some(cursor => cursor !== null)) {
-          const older = await searchRelays(query, searchExpansion, searchCursors, show);
+          const older = await readPage(searchExpansion, searchCursors);
           if (run !== searchRun) return;
           settle(older, searchExpansion);
           pages++;
@@ -339,15 +346,33 @@
       showModal('account');
     } else showModal('compose');
   }
-  function submitSearch() {
-    if (!search.trim()) {
-      go('/topics');
-      return;
-    }
+  function searchText() {
     if (/nsec1[0-9a-z]+/i.test(search)) { search = ''; notify('Use secret keys only in the sign-in dialog.'); return; }
-    const direct = searchTarget(search);
-    if (direct) return go(direct);
-    go('/search?q=' + encodeURIComponent(search.trim().slice(0,128)));
+    return search.trim().slice(0,128);
+  }
+  function resultsPath(query:string, topic?:string) {
+    return '/search' + (query ? '?q=' + encodeURIComponent(query) + (topic ? '&t=' + encodeURIComponent(topic) : '') : '');
+  }
+  function submitSearch() {
+    const query = searchText();
+    if (query === undefined) return;
+    if (!query) return go(searchTopic ? topicPath(searchTopic) : '/topics');
+    const direct = searchTopic && query.startsWith('#') ? '' : searchTarget(search);
+    go(direct || resultsPath(query,searchTopic));
+  }
+  async function removeSearchTopic(button: HTMLButtonElement) {
+    const form = button.form;
+    if (route.page === 'search') {
+      const query = searchText();
+      if (query === undefined) return;
+      go(resultsPath(query));
+      await tick();
+      const selector = form?.classList.contains('refine-search') ? '.refine-search input' : '.search-box input';
+      document.querySelector<HTMLInputElement>('[data-route-active="true"] ' + selector)?.focus();
+    } else {
+      searchTopic = undefined;
+      form?.querySelector('input')?.focus();
+    }
   }
   function keypress(e: KeyboardEvent) {
     if (!active) return;
@@ -363,23 +388,23 @@
   }
   function subscribeRoute(page: string, value: string, connections: Relationship | undefined, feedFilters: string, networkFeed: boolean) {
     activeCleanup?.();
-    topicHistory = page === 'topic' ? loadTopic(value, state => topicState = state) : undefined;
+    const scope = page === 'topic' ? {topic:value} : page === 'profile' && !connections ? {author:value} : undefined;
+    const history = scope ? loadDiscussionHistory(scope, (state, canFill) => {
+      historyState = state; canFillHistory = canFill;
+    }) : undefined;
+    historyFeed = history;
     const closeRoute =
       page === 'home' ? loadHome()
-      : topicHistory
-        ? topicHistory.close
-        : page === 'thread'
-          ? loadThread(value)
-          : page === 'profile'
-            ? loadProfile(value, connections)
-            : page && feedFilters ? loadFeed(JSON.parse(feedFilters)) : undefined;
+      : page === 'thread' ? loadThread(value)
+      : page === 'profile' ? loadProfile(value, connections)
+      : page && feedFilters ? loadFeed(JSON.parse(feedFilters)) : undefined;
     const closeNetwork = page && networkFeed ? loadNetwork() : undefined;
-    activeCleanup = () => { closeRoute?.(); closeNetwork?.(); };
+    activeCleanup = () => { history?.close(); closeRoute?.(); closeNetwork?.(); };
   }
-  function loadMoreTopic() {
+  function loadMoreHistory() {
     requestedOlder = true;
     limit = Math.max(limit, ordered.length + 24);
-    topicHistory?.more();
+    historyFeed?.more();
     feedPresentation.viewportChanged();
   }
   function watch(ids: string) {
@@ -425,29 +450,27 @@
   $: if (mounted && pageVisible && route.page === 'search') startSearch();
   $: if (active) observeEventAuthors(saved.map(p => p.pubkey));
   $: visibleSaved = saved.filter(p => $canSeeAuthor(p.pubkey));
-  $: visibleSearch = $posts.filter(p => remoteIds.has(p.id));
   $: thread = [...$posts, ...$comments, ...visibleSaved].find(
     (p) => p.id === route.value,
   );
   $: if (mounted && pageVisible && !modal && route.page === 'thread' && thread) {
     readPostNotifications(thread.id, $notifications);
   }
-  $: threadTopic = thread && route.fromTopic && matchesTopic(thread,route.fromTopic) ? route.fromTopic : thread?.topic;
+  $: threadTopic = thread && route.topic && matchesTopic(thread,route.topic) ? route.topic : thread?.topic;
   $: profile = $profiles[route.value];
   $: profName = route.page === 'profile' ? ($canSeeAuthor(route.value) ? displayName(route.value,profile) : 'Profile') : '';
-  $: source = savedFeed ? visibleSaved : route.page === 'topic'
-    ? [...$posts,...$comments.filter(reply=>mentionsTopic(reply,route.value))] : $posts;
+  $: source = savedFeed ? visibleSaved : feedTopic
+    ? [...$posts.filter(p => matchesTopic(p,feedTopic)), ...$comments.filter(p => mentionsTopic(p,feedTopic))] : $posts;
   $: plan = route.page === 'search' && route.value ? planPostSearch(route.value) : undefined;
   $: lexical = new Map(plan ? source.map(p => [p.id, keywordScore(plan!, p, displayName(p.pubkey, $profiles[p.pubkey]))] as const) : []);
   $: assisted = plan && related && allowModel(plan) ? plan : undefined;
   $: if (assisted && !pageVisible) assistance.pause();
-    else assistance.update(assisted, assisted ? [...visibleSearch, ...source.filter(p => !remoteIds.has(p.id))]
+    else assistance.update(assisted, assisted ? [...source.filter(p => remoteIds.has(p.id)), ...source.filter(p => !remoteIds.has(p.id))]
       .filter(p => (lexical.get(p.id) ?? -1) >= 0) : []);
   $: minimum = semanticFloor(plan, $assistance.scores);
   $: matchScores = new Map([...lexical].map(([id, score]) => [id, relevance(score, $assistance.scores.get(id), minimum)]));
   $: activeOrder = route.page === 'search' ? searchOrder : selectedFeed?.order ?? sorting;
   $: candidates = source.filter((p) => {
-    if (route.page === 'topic') return matchesTopic(p,route.value);
     if (selectedFeed) return matchesFeed(p, selectedFeed, $follows, $graphInfo[p.pubkey]?.distance);
     if (route.page === 'custom') return false;
     if (route.page === 'profile') return p.pubkey === route.value;
@@ -461,6 +484,10 @@
   $: allowedCandidates = candidates.filter(p =>
     (route.page === 'profile' || (!$graphInfo[p.pubkey]?.muted && !$mutes.includes(p.pubkey))) &&
     (route.page !== 'network' || ($graphInfo[p.pubkey]?.distance ?? 99) <= 2));
+  // Author queries include replies. Read a few more pages to fill the visible
+  // list with top-level discussions, then let the reader choose to continue.
+  $: if (pageVisible && route.page === 'profile' && !route.connections && $canSeeAuthor(route.value)
+      && canFillHistory && allowedCandidates.length < limit) historyFeed?.more('automatic');
   $: hotActive = activeOrder === 'Hot' && ['home','topic','following','network','saved','custom','profile','search'].includes(route.page) && !route.connections;
   $: hotScope = hotActive ? `${route.page}:${route.value}:${feedScope}:${$account?.pubkey || 'guest'}:${hotRefresh}` : '';
   $: if(mounted && active)setGraphRanking(hotActive && $hotPreferences.connectionStrength);
@@ -517,7 +544,7 @@
     ]),
   ].filter(validTopic);
   $: directoryTopic = topicSlug(directoryFilter.trim().replace(/^[tr]\//i,''));
-  $: topicMatches = plan ? searchTopics(plan, discovered) : [];
+  $: topicMatches = plan && !feedTopic ? searchTopics(plan, discovered) : [];
   $: title =
     route.page === 'home'
       ? 'Home'
@@ -554,7 +581,7 @@
                 : route.page === 'topics'
                   ? 'Browse a topic or enter any tag to open it.'
                   : route.page === 'search'
-                    ? 'Discussions and topics.'
+                    ? feedTopic ? 'Discussions in t/' + feedTopic + '.' : 'Discussions and topics.'
                     : '';
   $: if (active) document.title =
     (route.page === 'thread' && thread ? thread.title.slice(0, 70) : title) +
@@ -570,7 +597,7 @@
       return;
     }
     if (kind === 'share' || kind === 'copy-link') {
-      const topic = route.page === 'topic' ? route.value : route.fromTopic;
+      const topic = feedTopic || route.topic;
       const url = location.origin + postUrl(p.id, topic && matchesTopic(p,topic) ? topic : undefined);
       if (kind === 'share' && navigator.share) {
         try { await navigator.share({url}); return; }
@@ -667,6 +694,15 @@
   }
 </script>
 
+{#snippet searchChip(id: string)}
+  {#if searchTopic}
+    <button class="search-topic" type="button" aria-label={'Remove t/' + searchTopic + ' from search'}
+      title="Search all of Nostreddit" onclick={event => removeSearchTopic(event.currentTarget)}>
+      <TopicIcon slug={searchTopic} small/><span {id} class="chip-name">t/{searchTopic}</span><Icon name="close" size={13}/>
+    </button>
+  {/if}
+{/snippet}
+
 {#snippet componentError()}
   <p class="state" role="alert">Could not load this page.</p>
   <button class="outline compact" onclick={() => location.reload()}>Reload page</button>
@@ -697,11 +733,13 @@
         submitSearch();
       }}
     >
-      <Icon name="search" size={17} /><input
+      <Icon name="search" size={17} />{@render searchChip(chipId)}<input
         aria-label="Search Nostreddit"
+        aria-describedby={searchTopic ? chipId : undefined}
         bind:this={searchInput}
         bind:value={search}
-        placeholder="Search Nostreddit"
+        placeholder={searchTopic ? 'Search this topic' : 'Search Nostreddit'}
+        enterkeyhint="search"
       /><kbd>/</kbd>
     </form>
     <div class="header-actions">
@@ -794,9 +832,11 @@
         </div>
         <h1>{title}</h1>
         {#if route.page === 'search'}
-          <p class="search-summary">“{route.value}” · {subtitle}</p>
+          <p class="search-summary">{route.value ? '“' + route.value + '” · ' : ''}{subtitle}</p>
           <form class="refine-search" aria-label="Refine search" onsubmit={e => { e.preventDefault(); submitSearch(); }}>
-            <input aria-label="Refine search" bind:value={search} placeholder="Search discussions" enterkeyhint="search"/>
+            {@render searchChip(chipId+'-refine')}
+            <input aria-label="Refine search" aria-describedby={searchTopic ? chipId+'-refine' : undefined}
+              bind:value={search} placeholder="Search discussions" enterkeyhint="search"/>
             <button type="submit" aria-label="Search discussions"><Icon name="search" size={18}/></button>
           </form>
         {:else}<p>{subtitle}</p>{/if}
@@ -931,7 +971,7 @@
           {#if !searching}<button class="outline compact" disabled={route.value.length < 2} onclick={() => expandSearch()}><Icon name="search" size={15}/>{searchMessage ? 'Try again' : 'Search again'}</button>{/if}
           <small role="status" class:loading-state={searching}>{searching ? 'Searching discussions…' : searchMessage || (searched ? (ordered.length ? `Found ${ordered.length} matching discussion${ordered.length === 1 ? '' : 's'}.` : canSearchMore ? 'No matches in this batch. Load more to search older discussions.' : 'No matching discussions within your current filters.') : 'Enter at least two characters to search.')}</small>
         </div>
-        {#if profileKey(route.value)}<a
+        {#if !feedTopic && profileKey(route.value)}<a
             class="search-profile"
             href={profileUrl(profileKey(route.value))}
             ><Icon name="user" /> Open Nostr profile <Icon
@@ -987,7 +1027,7 @@
       {/if}
       <section bind:this={feedList} use:watchFeedSize class="feed-list" aria-label="Discussions">
         {#each visible as p (p.id)}<Card
-            contextTopic={route.page === 'topic' ? route.value : undefined}
+            contextTopic={feedTopic}
             {showPreviews}
             post={p}
             saved={saved.some((s) => s.id === p.id)}
@@ -1054,14 +1094,14 @@
           class="load-more outline"
           onclick={() => (limit += 24)}
           >Load more discussions <Icon name="down" size={15} /></button
-        >{:else if route.page === 'topic'}
-        {#if topicState === 'more' || topicState === 'retry' || (requestedOlder && topicState === 'loading')}
-          <button class="load-more outline" disabled={topicState === 'loading'} onclick={loadMoreTopic}>
-            {topicState === 'loading' ? 'Loading older discussions…' : topicState === 'retry' ? 'Retry loading discussions' : 'Load more discussions'}
+        >{:else if route.page === 'topic' || (route.page === 'profile' && $canSeeAuthor(route.value))}
+        {#if historyState === 'more' || historyState === 'retry' || (requestedOlder && historyState === 'loading')}
+          <button class="load-more outline" disabled={historyState === 'loading'} onclick={loadMoreHistory}>
+            {historyState === 'loading' ? 'Loading older discussions…' : historyState === 'retry' ? 'Retry loading discussions' : 'Load more discussions'}
             <Icon name="down" size={15}/>
           </button>
-        {:else if requestedOlder && (topicState === 'end' || topicState === 'limited')}
-          <div class="search-more"><p class="quiet" role="status">{topicState === 'end' ? 'No more discussions.' : 'Relay history limit reached.'}</p></div>
+        {:else if requestedOlder && (historyState === 'end' || historyState === 'limited')}
+          <div class="search-more"><p class="quiet" role="status">{historyState === 'end' ? 'No more discussions.' : 'Relay history limit reached.'}</p></div>
         {/if}
         {:else if route.page === 'search' && route.value.length >= 2 && searched && !searching && !searchMessage}
         <div class="search-more">

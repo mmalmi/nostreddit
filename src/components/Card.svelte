@@ -134,7 +134,7 @@
   data-post-href={!full && !comment && !preview ? permalink : undefined}>
   {#if preview}<div class="byline">{#if tagged}<span class="topic-link"><TopicIcon slug={topic} small />t/{topic}</span><span class="sep">·</span>{/if}<span class="author">{@render authorIdentity()}</span><span class="sep">·</span><span>Draft</span></div>
   {:else}<div class="byline">
-    {#if !comment && tagged}<a
+    {#if !comment && tagged && (full || topic !== contextTopic)}<a
         class="topic-link"
         href={topicPath(topic)}
         ><TopicIcon slug={topic} small />t/{topic}</a

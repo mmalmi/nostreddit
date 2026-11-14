@@ -83,7 +83,8 @@ test('a reader finds paraphrases, excludes a competing meaning and can switch ba
     ['fixing a slipping bicycle chain',notes[1][0]],
     ['coffee brewing',notes[2][0]],
   ]) {
-    await submit(page, query+' #'+tag); await ranked(page);
+    await submit(page, query); await ranked(page);
+    await expect(page).toHaveURL(url => url.searchParams.get('t') === tag);
     await expect(top).toHaveText(expected);
   }
   await expect(page.getByRole('link',{name:notes[3][0],exact:true})).toHaveCount(0);

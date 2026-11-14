@@ -45,7 +45,7 @@ for(const [device,width,height] of [['desktop',1400,960],['mobile',390,844]] as 
     await page.getByRole('heading',{name:title}).getByRole('link',{name:'#'+headlineTag}).click();
     await expect(page).toHaveURL(new RegExp('/t/'+headlineTag.toLowerCase()+'$'));
     const card=page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:title})});
-    await expect(card.locator('.topic-link')).toHaveText('t/'+headlineTag.toLowerCase());
+    await expect(card.locator('.topic-link')).toHaveCount(0);
     await card.getByRole('link',{name:'#'+bodyTag,exact:true}).first().click();
     const fromTag=bodyTag.toLowerCase();
     await expect(page).toHaveURL(new RegExp('/t/'+fromTag+'$'));

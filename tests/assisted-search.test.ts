@@ -41,3 +41,15 @@ test('reader-initiated relay filters are bounded, retain term/tag spelling and d
   assert.throws(()=>checkSearch('about nsec1deadbeef'));
   assert.ok(!JSON.stringify(relayFilters(plan,{terms:['nsec1deadbeef'],tags:[]})).includes('nsec'));
 });
+
+test('scoped relay searches keep related terms inside the topic and cover written hashtags', () => {
+  const filters = relayFilters(planPostSearch('lens'), {terms:['portrait'], tags:['gardening']}, 'film-lab');
+  const keyword = filters.find(filter => filter.search === 'lens')!;
+  assert.deepEqual(keyword['#t'], ['film-lab']);
+  assert.ok(matchesRetrieval(event, [keyword]));
+  assert.equal(matchesRetrieval({...event,tags:[['subject','Behind the lens'],['t','gardening']]}, [keyword]),false);
+  assert.equal(matchesRetrieval({...event,content:'',tags:[['t','film-lab']]}, [keyword]),false);
+  assert.ok(filters.some(filter => filter.search === 'portrait' && filter['#t']?.includes('film-lab')));
+  assert.ok(filters.some(filter => filter.search === '#film-lab'));
+  assert.ok(!filters.some(filter => filter['#t']?.includes('gardening')));
+});

@@ -3,20 +3,20 @@ import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type Event
 import { decode, nsecEncode } from 'nostr-tools/nip19';
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
 import { graphViewer, graphInfo, graphStatus, networkAuthors, observeEventAuthors, observeGraphEvent, observeDirectoryLists, observeProfile, profileRelations, setPendingEdges, setGraphPeers, setGraphRoot, setGraphRelays } from './graph';
-import { asPost, discussionKinds, commentDraft, hexKey, postDraft, matchesTopic, mentionsTopic, resolveCommunityThreads, topicSlug, type Post } from './posts';
+import { asPost, discussionKinds, commentDraft, hexKey, postDraft, matchesTopic, mentionsTopic, resolveCommunityThreads, type Post } from './posts';
 import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
 import { lightningEndpoint, matchesZapReceipt, receivedTips, postTipActor, type PostTipActor, type ZapInvoice } from './zaps';
 import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './write-sync';
 import { cacheOwnEvents, type Change } from './local-writes';
-import { noExpansion, type Expansion } from './discovery/discussions';
+import { noExpansion } from './discovery/discussions';
 import type { SearchCursors } from './discovery/relay-search';
-import { relayUrls, type ContactQuery, type TopicPageEnd, type RelayConnection, type Request, type Response } from './relayTypes';
+import { relayUrls, type ContactQuery, type FeedPageEnd, type RelayConnection, type Request, type Response } from './relayTypes';
 import { readStoredRelayUrls, validateRelayUrls } from './relay-settings';
 import { readLocal, writeLocal } from './ui';
 import { isBulkAddressed, isDirectNotificationReply } from './notification-audience';
 import { groupNotifications, notificationAuthor, notificationPostId, notificationReadId, type InboxEvent } from './notification-groups';
-import { openTopicHistory, type TopicHistoryState } from './topic-history';
+import { openFeedHistory, type FeedHistoryState } from './feed-history';
 import { startTopicCatalog } from './topic-catalog-store';
 import type { HotSignal } from './hot';
 import { pairBunker, readBunkerSession, signWithBunker, type BunkerSession } from './bunker';
@@ -65,8 +65,8 @@ const bulkInboxPosts = writable<NostrEvent[]>([]);
 const inboxReceipts = writable<NostrEvent[]>([]);
 let relaySearchVersion = 0;
 const relaySearchIds = new Set<string>();
-let notificationOwner = '', pinnedThread = '', pinnedTopic = '', pinnedAuthor = '';
-let pinnedTopicLimit = 160;
+let notificationOwner = '', pinnedThread = '', pinnedAuthor = '';
+let pinnedHistory: {matches:(post:Post)=>boolean; limit:number} | undefined;
 const roots = new Map<string,Post>(), replies = new Map<string,Post>();
 const metadata = new Map<string,NostrEvent>(), contacts = new Map<string,NostrEvent>();
 const muteEvents = new Map<string,NostrEvent>();
@@ -199,9 +199,8 @@ function ordered(map: Map<string,Post>, limit:number) {
   if (result.length <= limit) return result;
   const retained = new Set(result.filter(p => p.id===pinnedThread || p.root===pinnedThread && !!pinnedThread ||
     p.parent===pinnedThread && !!pinnedThread || p.pubkey===pinnedAuthor).slice(0,160).map(p=>p.id));
-  if (pinnedTopic) {
-    const topicRows = result.filter(p => p.parent ? mentionsTopic(p,pinnedTopic) : matchesTopic(p,pinnedTopic));
-    for (const post of topicRows.slice(0,pinnedTopicLimit)) retained.add(post.id);
+  if (pinnedHistory) {
+    for (const post of result.filter(pinnedHistory.matches).slice(0,pinnedHistory.limit)) retained.add(post.id);
   }
   for (const id of relaySearchIds) if (map.has(id)) retained.add(id);
   if (map.has(pinnedThread)) retained.add(pinnedThread);
@@ -364,7 +363,7 @@ function apply(events:NostrEvent[]) {
 
 type Interest = Extract<Request,{type:'watch'}>;
 const interests = new Map<number,Interest>();
-const topicPages = new Map<number,(page:TopicPageEnd)=>void>();
+const historyPages = new Map<number,(page:FeedPageEnd)=>void>();
 type Result = Extract<Response,{type:'result'}>;
 const waiting = new Map<number,{resolve:(result:Result)=>void; reject:(reason:Error)=>void; found?:(events:NostrEvent[])=>void}>();
 let seq = 0, worker: Worker|undefined, active = false, watching = false;
@@ -383,7 +382,7 @@ function connect() {
   next.onmessage = ({data}:MessageEvent<Response>) => {
     if (worker !== next) return;
     if (data.type === 'events') apply(data.events);
-    else if (data.type === 'topicPageEnd') topicPages.get(data.id)?.(data.page);
+    else if (data.type === 'feedPageEnd') historyPages.get(data.id)?.(data.page);
     else if (data.type === 'status') relayConnections.set(data.relays);
     else if (data.type === 'found') waiting.get(data.id)?.found?.(data.events);
     else {
@@ -396,26 +395,26 @@ function connect() {
   next.onerror = () => {
     if (worker !== next) return;
     shutdown();
-    for (const done of [...topicPages.values()]) done({state:'retry'});
+    for (const done of [...historyPages.values()]) done({state:'retry'});
   };
   watching = visible();
   if (watching) for (const interest of interests.values()) next.postMessage(interest);
   return next;
 }
-function watch(filters:NostrFilter[], live = false, topicPage?: {relay:string; done:(page:TopicPageEnd)=>void}) {
+function watch(filters:NostrFilter[], live = false, historyPage?: {relay:string; done:(page:FeedPageEnd)=>void}) {
   if (!filters.length) return noop;
-  const id = ++seq, interest:Interest = {type:'watch',id,filters,live,topicRelay:topicPage?.relay};
-  if (topicPage) topicPages.set(id,topicPage.done);
+  const id = ++seq, interest:Interest = {type:'watch',id,filters,live,historyRelay:historyPage?.relay};
+  if (historyPage) historyPages.set(id,historyPage.done);
   if (active && visible()) {
     const existing = worker;
     if (!existing) connect();
     worker?.postMessage(interest);
   }
   interests.set(id,interest);
-  return () => { interests.delete(id); topicPages.delete(id); worker?.postMessage({type:'close',id} satisfies Request); };
+  return () => { interests.delete(id); historyPages.delete(id); worker?.postMessage({type:'close',id} satisfies Request); };
 }
 type RequestPayload = ContactQuery|{type:'publish';event:NostrEvent}|{type:'latest';kind:number;pubkey:string}|
-  {type:'search';query:string;expansion:Expansion;cursors?:SearchCursors};
+  Omit<Extract<Request,{type:'search'}>,'id'>;
 // `found` receives results while relays are still answering; the promise only
 // settles the request's bookkeeping once its history has finished.
 function requestResult(payload: RequestPayload, found?: (events:NostrEvent[])=>void) {
@@ -443,7 +442,7 @@ export function clearRelaySearch() { relaySearchVersion++; relaySearchIds.clear(
 // Matches reach `found` as each relay delivers them. The returned promise ends
 // the page: it carries where older results continue, never the results themselves.
 export async function searchRelays(query: string, expansion = noExpansion, cursors?: SearchCursors,
-    found: (ids:Set<string>)=>void = noop) {
+    found: (ids:Set<string>)=>void = noop, topic?: string) {
   const version = ++relaySearchVersion;
   const replaced = {ids:new Set<string>(),cursors:[] as SearchCursors};
   const show = (events:NostrEvent[]) => {
@@ -455,7 +454,7 @@ export async function searchRelays(query: string, expansion = noExpansion, curso
   };
   let next: SearchCursors;
   try {
-    const result = await requestResult({type:'search',query,expansion,cursors},show);
+    const result = await requestResult({type:'search',query,expansion,cursors,topic},show);
     show(result.events);
     next = result.cursors ?? [];
   } catch (error) {
@@ -544,22 +543,25 @@ export function refreshFeed() {
     worker.postMessage(interest);
   }
 }
-export function loadTopic(topic:string, changed:(state:TopicHistoryState)=>void) {
-  const slug = topicSlug(topic);
-  pinnedTopic = slug;
-  let history: ReturnType<typeof openTopicHistory>;
+export function loadDiscussionHistory(scope:{topic:string} | {author:string}, changed:(state:FeedHistoryState, canFill:boolean)=>void) {
+  const filter = 'topic' in scope ? {'#t':[scope.topic]} : {authors:[scope.author]};
+  const pin = {limit:160, matches:(post:Post) => 'topic' in scope
+    ? (post.parent ? mentionsTopic(post,scope.topic) : matchesTopic(post,scope.topic))
+    : !post.parent && post.pubkey === scope.author};
+  pinnedHistory = pin;
+  let history: ReturnType<typeof openFeedHistory>;
   const unsubscribe = configuredRelays.subscribe(relays => {
     history?.close();
-    pinnedTopicLimit = 160;
-    history = openTopicHistory(slug ? relays : [], (relay, until, limit, live, done) => {
+    pin.limit = 160;
+    history = openFeedHistory(relays, (relay, until, limit, live, done) => {
       // Keep the requested depth available even when the shared feed cache is full.
-      pinnedTopicLimit += limit;
-      return watch([{kinds:discussionKinds,'#t':[slug],limit,...(until === undefined ? {} : {until})}],live,{relay,done});
+      pin.limit += limit;
+      return watch([{kinds:discussionKinds,...filter,limit,...(until === undefined ? {} : {until})}],live,{relay,done});
     },changed);
   });
   return {
-    more: () => history.more(),
-    close() { unsubscribe(); history.close(); if (pinnedTopic === slug) pinnedTopic = ''; },
+    more: (mode?:'manual'|'automatic') => history.more(mode),
+    close() { unsubscribe(); history.close(); if (pinnedHistory === pin) pinnedHistory = undefined; },
   };
 }
 export function loadFeed(filters: NostrFilter[]) {
@@ -583,9 +585,7 @@ export function loadProfile(pubkey:string, directory:RelationshipKind|null = nul
   if (!hexKey.test(pubkey)) return noop;
   pinnedAuthor = pubkey;
   pageStarts.clear();
-  const filters:NostrFilter[] = [{kinds:[0],authors:[pubkey],limit:1}];
-  if (!directory) filters.push({kinds:discussionKinds,authors:[pubkey],limit:80});
-  const stop = watch(filters);
+  const stop = watch([{kinds:[0],authors:[pubkey],limit:1}]);
   let scope = '', labels = '', closeLists = noop, closeNames = noop, run = 0, active = true;
   let peers: string[] = [];
   const checked = new Set<string>();

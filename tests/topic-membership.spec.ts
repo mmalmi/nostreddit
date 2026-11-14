@@ -24,7 +24,7 @@ test('multi-tag posts appear in each topic regardless of community addresses and
   await expect(page.getByRole('link',{name:scoped.content,exact:true})).toBeVisible();
   await page.goto('/t/mostro');
   const card=page.locator('[data-route-active=\"true\"] article').filter({has:page.getByRole('heading',{name:mixed.content})});
-  await expect(card.getByRole('link',{name:'t/mostro',exact:true})).toBeVisible();
+  await expect(card.locator('.topic-link')).toHaveCount(0);
   await expect(page.getByRole('link',{name:scoped.content,exact:true})).toBeVisible();
   await expect(page.getByRole('link',{name:addressOnly.content,exact:true})).toHaveCount(0);
   await expect(page.locator('[data-route-active=\"true\"] article .topic-link').filter({hasText:'t/bitcoin'})).toHaveCount(0);

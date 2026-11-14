@@ -1,5 +1,5 @@
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
-import { discussionKinds, type Post } from '../posts';
+import { discussionKinds, postTopics, topicSlug, type Post } from '../posts';
 import { searchPostText } from './ranking';
 import { words, type SearchPlan } from './query';
 
@@ -12,10 +12,10 @@ function describe(post: Post) {
   const title = post.title.slice(0, 300);
   const subject = post.event.tags.find(t => t[0] === 'subject')?.[1]?.trim().slice(0,300);
   const meaning = subject && !text.startsWith(subject) ? subject + '. ' + text : text;
-  const tags = post.event.tags.filter(t => t[0] === 't' && t[1]).map(t => t[1].normalize('NFKC').toLowerCase());
+  const tags = [...postTopics(post)].map(tag => tag.normalize('NFKC').toLowerCase());
   return {
     title: words(title).join(' '),
-    tags: new Set([...tags, post.topic]),
+    tags: new Set(tags),
     words: new Set(words([title, post.body, text, post.topic, post.url, ...tags].join(' '))),
     text: meaning.slice(0, 1800),
   };
@@ -73,11 +73,19 @@ export function allowModel(plan: SearchPlan) {
     !/^(?:(?:nostr:)?(?:npub|nprofile|nevent|note|naddr)1|(?:[a-f\d]{32,})$|https?:\/\/)/i.test(plan.text);
 }
 
-export function relayFilters(plan: SearchPlan, expansion: Expansion): NostrFilter[] {
+export function relayFilters(plan: SearchPlan, expansion: Expansion, scope?: string): NostrFilter[] {
   const base = {kinds: discussionKinds, limit: 40};
   const safe = (value: string) => value.length >= 2 && value.length <= 128 && !/nsec1/i.test(value);
   const queries = [...new Set([plan.relayQuery, ...plan.anchors.slice(0, 2), ...expansion.terms.slice(0, 2)])]
     .filter(safe);
+  if (scope) {
+    const slug = topicSlug(scope);
+    if (!slug || /nsec1/i.test(slug)) return [];
+    const tagged = {...base, '#t': [slug]};
+    // Tag-only history serves relays without full-text search. Written hashtags
+    // need their own search because those notes may omit the indexed tag.
+    return [...queries.map(search => ({...tagged, search})), tagged, {...base, search:'#'+slug}];
+  }
   const filters: NostrFilter[] = queries.map(search => ({...base, search}));
   const topic = /^[\p{L}\p{M}\p{N}_-]+$/u.test(plan.relayQuery) ? [plan.relayQuery.toLowerCase()] : [];
   const tags = [...new Set([...plan.hashtags.slice(0, 4), ...topic, ...expansion.tags.slice(0, 3)])].filter(safe);
@@ -89,6 +97,7 @@ export function relayFilters(plan: SearchPlan, expansion: Expansion): NostrFilte
 export function matchesRetrieval(event: NostrEvent, filters: NostrFilter[]) {
   const tags = event.tags.filter(t => t[0] === 't').map(t => t[1]);
   const text = [event.content, searchPostText(event), ...event.tags.filter(t => ['t','subject','title'].includes(t[0])).map(t => t[1])].join(' ').toLowerCase();
-  return filters.some(filter => filter.search ? text.includes(filter.search.toLowerCase())
-    : filter['#t']?.some(tag => tags.includes(tag)));
+  return filters.some(filter => (filter.search || filter['#t']) &&
+    (!filter.search || text.includes(filter.search.toLowerCase())) &&
+    (!filter['#t'] || filter['#t'].some(tag => tags.includes(tag))));
 }
