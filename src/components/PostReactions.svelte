@@ -1,6 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { likes, observePostReactions, observeReferences, profiles, receipts, type Post } from '../lib/network';
+  import { likes, observePostReactions, observeReferences, profiles, receipts, viewerLists, type Post } from '../lib/network';
+  import { graphInfo } from '../lib/graph';
+  import { sortVoters } from '../lib/graph-model';
   import { lightningEndpoint, postTipSummary } from '../lib/zaps';
   import { displayName } from '../lib/ui';
   import { profileUrl } from '../lib/profile-url';
@@ -17,7 +19,7 @@
   let checked = $state<{key:string; value:Summary}>();
   let tablist: HTMLDivElement;
   $effect(() => { tab = initialTab; });
-  $effect(() => observePostReactions(post.id));
+  $effect(() => observePostReactions(post.id,tab));
   let author = $derived($profiles[post.pubkey]);
   let records = $derived($receipts[post.id]);
   let voters = $derived($likes[post.id] ?? []);
@@ -34,7 +36,7 @@
   });
   let rows = $derived(tab === 'tips'
     ? (summary?.groups ?? []).map(tip => ({pubkey:tip.sender, tip}))
-    : voters.map(pubkey => ({pubkey, tip:null})));
+    : sortVoters(voters, $viewerLists.viewer, $viewerLists.follows, $graphInfo).map(pubkey => ({pubkey, tip:null})));
   let page = $derived(rows.slice(0,limit));
   let nameKey = $derived(page.flatMap(row => row.pubkey ? [row.pubkey] : []).join(','));
   $effect(() => {

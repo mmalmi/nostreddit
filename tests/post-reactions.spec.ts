@@ -18,6 +18,9 @@ function sign(key: Uint8Array, kind: number, content: string, tags: string[][], 
 const post = sign(author, 1, 'An early walk by the water', [['t', 'photography']]);
 const comment = sign(author, 1, 'The footbridge at sunrise', [['e', post.id, '', 'root', post.pubkey], ['p', post.pubkey]]);
 const lightning = 'author@reactions.example';
+const poll = sign(author, 1, 'Who saw the kingfisher?', []);
+const reader = generateSecretKey(), bridge = generateSecretKey(), neighbor = generateSecretKey();
+const [quiet, familiar] = [generateSecretKey(), generateSecretKey()].sort((a,b) => getPublicKey(a).localeCompare(getPublicKey(b)));
 
 function paid(target: NostrEvent, sender: Uint8Array, sats: number, offset: number, isAnonymous = false) {
   const tags = [['p', target.pubkey], ['e', target.id], ['relays', 'wss://relay.example'], ['amount', String(sats * 1000)]];
@@ -43,6 +46,10 @@ test.beforeAll(async () => {
     sign(providerKey, 9735, '', paid(post, anonymous, 100, 4, true), 4),
     sign(outsider, 9735, '', paid(post, outsider, 9000, 5), 5),
     sign(providerKey, 9735, '', paid(comment, voter, 1000, 6), 6),
+    poll, profile(reader,'You'), profile(quiet,'Ada'), profile(familiar,'Bea'), profile(neighbor,'Cora'),
+    sign(reader,3,'',[quiet,familiar,bridge].map(key=>['p',getPublicKey(key)])),
+    sign(bridge,3,'',[familiar,neighbor].map(key=>['p',getPublicKey(key)])),
+    ...[outsider,neighbor,quiet,familiar,reader].map(key=>sign(key,7,'+',[['e',poll.id],['p',poll.pubkey]])),
   ];
   const socket = new WebSocket('ws://127.0.0.1:' + (process.env.TEST_RELAY_PORT || '43164'));
   try {
@@ -81,6 +88,15 @@ async function openMenu(card: Locator) {
   await expect(action).toHaveCount(1);
   await action.click();
 }
+
+test('upvotes put familiar follows ahead of other follows, then neighbors and strangers', async ({ page, context }, info) => {
+  await context.addInitScript(key => localStorage.setItem('nostreddit.account.v1',JSON.stringify({method:'extension',pubkey:key})),getPublicKey(reader));
+  await openThread(page, poll);
+  await openMenu(rootCard(page));
+  const links = reactions(page).getByRole('listitem').getByRole('link');
+  await expect(links).toHaveText(['You','Bea','Ada','Cora','Wrong issuer'], {timeout:15000});
+  await page.screenshot({path:info.outputPath('upvotes-by-connection.png')});
+});
 
 test('post and comment menus list their own upvotes and verified tips', async ({ page }, testInfo) => {
   await openThread(page, post);
@@ -178,6 +194,7 @@ test('a busy post lists 1,000 upvoters and combines 1,000 payments from one tipp
     events.push(sign(providerKey, 9735, '', paid(popular, tipper, 1, -i), -i));
   }
   // Keep the large history private to this test and respect each query's limit.
+  const detailKinds = new Set<number>();
   const relay = new WebSocketServer({host:'127.0.0.1', port:0});
   await once(relay, 'listening');
   relay.on('connection', socket => socket.on('message', raw => {
@@ -185,6 +202,9 @@ test('a busy post lists 1,000 upvoters and combines 1,000 payments from one tipp
     if (command !== 'REQ') return;
     const sent = new Set<string>();
     for (const filter of filters) {
+      if (filter.limit === 1000 && filter['#e']?.includes(popular.id)) {
+        for (const kind of filter.kinds ?? []) detailKinds.add(kind);
+      }
       const source = filter['#e']?.includes(popular.id) ? events : notes;
       const hits = source.filter(e => matchFilters([filter], e)).slice(0, filter.limit ?? 1000);
       for (const event of hits) {
@@ -203,6 +223,7 @@ test('a busy post lists 1,000 upvoters and combines 1,000 payments from one tipp
     await openMenu(rootCard(page));
     const dialog = reactions(page);
     await expect(dialog.getByText('1000 upvotes', {exact:true})).toBeVisible({timeout:60_000});
+    expect([...detailKinds]).toEqual([7]);
     await expect(dialog.getByRole('listitem')).toHaveCount(24);
     await dialog.getByRole('button', {name:'Show more'}).click();
     await expect(dialog.getByRole('listitem')).toHaveCount(48);
@@ -210,6 +231,7 @@ test('a busy post lists 1,000 upvoters and combines 1,000 payments from one tipp
     const row = dialog.getByRole('listitem');
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('1000 tips', {timeout:60_000});
+    expect(detailKinds.has(9735)).toBe(true);
     await expect(row).toContainText('€0.50');
     await expect(person(row, tipper)).toContainText('June Park');
     await page.keyboard.press('Escape');

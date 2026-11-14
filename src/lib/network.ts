@@ -85,7 +85,7 @@ const changesForViewer = derived([account,pendingWrites], ([session,rows]) =>
   rows.filter(row=>row.owner===session?.pubkey && row.change).map(row=>row.change!));
 export const pendingPersonEdits = derived(changesForViewer, changes => changes.flatMap(change =>
   change.kind === 3 ? [{pubkey:change.key,followed:change.enabled}] : []));
-const viewerLists = derived([account,listRevision,changesForViewer], ([session, ,changes]) => {
+export const viewerLists = derived([account,listRevision,changesForViewer], ([session, ,changes]) => {
   const viewer = session?.pubkey ?? snapshotRoot;
   const keys = (event?: NostrEvent) => new Set(event?.tags.filter(t => t[0] === 'p' && hexKey.test(t[1])).map(t => t[1]));
   const following = keys(contacts.get(viewer)), muted = keys(muteEvents.get(viewer));
@@ -826,9 +826,9 @@ export function observeReferences(eventIds:string[], people:string[]) {
   const stopPosts = rawPosts.subscribe(names), stopReplies = rawComments.subscribe(names), stopPolicy = canSeeAuthor.subscribe(names);
   return () => { stopPosts(); stopReplies(); stopPolicy(); stops.forEach(stop=>stop()); };
 }
-export function observePostReactions(id:string) {
+export function observePostReactions(id:string, tab:'upvotes'|'tips') {
   if (!hexKey.test(id)) return noop;
-  return watch([{kinds:[7], '#e':[id], limit:reactionViewLimit}, {kinds:[9735], '#e':[id], limit:reactionViewLimit}], true);
+  return watch([{kinds:[tab === 'tips' ? 9735 : 7], '#e':[id], limit:reactionViewLimit}], true);
 }
 
 export function observe(ids:string[]) {

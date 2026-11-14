@@ -4,6 +4,19 @@ import type { SocialGraph } from 'nostr-social-graph';
 export const snapshotRoot = '4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0';
 export const snapshotHash = '19b490ce9c8715cc5c8dc24b73719051ce932febaec4ec369ab1ed9f7c575d20';
 export type GraphBadge = { distance: number | null; muted: boolean; overmuted: boolean; followedByFriends?:number; influence?:number };
+
+export function sortVoters(keys: readonly string[], viewer: string, follows: ReadonlySet<string>, badges: Readonly<Record<string,GraphBadge>>) {
+  const rows = keys.map(key => {
+    const badge = badges[key];
+    // Personal follows precede even the center of a fallback public graph.
+    const distance = key === viewer ? -2 : follows.has(key) ? -1 : badge?.distance ?? 1000;
+    const overlap = badge?.followedByFriends ?? 0, rank = badge?.influence ?? 0;
+    return { key, distance, primaryScore:distance <= 1 ? overlap : rank, tieScore:distance <= 1 ? rank : overlap };
+  });
+  rows.sort((a,b) => a.distance - b.distance || b.primaryScore - a.primaryScore || b.tieScore - a.tieScore
+    || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return rows.map(row => row.key);
+}
 export type RelationshipKind = 'following' | 'followers';
 export type ProfileList = {
   author: string; id: string; at: number; followsSubject: boolean; followsViewer: boolean; following: number; followKeys?: string[];

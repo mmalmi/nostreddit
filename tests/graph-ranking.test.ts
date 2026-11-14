@@ -26,3 +26,11 @@ test('personal mutes apply when discovery uses a different public root',async()=
   assert.equal(g.getInternalData().ids.has(key(99)),false);
   await ranker.update(g,key(99),{},0,true);assert.ok(ranker.weight(key(2))!>0);
 });
+
+test('a cached PageRank distinguishes direct follows and reading it does not recalculate it',async()=>{
+  const g=new SocialGraph(key(0)),ranker=createGraphRanker();
+  g.addFollower(key(0),key(1));g.addFollower(key(0),key(2));g.addFollower(key(1),key(2));
+  await ranker.update(g,key(0),{},0,true);
+  assert.ok(ranker.weight(key(2))! > ranker.weight(key(1))!);
+  assert.equal(ranker.calculations,1);
+});

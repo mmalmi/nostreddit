@@ -30,6 +30,8 @@ export function createGraphRanker() {
         if(next.converged)result=next;
       } catch { /* Keep ordinary distance ranking when optional scoring is unavailable. */ }
     },
-    weight(key:string) {return result ? result.directSeed>0 ? Math.min(1,result.get(key)/result.directSeed) : 0 : undefined;},
+    // Hot caps the normalized weight at one. Keep the full cached score so
+    // equal-distance people can also be ordered without a second calculation.
+    weight(key:string) {return result ? result.directSeed>0 ? result.get(key)/result.directSeed : 0 : undefined;},
   };
 }

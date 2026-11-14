@@ -1,8 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SocialGraph } from 'nostr-social-graph';
-import { badgesFor, networkPostAuthors } from '../src/lib/graph-model';
+import { badgesFor, networkPostAuthors, sortVoters, type GraphBadge } from '../src/lib/graph-model';
 import type { Event } from 'nostr-tools';
+
+test('voters use cached distance, direct-follow overlap, and available PageRank before stable ties', () => {
+  const badge = (distance: number | null, followedByFriends: number, influence?: number): GraphBadge =>
+    ({distance, followedByFriends, influence, muted:false, overmuted:false});
+  const badges = {
+    popularFollow:badge(1,1,4), familiarFollow:badge(1,2,1), otherFollow:badge(1,1,2),
+    near:badge(2,3,0.2), rankedNear:badge(2,1,0.4), far:badge(3,8,5), publicRoot:badge(0,0),
+  };
+  const direct = new Set(['popularFollow','familiarFollow','otherFollow']);
+  const expected = ['self','familiarFollow','popularFollow','otherFollow','publicRoot','rankedNear','near','far','unknownA','unknownB'];
+  const reversed = [...expected].reverse();
+  assert.deepEqual(sortVoters(reversed, 'self', direct, badges), expected);
+  assert.deepEqual(sortVoters(reversed, 'self', direct, {}), [
+    'self','familiarFollow','otherFollow','popularFollow','far','near','publicRoot','rankedNear','unknownA','unknownB',
+  ]);
+  assert.deepEqual(reversed,[...expected].reverse());
+});
+
+test('a thousand voters read at most one cached graph badge per voter', () => {
+  let lookups = 0;
+  const badges = new Proxy({}, {get:() => { lookups++; return undefined; }});
+  const keys = Array.from({length:1000}, (_,i) => i.toString(16).padStart(64,'0')).reverse();
+  const sorted = sortVoters(keys,'viewer',new Set(),badges);
+  assert.equal(sorted.length,1000);
+  assert.equal(lookups,1000);
+  assert.deepEqual(sorted,[...keys].sort());
+});
 
 test('network discovery fairly bounds verified friends’ lists and excludes direct follows and invalid keys', () => {
   const key=(n:number)=>n.toString(16).padStart(64,'0');
