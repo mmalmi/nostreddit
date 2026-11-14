@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { expect, test } from '@playwright/test';
 import { WebSocketServer, type WebSocket } from 'ws';
 
-const defaultRelay = 'ws://127.0.0.1:43164';
+const defaultRelay = process.env.NOSTREDDIT_TEST_RELAY_URL || 'ws://127.0.0.1:43164';
 
 test('relay rows validate, save, remove and restore', async ({ page }) => {
   await page.goto('/settings/network');
@@ -73,11 +73,19 @@ test('each row follows its own socket through handshake, open and close', async 
     await page.goto('/settings/network');
     const section = page.getByRole('region', { name: 'Relays', exact: true });
     const rows = section.getByRole('listitem');
+    const sidebar = page.getByLabel('Main navigation');
+    const summary = sidebar.getByRole('status');
     await expect(rows.nth(0)).toContainText('Connected');
     await expect(rows.nth(1)).toContainText('Connecting');
+    await page.getByRole('link', { name: 'Nostreddit home' }).click();
+    await expect(summary).toHaveText('1/2 relays connected');
+    await summary.screenshot({ path: info.outputPath('sidebar-partial.png') });
     await expect.poll(() => handshakes.length).toBeGreaterThan(0);
     acceptConnections = true;
     handshakes.splice(0).forEach(accept => accept());
+    await expect(summary).toHaveText('2/2 relays connected');
+    await summary.screenshot({ path: info.outputPath('sidebar-connected.png') });
+    await page.goBack();
     await expect(rows.nth(1)).toContainText('Connected');
     // No Nostr event or end-of-history response was sent by this relay.
     acceptConnections = false;
@@ -89,6 +97,12 @@ test('each row follows its own socket through handshake, open and close', async 
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await section.screenshot({ path: info.outputPath('relay-rows-' + width + '.png') });
     }
+    await section.getByRole('button', { name: 'Remove relay 1' }).click();
+    await section.getByRole('button', { name: 'Save relays' }).click();
+    await page.getByRole('button', { name: 'Toggle navigation' }).click();
+    await expect(summary).toHaveText('0/1 relay connected');
+    await summary.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('sidebar-offline-mobile.png') });
   } finally {
     await page.close();
     for (const peer of ws.clients) peer.terminate();

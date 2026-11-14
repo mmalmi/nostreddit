@@ -398,9 +398,13 @@ a {
   background: light-dark(#48815e, #89bc96);
   box-shadow: 0 0 0 3px var(--light);
 }
-.signal-dot.offline {
-  background: var(--gold);
+.signal-dot.partial {
+  background: light-dark(#a67b00, #efc64b);
   box-shadow: 0 0 0 3px var(--gold-bg);
+}
+.signal-dot.offline {
+  background: light-dark(#bc3932, #ff8980);
+  box-shadow: 0 0 0 3px var(--error-bg);
 }
 .drawer-backdrop {
   display: none;

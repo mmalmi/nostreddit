@@ -53,11 +53,10 @@ const rawReceipts = writable<Record<string,NostrEvent[]>>({});
 const reactionViewLimit = 1000;
 const rawHotSignals = writable<HotSignal[]>([]);
 export const follows = writable<string[]>([]), mutes = writable<string[]>([]);
-export const status = derived([configuredRelays, relayConnections], ([urls, connections]) => {
-  if (urls.some(url => connections[url] === 'connected')) return 'live';
-  if (urls.some(url => connections[url] === 'connecting')) return 'loading';
-  return 'offline';
-});
+export const relayCounts = derived([configuredRelays, relayConnections], ([urls, connections]) => ({
+  connected: urls.filter(url => connections[url] === 'connected').length,
+  total: urls.length,
+}));
 const rawNotifications = writable<NostrEvent[]>([]);
 // Keep a separate bounded history for bulk posts. A run of suppressed
 // notifications must not evict ordinary activity already in the inbox.

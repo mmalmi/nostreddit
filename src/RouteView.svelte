@@ -11,7 +11,7 @@
     comments,
     profiles,
     account,
-    status,
+    relayCounts,
     notifications,
     unreadNotificationCount,
     readPostNotifications,
@@ -800,13 +800,11 @@
     </div>
     <a class="nav-row" class:active={route.page === 'settings'} aria-current={route.page === 'settings' ? 'page' : undefined} href="/settings"><Icon name="settings" size={18} />Settings</a>
     {#if $pendingWrites.length}<a class="sync-link" href="/settings/account">{$pendingWrites.length} pending {$pendingWrites.length === 1 ? 'change' : 'changes'}</a>{/if}
-    <div class="left-foot" class:loading-state={$status === 'loading'}>
-      <span class="signal-dot" class:offline={$status === 'offline'}
-      ></span>{$status === 'live'
-        ? 'Relays connected'
-        : $status === 'loading'
-          ? 'Connecting to relays'
-          : 'Relays offline'}
+    <div class="left-foot" role="status">
+      <span class="signal-dot" aria-hidden="true"
+        class:offline={$relayCounts.connected === 0}
+        class:partial={$relayCounts.connected > 0 && $relayCounts.connected < $relayCounts.total}></span>
+      {$relayCounts.connected}/{$relayCounts.total} {$relayCounts.total === 1 ? 'relay' : 'relays'} connected
     </div>
   </aside>
   <main tabindex="-1">
