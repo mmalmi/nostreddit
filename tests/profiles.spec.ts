@@ -52,7 +52,7 @@ test('profile context links the viewer’s mutuals and uses Iris Kit names for u
   await expect(header.getByText(/\bnpub1[a-z0-9]+/)).toHaveCount(0);
   await header.getByRole('link',{name:'and 1 more'}).click();
   await expect(page).toHaveURL(new RegExp('/u/'+npubEncode(t)+'/followers$'));
-  await expect(page.getByRole('list',{name:'Followers'}).locator('a[href="/u/'+npubEncode(getPublicKey(others[1]))+'"]')).toBeVisible();
+  await expect(page.getByRole('list',{name:'Known followers'}).locator('a[href="/u/'+npubEncode(getPublicKey(others[1]))+'"]')).toBeVisible();
   await page.goBack();
   await header.getByRole('link',{name:'Coast Wren'}).click();
   await expect(page).toHaveURL(new RegExp('/u/'+npubEncode(f)+'$'));
@@ -60,7 +60,7 @@ test('profile context links the viewer’s mutuals and uses Iris Kit names for u
   await page.goto('/settings/network');
   await page.getByLabel('Maximum follow distance').selectOption('1');
   await page.goto('/u/'+npubEncode(t)+'/followers');
-  const directory=page.getByRole('list',{name:'Followers'});
+  const directory=page.getByRole('list',{name:'Known followers'});
   await expect(directory.getByRole('link',{name:'Coast Wren'})).toBeVisible({timeout:20000});
   await expect(directory.locator('a[href="/u/'+npubEncode(u)+'"]')).toBeVisible();
   await expect(directory.getByRole('link',{name:'Far Shore'})).toHaveCount(0);
@@ -99,7 +99,7 @@ test('guest relationship pages resolve legacy URLs, paginate nonmutual followers
   const canonical='/u/'+npubEncode(t);
   await page.goto('/u/'+t+'/followers');
   await expect(page).toHaveURL(new RegExp(canonical+'/followers$'));
-  const followers=page.getByRole('list',{name:'Followers'});
+  const followers=page.getByRole('list',{name:'Known followers'});
   await expect(followers.getByRole('listitem')).toHaveCount(30,{timeout:20000});
   const first = await followers.getByRole('link').evaluateAll(links=>links.map(el=>el.getAttribute('href')));
   await expect(followers.getByRole('link',{name:/Former Reader/})).toHaveCount(0);
@@ -113,7 +113,7 @@ test('guest relationship pages resolve legacy URLs, paginate nonmutual followers
   await expect(following.getByRole('link',{name:'Morning Walk'})).toHaveAttribute('href','/u/'+npubEncode(nextPerson),{timeout:20000});
   await context.setOffline(true);
   try {
-    await page.getByRole('navigation',{name:'Relationship lists'}).getByRole('link',{name:'Followers',exact:true}).click();
+    await page.getByRole('navigation',{name:'Relationship lists'}).getByRole('link',{name:'Known followers',exact:true}).click();
     await expect(followers.getByRole('listitem')).toHaveCount(30,{timeout:12000});
     await page.getByRole('navigation',{name:'Relationship lists'}).getByRole('link',{name:'Following',exact:true}).click();
     await expect(following.getByRole('link',{name:'Morning Walk'})).toBeVisible({timeout:12000});

@@ -112,8 +112,8 @@
       <a class="stat-link" href={profileUrl(pubkey,'following')} aria-label="View following">
         <strong title={social?.following == null ? 'Follow list not found' : undefined}>{social?.following != null ? social.following.toLocaleString() : '—'}</strong> Following
       </a>
-      <a class="stat-link" href={profileUrl(pubkey,'followers')} aria-label="View followers">
-        <strong title={social?.followers == null ? 'Follower count unavailable' : undefined}>{social?.followers != null ? social.followers.toLocaleString() : '—'}</strong> Followers
+      <a class="stat-link" href={profileUrl(pubkey,'followers')} aria-label="View known followers">
+        <strong title={social?.followers == null ? 'Known follower count unavailable' : undefined}>{social?.followers != null ? social.followers.toLocaleString() : '—'}</strong> Known followers
       </a>
       {#if !mine && $account && social?.followsViewer}<span class="badge">Follows you</span>{/if}
     </div>
@@ -127,7 +127,7 @@
         <div>
           <span>Followed by </span>{#each people as key, index (key)}{#if index}, {/if}<a href={profileUrl(key)}><Name pubkey={key} profile={$profiles[key]} name={displayName(key,$profiles[key])}/></a>{/each}
           {#if allowedPeople.length > people.length}
-            <a href={profileUrl(pubkey,'followers')} title="View followers">and {allowedPeople.length - people.length} more</a>
+            <a href={profileUrl(pubkey,'followers')} title="View known followers">and {allowedPeople.length - people.length} more</a>
           {/if}
           {#if !$account}<small>From the public social graph</small>{/if}
         </div>

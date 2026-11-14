@@ -13,7 +13,7 @@
   $: permitted = $canSeeAuthor(pubkey);
   $: ownerName = permitted ? displayName(pubkey, $profiles[pubkey]) : 'Profile';
   $: page = relationshipPage(pubkey, direction, pageIndex);
-  $: title = direction === 'followers' ? 'Followers' : 'Following';
+  $: title = direction === 'followers' ? 'Known followers' : 'Following';
 </script>
 
 <a class="back-link" href={profileUrl(pubkey)}><Icon name="back" size={15}/> {ownerName}</a>
@@ -22,7 +22,7 @@
   {#if permitted}<p class="description">{direction === 'followers' ? 'Profiles known to follow ' + ownerName + '.' : 'Public follows from ' + ownerName + '.'}</p>{/if}
   <nav aria-label="Relationship lists">
     {#each ['followers', 'following'] as tab}
-      <a href={profileUrl(pubkey, tab === 'followers' ? 'followers' : 'following')} aria-current={tab === direction ? 'page' : undefined}>{tab === 'followers' ? 'Followers' : 'Following'}</a>
+      <a href={profileUrl(pubkey, tab === 'followers' ? 'followers' : 'following')} aria-current={tab === direction ? 'page' : undefined}>{tab === 'followers' ? 'Known followers' : 'Following'}</a>
     {/each}
   </nav>
   {#if !permitted}

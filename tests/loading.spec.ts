@@ -169,11 +169,11 @@ test('known local empty states and guest sign-in prompts stay immediate', async 
 });
 
 for (const following of [null, 0]) {
-  test(`profile distinguishes ${following === null ? 'unknown' : 'empty'} follow lists and total followers`, async ({ page }, info) => {
+  test(`profile distinguishes ${following === null ? 'unknown' : 'empty'} follow lists and known followers`, async ({ page }, info) => {
     await controlledWorkers(page, { following });
     await page.goto('/u/' + subject);
     await expect(page.getByRole('link', { name: 'View following', exact: true })).toHaveText(`${following === null ? '—' : '0'} Following`);
-    await expect(page.getByRole('link', { name: 'View followers', exact: true })).toHaveText('6 Followers');
+    await expect(page.getByRole('link', { name: 'View known followers', exact: true })).toHaveText('6 Known followers');
     await expect(page.locator('.social-context summary')).toHaveText('Two follow steps away in the public graph.');
     await expect(page.locator('h1').getByTestId('social-distance-badge')).toHaveAttribute('title', 'Two follow steps away in the public graph');
     await page.setViewportSize({ width: 390, height: 844 });
@@ -184,7 +184,7 @@ for (const following of [null, 0]) {
     await expect(state).toBeHidden();
     await expect(state).toHaveCSS('animation-delay', '2s');
     await expect(state).toBeVisible({ timeout: 3000 });
-    await page.getByRole('navigation', { name: 'Relationship lists' }).getByRole('link', { name: 'Followers', exact: true }).click();
-    await expect(page.getByRole('list', { name: 'Followers', exact: true }).getByRole('listitem')).toHaveCount(6);
+    await page.getByRole('navigation', { name: 'Relationship lists' }).getByRole('link', { name: 'Known followers', exact: true }).click();
+    await expect(page.getByRole('list', { name: 'Known followers', exact: true }).getByRole('listitem')).toHaveCount(6);
   });
 }

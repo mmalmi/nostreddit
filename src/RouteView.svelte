@@ -517,7 +517,7 @@
                   : route.page === 'search'
                     ? 'Search results'
                     : route.page === 'profile'
-                      ? (route.connections ? (route.connections === 'followers' ? 'Followers' : 'Following') + ' · ' + profName : profName)
+                      ? (route.connections ? (route.connections === 'followers' ? 'Known followers' : 'Following') + ' · ' + profName : profName)
                       : route.page === 'thread'
                         ? 'Discussion'
                         : 'Page not found';
