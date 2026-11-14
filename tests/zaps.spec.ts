@@ -65,14 +65,14 @@ test('guest enters a fiat tip, verifies the exact Lightning invoice and sees the
   await expect(page.getByText('Tip confirmed')).toHaveCount(0)
   await page.getByRole('button', { name: 'Pay with browser wallet' }).click()
   await expect(page.getByText('Tip confirmed')).toBeVisible()
-  await expect(page.getByText('≈$0.10 (100 sats) to the author.')).toBeVisible()
+  await expect(page.getByText('$0.10 (100 sats) to the author.')).toBeVisible()
   const request = JSON.parse(description)
   await publish([finalizeEvent({
     kind: 9735, created_at: Math.floor(Date.now() / 1000), content: '',
     tags: [['p', target.pubkey], ['e', target.id], ['P', request.pubkey], ['description', description], ['bolt11', invoice]],
   }, providerKey)])
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
-  await expect(tip).toContainText('≈$0.10')
+  await expect(tip).toHaveText('$0.10')
 
 })
 
@@ -150,7 +150,7 @@ test('inbox shows a verified tip once, in the chosen currency, and links its sen
   const tips = feed.locator('article').filter({hasText: 'sent you a tip'})
   await expect(tips).toHaveCount(1)
   await expect(tips.first().getByRole('link', {name: 'Harbor visitor'})).toHaveAttribute('href', profileUrl(getPublicKey(sender)))
-  await expect(tips.first().getByText('≈€0.20')).toHaveAttribute('title', '400 sats')
+  await expect(tips.first().getByText('€0.20', {exact:true})).toHaveAttribute('title', '400 sats')
   await expect(feed.getByText('Ignored sender')).toHaveCount(0)
   await page.screenshot({path: testInfo.outputPath('tip-inbox-eur.png')})
 })

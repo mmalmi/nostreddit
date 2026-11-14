@@ -15,7 +15,7 @@ test('exact invoice sats, BTC and minor fiat amounts format without rounding tin
   assert.equal(satsForAmount(0.1, unitRate('USD', quote)), 100);
   assert.equal(satsForAmount(0.00000021, unitRate('BTC', null)), 21);
   assert.equal(formatTip(1, 'USD', quote), '<$0.01');
-  assert.equal(formatTip(100, 'USD', quote, true), '≈$0.10 (100 sats)');
+  assert.equal(formatTip(100, 'USD', quote, true), '$0.10 (100 sats)');
   assert.equal(formatTip(21, 'BTC', null), '0.00000021 BTC');
   assert.equal(formatTip(1, 'SATS', null), '1 sat');
   assert.equal(formatTip(0.001, 'BTC', null), '0.00000000001 BTC');

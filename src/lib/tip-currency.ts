@@ -125,6 +125,5 @@ export function formatTip(sats: number, currency: TipCurrency, quote: TipQuote |
   const rate = unitRate(currency, quote);
   if (currency === 'SATS' || !rate) return satText;
   const amount = formatTipUnit(sats / satsPerBtc * rate, currency);
-  const primary = currency === 'BTC' || amount.startsWith('<') ? amount : '≈' + amount;
-  return exact ? primary + ' (' + satText + ')' : primary;
+  return exact ? amount + ' (' + satText + ')' : amount;
 }
