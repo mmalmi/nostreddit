@@ -7,7 +7,7 @@ import { allowFixtureAuthors } from './helpers/graphPreferences';
 
 test.beforeEach(async ({context}) => { await allowFixtureAuthors(context); });
 
-test('Hashtree photos load on demand, expand, and reopen from ciphertext in the device cache', async ({page}) => {
+test('Hashtree photos load automatically, expand, and reopen from ciphertext in the device cache', async ({page}) => {
   const store = new MemoryStore(), tree = new HashTree({store});
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNY6ywKAAKmAQa4FRofAAAAAElFTkSuQmCC','base64');
   const {cid} = await tree.putFile(new Uint8Array(png));
@@ -39,11 +39,8 @@ test('Hashtree photos load on demand, expand, and reopen from ciphertext in the 
   });
 
   await page.goto('/post/'+event.id);
-  const load = page.getByRole('button',{name:'Load image',exact:true});
-  await expect(load).toBeVisible();
-  expect(requests).toBe(0);
   await expect(page.getByRole('link',{name:'Open in Iris Drive'})).toHaveAttribute('href','https://drive.iris.to/#/'+nhash+'/field.png');
-  await load.click();
+  await expect(page.getByRole('button',{name:'Load image',exact:true})).toHaveCount(0);
   const expand = page.getByRole('button',{name:'Expand field.png',exact:true});
   await expect(expand).toBeVisible();
   await expect.poll(async () => expand.locator('img').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(1);
@@ -55,7 +52,6 @@ test('Hashtree photos load on demand, expand, and reopen from ciphertext in the 
   const initialRequests = requests;
   offline = true;
   await page.reload();
-  await load.click();
   await expect(expand).toBeVisible();
   expect(requests).toBe(initialRequests);
 });

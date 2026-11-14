@@ -72,7 +72,7 @@
   async function send() {
     if (busy || uploading) return;
     if (rawTopic && !slug) return fail('Use a topic with letters, numbers, underscores, or hyphens.', topicField);
-    if (mode === 'link' && !postLink(link)) return fail(link ? 'Enter a web or Hashtree link.' : 'Add a link to share.', linkField);
+    if (mode === 'link' && !postLink(link)) return fail(link ? 'Enter a valid link.' : 'Add a link to share.', linkField);
     if (empty) return fail('Write something to post.', textField);
     busy = true;
     error = '';
@@ -127,7 +127,7 @@
     <div id="post-fields" role="tabpanel" aria-labelledby={'post-tab-' + mode}>
     {#if mode === 'link'}
       <label>Link<input bind:this={linkField} type="url" inputmode="url" bind:value={url}
-        placeholder="https://… or htree://…" maxlength="2048" autocomplete="off"/></label>
+        placeholder="https://…" maxlength="2048" autocomplete="off"/></label>
     {/if}
     <label
       >Post<textarea

@@ -72,7 +72,7 @@ test('the feed link shortcut explains missing fields and publishes a link post',
   await editor.getByLabel('Topic',{exact:true}).fill('t/field-guides');
   await editor.getByRole('textbox',{name:'Link',exact:true}).fill('not a link');
   await publish.click();
-  await expect(editor.getByRole('alert')).toHaveText('Enter a web or Hashtree link.');
+  await expect(editor.getByRole('alert')).toHaveText('Enter a valid link.');
   await editor.getByRole('textbox',{name:'Link',exact:true}).fill('https://example.org/field-guide');
   await page.screenshot({path:info.outputPath('link-editor.png')});
   await publish.click();

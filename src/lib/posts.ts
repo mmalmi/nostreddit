@@ -88,7 +88,7 @@ export function postDraft(input: {topic?:string; title?:string; body:string; url
   if (title.length > 300) throw new Error('Keep the title under 300 characters.');
   if (body.length > 20000) throw new Error('Keep the post under 20,000 characters.');
   const link = postLink(rawUrl);
-  if (rawUrl && !link) throw new Error('Enter a web or Hashtree link.');
+  if (rawUrl && !link) throw new Error('Enter a valid link.');
   if (!title && !body && !link) throw new Error('Write something to post.');
   const tags = topicTags(topic,title+'\n'+body);
   if (title) tags.push(['subject',title]);

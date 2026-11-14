@@ -49,6 +49,19 @@ test('a guest can browse and save posts; a new profile can publish, reply, like 
     await expect(second.getByRole('heading',{name:'Where do shorebirds shelter?'})).toBeVisible();
     await expect(second.locator('[data-route-active=\"true\"] article').filter({hasText:'Under the pier this morning.'}).last()).toBeVisible();
     await expect(second.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Like',exact:true})).toHaveText('1');
+    const upvote=second.locator('[data-route-active=\"true\"] article').first().getByRole('button',{name:'Like',exact:true});
+    const upvotes=second.getByRole('dialog',{name:'Upvotes',exact:true});
+    await upvote.hover(); await second.mouse.down(); await second.waitForTimeout(600); await second.mouse.up();
+    await expect(upvotes).toBeVisible();
+    await expect(upvotes.getByRole('link',{name:'Rain Reader'})).toBeVisible();
+    await expect(upvote).toHaveText('1');
+    await expect(upvote).toHaveAttribute('aria-pressed','false');
+    await second.keyboard.press('Escape');
+    await expect(upvotes).toBeHidden();
+    await upvote.click({button:'right'});
+    await expect(upvotes).toBeVisible();
+    await upvotes.getByRole('link',{name:'Rain Reader'}).click();
+    await expect(second).toHaveURL(/\/u\/npub1/);
   } finally { await reader.close(); }
 
   await page.goto(seedUrl);

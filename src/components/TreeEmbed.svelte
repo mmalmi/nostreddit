@@ -53,11 +53,26 @@
   function play() {
     video.play().catch(() => { error = 'This browser could not play the video. You can still download it.'; });
   }
+  $: media = ['image','video','audio'].includes(attachment.kind) && !attachment.mutable;
+  // Media loads on its own once it nears the viewport; other files stay on request.
+  function autoload(element: HTMLElement, enabled: boolean) {
+    let observer: IntersectionObserver | undefined;
+    const watch = (on: boolean) => {
+      observer?.disconnect(); observer = undefined;
+      if (!on) return;
+      observer = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting && !result && !loading && !error) load();
+      }, {rootMargin:'400px 0px'});
+      observer.observe(element);
+    };
+    watch(enabled);
+    return {update: watch, destroy() { observer?.disconnect(); }};
+  }
   $: action = attachment.kind === 'tree' ? 'Inspect tree' : attachment.kind === 'file' ? 'Load file' : 'Load '+attachment.kind;
 </script>
 
-<div class="tree-embed">
-  <header><span>Hashtree</span><strong>{attachment.name}</strong></header>
+<div class="tree-embed" class:media use:autoload={media}>
+  {#if !media}<header><strong>{attachment.name}</strong></header>{/if}
   {#if result?.type === 'directory'}
     <ul aria-label="Directory contents">{#each result.entries as entry}
       <li><a href={entry.href} target="_blank" rel="noopener noreferrer"><Icon name={entry.directory?'book':'link'} size={15}/>{entry.name}{entry.directory?'/':''}</a></li>
@@ -77,9 +92,10 @@
   {:else if objectUrl && attachment.kind === 'audio'}
     <audio src={objectUrl} controls preload="metadata"></audio>
   {/if}
+  {#if media && loading && !objectUrl}<p class="placeholder" role="status">Loading {attachment.name}…</p>{/if}
   {#if error}<p role="status">{error}</p>{/if}
   <footer>
-    {#if !result && !attachment.mutable}<button class="outline compact" disabled={loading} onclick={load}>{loading ? 'Loading…' : action}</button>{/if}
+    {#if !result && !attachment.mutable && (!media || error)}<button class="outline compact" disabled={loading} onclick={load}>{loading ? 'Loading…' : action}</button>{/if}
     {#if objectUrl}<a class="outline compact" download={attachment.name} href={objectUrl}>Download file</a>{/if}
     <a class="drive" href={attachment.viewerUrl} target="_blank" rel="noopener noreferrer">Open in Iris Drive <Icon name="external" size={12}/></a>
   </footer>
@@ -89,11 +105,13 @@
   .tree-embed {margin:10px 0;border:1px solid var(--line);border-radius:10px;padding:12px;min-width:0}
   header,footer,.drive,li a {display:flex;align-items:center;gap:8px}
   header {margin-bottom:8px;align-items:baseline;flex-wrap:wrap;}
-  header span {font:10px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
   header strong {font-size:14px;overflow-wrap:anywhere}
   footer {margin-top:8px;flex-wrap:wrap}
   .drive {font-size:12px;color:var(--green)}
   p,small {color:var(--muted);font-size:13px}
+  .media {padding:0;border:0}
+  .media footer {margin-top:4px}
+  .placeholder {display:grid;place-items:center;min-height:160px;margin:0;border-radius:8px;background:var(--surface);overflow-wrap:anywhere;padding:12px}
   ul {padding:0;margin:0;list-style:none;max-height:250px;overflow:auto} li a {padding:4px;overflow-wrap:anywhere}
   li a:hover,.drive:hover {text-decoration:underline}
   .photo,.video {position:relative;display:block;max-width:100%;border-radius:8px;overflow:hidden;background:var(--bg)}

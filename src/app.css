@@ -665,6 +665,9 @@ main > .feed-heading:first-child { margin-top: 0; }
   color: var(--accent);
 }
 .post-actions .like {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   background: var(--surface);
   color: var(--accent);
   padding: 3px 8px;

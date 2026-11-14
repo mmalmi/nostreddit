@@ -29,6 +29,7 @@
   import { displayText, paragraphs, type Translations } from '../lib/translation';
   import TranslationButton from './TranslationButton.svelte';
   import PostMenu from './PostMenu.svelte';
+  import ReactionsMenu from './ReactionsMenu.svelte';
   export let post: Post;
   export let saved = false;
   export let preview = false;
@@ -40,6 +41,17 @@
   let translated: Translations | undefined;
   function showTranslation(value?: Translations) { translated = value; }
   let postMenu: PostMenu;
+  let reactionsMenu: ReactionsMenu, likeButton: HTMLButtonElement;
+  // Holding the upvote (or right-clicking it) lists who upvoted instead of toggling the vote.
+  let pressTimer: ReturnType<typeof setTimeout> | undefined, held = false;
+  function pressStart(event: PointerEvent) {
+    if (event.button > 0) return;
+    held = false; clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => { held = true; reactionsMenu.show(likeButton); }, 450);
+  }
+  function pressEnd() { clearTimeout(pressTimer); }
+  function showLikers(event: Event) { event.preventDefault(); pressEnd(); held = true; reactionsMenu.show(likeButton); }
+  function likeClick() { if (held) { held = false; return; } onaction('like', post); }
   let shareExpanded = false;
   $: author = $profiles[post.pubkey];
   $: name = displayName(post.pubkey, author);
@@ -148,7 +160,7 @@
     </div>
     {#if shownMedia.length < media.length}<a class="album-more" href={permalink}>View all {media.length} photos <Icon name="next" size={14}/></a>{/if}
   {:else if !renderEmbeds && trees.length}
-    {#each trees as attachment (attachment.url)}<a class="external-post" href={attachment.viewerUrl} target="_blank" rel="noopener noreferrer">Open Hashtree attachment</a>{/each}
+    {#each trees as attachment (attachment.url)}<a class="external-post" href={attachment.viewerUrl} target="_blank" rel="noopener noreferrer">Open attachment</a>{/each}
   {/if}
   {#if link && (!renderEmbeds || !embeddedLink)}<a
       class="external-post"
@@ -163,12 +175,17 @@
   {#if !preview}<div class="post-actions">
     <button
       class="like"
+      bind:this={likeButton}
       disabled={!!$account && !$outboxReady}
       class:chosen={liked}
       aria-pressed={liked}
       aria-label={liked ? 'Liked' : 'Like'}
-      title={liked ? 'Remove like' : 'Like'}
-      onclick={() => onaction('like', post)}
+      aria-haspopup="dialog"
+      title={(liked ? 'Remove like' : 'Like') + ' · hold to see who upvoted'}
+      onclick={likeClick}
+      onpointerdown={pressStart} onpointerup={pressEnd} onpointercancel={pressEnd} onpointerleave={pressEnd}
+      oncontextmenu={showLikers}
+      onkeydown={event => { if (event.key === 'ArrowDown' || (event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') showLikers(event); }}
       ><Icon name="arrow" size={15} /><b>{likers.length}</b></button
     >
     {#if comment}<button
@@ -195,7 +212,7 @@
         onclick={event => postMenu.showShare(event.currentTarget)}><Icon name="share" size={16}/> Share</button>
     {/if}
     <TranslationButton groups={translationGroups} ondisplay={showTranslation}/>
-  </div>{/if}
+  </div><ReactionsMenu bind:this={reactionsMenu} {likers}/>{/if}
 </article>
 
 <style>
