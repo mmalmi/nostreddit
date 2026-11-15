@@ -25,6 +25,7 @@ test.beforeAll(async () => {
     root, note(scopedTitles[1], '#woodwork #Boatbuilding', []),
     note(scopedTitles[2], 'Another #boatbuilding project.', [['e',root.id,'','root'],['t',topic]]),
     note(outside, 'Spring repairs.', [['t','gardening']]),
+    note('A dovetail joint', 'Cutting a drawer.', [['t','woodwork']]),
     note('Riveting a clinker hull', 'Copper nails.', [['t',topic]]),
   ];
   const relay = new WebSocket(process.env.NOSTREDDIT_TEST_RELAY_URL || 'ws://127.0.0.1:43164');
@@ -89,8 +90,16 @@ for (const width of [1440,390]) {
     await input.fill('#woodwork varnish'); await input.press('Enter');
     await expect(page).toHaveURL(url=>url.pathname==='/search' && url.searchParams.get('q')==='#woodwork varnish' && url.searchParams.get('t')===topic);
     await input.fill('#Woodwork'); await input.press('Enter');
+    await expect(page).toHaveURL(url=>url.pathname==='/search' && url.searchParams.get('q')==='#Woodwork' && url.searchParams.get('t')===topic);
+    await expect(active.locator('.relay-search')).toContainText('Found 2 matching discussions');
+    for (const title of scopedTitles.slice(0,2)) await expect(cards.getByRole('heading',{name:title})).toBeVisible();
+    await expect(cards).toHaveCount(2);
+    const openTopic = active.getByRole('link',{name:'Open t/woodwork',exact:true});
+    await expect(openTopic).toHaveAttribute('href','/t/woodwork');
+    await page.screenshot({path:info.outputPath('intersecting-topics.png')});
+    await openTopic.click();
     await expect(page).toHaveURL(/\/t\/woodwork$/);
-    await expect(active.getByRole('heading',{name:scopedTitles[0]})).toBeVisible();
+    await expect(active.getByRole('heading',{name:'A dovetail joint'})).toBeVisible();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   });
 }
@@ -120,13 +129,15 @@ for (const mobile of [false,true]) {
     }
     expect(await paste(field,' cedar')).toBe(true);
     expect(await paste(field,'#woodwork varnish')).toBe(true);
+    await field.press('ControlOrMeta+a');
+    expect(await paste(field,'#Woodwork')).toBe(true);
+    await expect(page).toHaveURL(startingUrl);
     expect(await paste(field,'note1unfinished')).toBe(true);
     const relays = ['wss://relay.example.test/long-enough-to-exceed-the-keyword-search-limit'];
     const note = noteEncode(postId), npub = npubEncode(author);
     for (const [value,path] of [
       [note,'/post/'+note],['nostr:'+neventEncode({id:postId,relays}),'/post/'+note],
       [postId,'/post/'+note],[npub,'/u/'+npub],['web+nostr:'+nprofileEncode({pubkey:author,relays}),'/u/'+npub],
-      [' #Woodwork ','/t/woodwork'],
     ]) {
       expect(await paste(field,value)).toBe(false);
       await expect(page).toHaveURL(url=>url.pathname===path && !url.search);
@@ -137,5 +148,15 @@ for (const mobile of [false,true]) {
       await expect(page).toHaveURL(startingUrl);
       await expect(field).toHaveValue('varnish');
     }
+    await page.goto('/search');
+    await field.fill('#boatbuilding ');
+    expect(await paste(field,'#woodwork')).toBe(true);
+    await expect(page).toHaveURL(/\/search$/);
+    await field.fill('#boatbuilding #woodwork');
+    await field.press('Enter');
+    await expect(page.locator('[data-route-active="true"] .feed-list article')).toHaveCount(2);
+    await field.press('ControlOrMeta+a');
+    expect(await paste(field,' #Woodwork ')).toBe(false);
+    await expect(page).toHaveURL(/\/t\/woodwork$/);
   });
 }

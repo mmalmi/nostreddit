@@ -87,8 +87,15 @@ export function relayFilters(plan: SearchPlan, expansion: Expansion, scope?: str
     return [...queries.map(search => ({...tagged, search})), tagged, {...base, search:'#'+slug}];
   }
   const filters: NostrFilter[] = queries.map(search => ({...base, search}));
+  const explicitTags = plan.hashtags.slice(0, 4);
+  // A discussion can contain every hashtag in its text without any indexed t tags.
+  // One text lookup is enough. keywordScore checks all the requested tags locally.
+  if (!plan.terms.length && explicitTags.length && safe('#' + explicitTags[0])) {
+    filters.push({...base, search:'#' + explicitTags[0]});
+  }
   const topic = /^[\p{L}\p{M}\p{N}_-]+$/u.test(plan.relayQuery) ? [plan.relayQuery.toLowerCase()] : [];
-  const tags = [...new Set([...plan.hashtags.slice(0, 4), ...topic, ...expansion.tags.slice(0, 3)])].filter(safe);
+  const tags = [...new Set([...explicitTags, ...explicitTags.map(topicSlug), ...topic, ...expansion.tags.slice(0, 3)])]
+    .filter(tag => tag && safe('#' + tag));
   if (tags.length) filters.push({...base, '#t': tags});
   return filters;
 }

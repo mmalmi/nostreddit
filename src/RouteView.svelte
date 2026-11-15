@@ -41,7 +41,7 @@
   import { planPostSearch } from './lib/discovery/query';
   import { allowModel, keywordScore, noExpansion, relevance, semanticFloor, type Expansion } from './lib/discovery/discussions';
   import type { SearchCursors } from './lib/discovery/relay-search';
-  import { checkSearch, containsSearchSecret, searchTarget, searchTopics, secretSearchMessage } from './lib/search';
+  import { checkSearch, containsSearchSecret, searchTarget, searchTopics, secretSearchMessage, singleHashtag } from './lib/search';
   import { observeAuthors, observeEventAuthors, graphInfo, graphStatus, setGraphRanking } from './lib/graph';
   import {
     topics,
@@ -357,15 +357,19 @@
     if (containsSearchSecret(search)) { search = ''; notify(secretSearchMessage); return; }
     return search.trim().slice(0,128);
   }
-  function pasteSearch(event: ClipboardEvent) {
+  function pasteSearch(event: ClipboardEvent & {currentTarget: HTMLInputElement}) {
     const pasted = event.clipboardData?.getData('text/plain');
     if (!pasted) return;
-    if (containsSearchSecret(pasted)) {
+    const field = event.currentTarget;
+    const afterPaste = field.value.slice(0, field.selectionStart ?? field.value.length)
+      + pasted + field.value.slice(field.selectionEnd ?? field.value.length);
+    if (containsSearchSecret(afterPaste)) {
       event.preventDefault();
       notify(secretSearchMessage);
       return;
     }
-    const target = searchTarget(pasted, $profiles);
+    const query = pasted.trimStart().startsWith('#') ? afterPaste : pasted;
+    const target = searchTarget(query, {knownProfiles:$profiles, topic:searchTopic});
     if (target) {
       event.preventDefault();
       go(target);
@@ -378,7 +382,7 @@
     const query = searchText();
     if (query === undefined) return;
     if (!query) return go(searchTopic ? topicPath(searchTopic) : '/topics');
-    const direct = searchTarget(search, $profiles);
+    const direct = searchTarget(search, {knownProfiles:$profiles, topic:searchTopic});
     go(direct || resultsPath(query,searchTopic));
   }
   async function removeSearchTopic(button: HTMLButtonElement) {
@@ -565,7 +569,9 @@
     ]),
   ].filter(validTopic);
   $: directoryTopic = topicSlug(directoryFilter.trim().replace(/^[tr]\//i,''));
-  $: topicMatches = plan && !feedTopic ? searchTopics(plan, discovered) : [];
+  $: scopedHashtag = feedTopic && route.page === 'search' ? singleHashtag(route.value) : '';
+  $: topicMatches = scopedHashtag && scopedHashtag !== feedTopic ? [scopedHashtag]
+    : plan && !feedTopic ? searchTopics(plan, discovered) : [];
   $: title =
     route.page === 'home'
       ? 'Home'
@@ -1001,7 +1007,7 @@
           >{/if}
         {#if topicMatches.length}<div class="search-topics">
             {#each topicMatches as slug}<a href={topicPath(slug)}
-                ><TopicIcon {slug} small />t/{slug}</a
+                ><TopicIcon {slug} small />{feedTopic ? 'Open ' : ''}t/{slug}</a
               >{/each}
           </div>{/if}
       {/if}

@@ -15,12 +15,23 @@ export function searchTopics(plan: SearchPlan, known: string[]) {
 export const containsSearchSecret = (value: string) => /nsec1[0-9a-z]+/i.test(value);
 export const secretSearchMessage = 'Use secret keys only in the sign-in dialog.';
 
-export function searchTarget(input: string, knownProfiles?: Readonly<Record<string, unknown>>): string {
+export function singleHashtag(input: string): string {
+  return input.trimStart().startsWith('#') ? topicSlug(input) : '';
+}
+
+export function searchTarget(input: string, {knownProfiles, topic}: {
+  knownProfiles?: Readonly<Record<string, unknown>>;
+  topic?: string;
+} = {}): string {
   const value = input.trim();
-  const shortcut = value.match(/^(?:[tr]\/|#)([^\s#]+)$/i);
+  if (value.startsWith('#')) {
+    const slug = singleHashtag(value);
+    return slug && !topic ? topicPath(slug) : '';
+  }
+  const shortcut = value.match(/^[tr]\/([^\s#]+)$/i);
   if (shortcut) {
-    const topic = topicSlug(shortcut[1]);
-    return topic ? topicPath(topic) : '';
+    const slug = topicSlug(shortcut[1]);
+    return slug ? topicPath(slug) : '';
   }
   const identifier = value.replace(/^(?:web\+)?nostr:/i, '');
   // Bare hex can also name a profile. Use known metadata without delaying navigation for a relay lookup.

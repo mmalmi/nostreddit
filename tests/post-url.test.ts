@@ -19,6 +19,8 @@ test('hex, note and nevent identify the same post, including when pasted into se
 
 test('topic searches use readable topic URLs and accept old r/ shortcuts', () => {
   for(const value of ['#Bitcoin','t/Bitcoin','r/Bitcoin']) assert.equal(searchTarget(value),'/t/bitcoin');
+  assert.equal(searchTarget('#Bitcoin', {topic:'nostr'}),'');
+  assert.equal(searchTarget('t/Bitcoin', {topic:'nostr'}),'/t/bitcoin');
   for(const value of ['#Bitcoin news','#one #two','##double','# separated']) assert.equal(searchTarget(value),'');
 });
 
@@ -30,7 +32,7 @@ test('public identifiers resolve in full, including URI prefixes, relay hints an
     assert.equal(searchTarget(value),'/u/'+pub);
   }
   assert.equal(searchTarget(id),'/post/'+note);
-  assert.equal(searchTarget(id, {[id]:{}}),'/u/'+pub);
+  assert.equal(searchTarget(id, {knownProfiles:{[id]:{}}}),'/u/'+pub);
   assert.equal(searchTarget(bech32.encode('npub',bech32.toWords(new Uint8Array(31)),false)),'');
 });
 
