@@ -2,6 +2,7 @@ import { once } from 'node:events';
 import { expect, test } from '@playwright/test';
 import { finalizeEvent, generateSecretKey, getPublicKey, type Event } from 'nostr-tools/pure';
 import { postUrl } from '../src/lib/post-url';
+import { noteEncode } from 'nostr-tools/nip19';
 import { WebSocket } from 'ws';
 import { allowFixtureAuthors } from './helpers/graphPreferences';
 
@@ -26,7 +27,7 @@ test('opening a post reads only its activity and keeps newer activity unread aft
   const post = sign(owner,1,'Rooftop observations',[['t','photography']]);
   const reaction = sign(sender,7,'+',[['e',post.id],['p',pubkey]]);
   const reply = sign(sender,1,'A gull on the roof',[['e',post.id,'','reply'],['p',pubkey]]);
-  const mention = sign(sender,1,'Completely separate sighting',[['p',pubkey]]);
+  const mention = sign(sender,1,'Field notes from the rooftop. '.repeat(10) + 'nostr:' + noteEncode(post.id),[['p',pubkey]]);
   await publish([post,reaction,reply,mention]);
   await allowFixtureAuthors(page.context());
   await page.addInitScript((key) => localStorage.setItem('nostreddit.account.v1',JSON.stringify({pubkey:key, method:'extension'})),pubkey);
@@ -58,6 +59,12 @@ test('opening a post reads only its activity and keeps newer activity unread aft
   });
   await expect(badge).toHaveCount(0);
   await expect(activity.filter({hasText:'Unread'})).toHaveCount(0);
+  const preview = activity.filter({hasText:'mentioned you'});
+  await expect(preview.getByRole('link', {name:/Open quoted post/})).toContainText(post.content);
+  await page.setViewportSize({width:390,height:760});
+  await expect.poll(() => preview.locator('.note-text').evaluate(el =>
+    getComputedStyle(el).webkitLineClamp === '3' && el.scrollHeight > el.clientHeight)).toBe(true);
+  await page.screenshot({path:test.info().outputPath('notification-text-preview.png')});
   await page.reload();
   await expect(activity).toHaveCount(3);
   await expect(badge).toHaveCount(0);

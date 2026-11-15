@@ -11,6 +11,7 @@
   export let text = '';
   export let parsedParts: NotePart[] | undefined = undefined;
   export let tags: string[][] = [];
+  export let active = true;
   export let full = false;
   export let showPreviews = true;
   export let inline = false;
@@ -24,7 +25,7 @@
   $: visibleParts = parts.filter(part=>!part.event || !embedded.has(part.event));
   $: people = [...new Set(parts.flatMap(part=>part.person ? [part.person] : []))].slice(0,24);
   $: scope = quoteIds.join(',')+'|'+people.join(',');
-  $: if (mounted) watch(scope);
+  $: if (mounted) watch(active ? scope : '|');
   function watch(scope:string) {
     stop();
     const [events,people] = scope.split('|');
