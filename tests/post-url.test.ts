@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { bech32 } from '@scure/base';
-import { noteEncode, neventEncode, npubEncode } from 'nostr-tools/nip19';
+import { noteEncode, neventEncode, npubEncode, nprofileEncode } from 'nostr-tools/nip19';
 import { postIdFromPath, postUrl } from '../src/lib/post-url';
 import { searchTarget } from '../src/lib/search';
 
@@ -19,6 +19,19 @@ test('hex, note and nevent identify the same post, including when pasted into se
 
 test('topic searches use readable topic URLs and accept old r/ shortcuts', () => {
   for(const value of ['#Bitcoin','t/Bitcoin','r/Bitcoin']) assert.equal(searchTarget(value),'/t/bitcoin');
+  for(const value of ['#Bitcoin news','#one #two','##double','# separated']) assert.equal(searchTarget(value),'');
+});
+
+test('public identifiers resolve in full, including URI prefixes, relay hints and bare event IDs', () => {
+  const pub = npubEncode(id);
+  const profile = nprofileEncode({pubkey:id,relays:['wss://relay.example.org/a-long-relay-hint-for-search']});
+  assert.ok(profile.length > 128);
+  for (const value of [pub, profile, 'web+nostr:'+profile, 'nostr:'+pub.toUpperCase()]) {
+    assert.equal(searchTarget(value),'/u/'+pub);
+  }
+  assert.equal(searchTarget(id),'/post/'+note);
+  assert.equal(searchTarget(id, {[id]:{}}),'/u/'+pub);
+  assert.equal(searchTarget(bech32.encode('npub',bech32.toWords(new Uint8Array(31)),false)),'');
 });
 
 test('rejects malformed event paths, wrong entity types and note payloads of the wrong length', () => {

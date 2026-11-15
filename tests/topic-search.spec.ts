@@ -1,6 +1,7 @@
 import { once } from 'node:events';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools/pure';
+import { neventEncode, noteEncode, nprofileEncode, npubEncode, nsecEncode } from 'nostr-tools/nip19';
 import { WebSocket } from 'ws';
 import { allowFixtureAuthors } from './helpers/graphPreferences';
 
@@ -8,6 +9,7 @@ const topic = 'boatbuilding';
 const query = 'varnish';
 const scopedTitles = ['Varnish for a cedar skiff', 'A second coat of varnish', 'Varnish on the old tiller'];
 const outside = 'Varnish for a garden gate';
+let postId: string, author: string;
 
 test.beforeAll(async () => {
   const key = generateSecretKey();
@@ -16,7 +18,10 @@ test.beforeAll(async () => {
     kind:1, created_at, content:[title,body].filter(Boolean).join('\n\n'), tags:[['subject',title], ...tags],
   },key);
   const root = note(scopedTitles[0], 'Preparing a bare hull.', [['t','woodwork'],['t',topic]]);
+  postId = root.id;
+  author = root.pubkey;
   const notes = [
+    finalizeEvent({kind:0,created_at,content:JSON.stringify({name:'Cedar Skiff'}),tags:[]},key),
     root, note(scopedTitles[1], '#woodwork #Boatbuilding', []),
     note(scopedTitles[2], 'Another #boatbuilding project.', [['e',root.id,'','root'],['t',topic]]),
     note(outside, 'Spring repairs.', [['t','gardening']]),
@@ -81,9 +86,56 @@ for (const width of [1440,390]) {
     await expect(active.getByRole('heading',{name:outside})).toHaveCount(0);
     await input.focus();
     await expect(remove).toBeVisible();
-    await input.fill('#woodwork'); await input.press('Enter');
-    await expect(page).toHaveURL(url=>url.pathname==='/search' && url.searchParams.get('q')==='#woodwork' && url.searchParams.get('t')===topic);
-    await expect(active.locator('.relay-search')).toContainText('Found 2 matching discussions');
+    await input.fill('#woodwork varnish'); await input.press('Enter');
+    await expect(page).toHaveURL(url=>url.pathname==='/search' && url.searchParams.get('q')==='#woodwork varnish' && url.searchParams.get('t')===topic);
+    await input.fill('#Woodwork'); await input.press('Enter');
+    await expect(page).toHaveURL(/\/t\/woodwork$/);
+    await expect(active.getByRole('heading',{name:scopedTitles[0]})).toBeVisible();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  });
+}
+
+function paste(input:Locator, text:string) {
+  return input.evaluate((el, value) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', value);
+    return el.dispatchEvent(new ClipboardEvent('paste',{clipboardData, bubbles:true, cancelable:true}));
+  }, text);
+}
+
+for (const mobile of [false,true]) {
+  test('pasted identifiers navigate and secret keys stay out of '+(mobile ? 'mobile refine search' : 'header search'), async ({page,context},info) => {
+    await allowFixtureAuthors(context);
+    await page.setViewportSize({width:mobile ? 390 : 1440,height:844});
+    await page.goto('/search?t='+topic);
+    const field = page.getByRole('textbox',{name:mobile ? 'Refine search' : 'Search Nostreddit',exact:true});
+    await field.fill('varnish');
+    const startingUrl = page.url();
+    const secret = nsecEncode(generateSecretKey());
+    for (const text of [secret,'copied nostr:'+secret.toUpperCase()+' by mistake']) {
+      expect(await paste(field,text)).toBe(false);
+      await expect(field).toHaveValue('varnish');
+      await expect(page).toHaveURL(startingUrl);
+      await expect(page.getByText(/secret keys only in the sign-in dialog/i)).toBeVisible();
+    }
+    expect(await paste(field,' cedar')).toBe(true);
+    expect(await paste(field,'#woodwork varnish')).toBe(true);
+    expect(await paste(field,'note1unfinished')).toBe(true);
+    const relays = ['wss://relay.example.test/long-enough-to-exceed-the-keyword-search-limit'];
+    const note = noteEncode(postId), npub = npubEncode(author);
+    for (const [value,path] of [
+      [note,'/post/'+note],['nostr:'+neventEncode({id:postId,relays}),'/post/'+note],
+      [postId,'/post/'+note],[npub,'/u/'+npub],['web+nostr:'+nprofileEncode({pubkey:author,relays}),'/u/'+npub],
+      [' #Woodwork ','/t/woodwork'],
+    ]) {
+      expect(await paste(field,value)).toBe(false);
+      await expect(page).toHaveURL(url=>url.pathname===path && !url.search);
+      const main = page.locator('[data-route-active="true"] main');
+      await expect(main.getByRole('heading',{name:path.startsWith('/u/') ? 'Cedar Skiff' : scopedTitles[0],exact:true}).first()).toBeVisible();
+      if (value===note) await page.screenshot({path:info.outputPath('pasted-post.png')});
+      await page.goBack();
+      await expect(page).toHaveURL(startingUrl);
+      await expect(field).toHaveValue('varnish');
+    }
   });
 }

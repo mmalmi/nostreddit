@@ -41,7 +41,7 @@
   import { planPostSearch } from './lib/discovery/query';
   import { allowModel, keywordScore, noExpansion, relevance, semanticFloor, type Expansion } from './lib/discovery/discussions';
   import type { SearchCursors } from './lib/discovery/relay-search';
-  import { checkSearch, searchTarget, searchTopics } from './lib/search';
+  import { checkSearch, containsSearchSecret, searchTarget, searchTopics, secretSearchMessage } from './lib/search';
   import { observeAuthors, observeEventAuthors, graphInfo, graphStatus, setGraphRanking } from './lib/graph';
   import {
     topics,
@@ -137,7 +137,7 @@
       const params = new URLSearchParams(location.search);
       const query = params.get('q')?.trim() ?? '';
       const topic = params.get('t') || '';
-      if (/nsec1[0-9a-z]+/i.test(query) || /nsec1[0-9a-z]+/i.test(topic)) {
+      if (containsSearchSecret(query) || containsSearchSecret(topic)) {
         history.replaceState(history.state, '', '/search');
         return {page:base, value:''};
       }
@@ -354,8 +354,22 @@
     } else showModal('compose');
   }
   function searchText() {
-    if (/nsec1[0-9a-z]+/i.test(search)) { search = ''; notify('Use secret keys only in the sign-in dialog.'); return; }
+    if (containsSearchSecret(search)) { search = ''; notify(secretSearchMessage); return; }
     return search.trim().slice(0,128);
+  }
+  function pasteSearch(event: ClipboardEvent) {
+    const pasted = event.clipboardData?.getData('text/plain');
+    if (!pasted) return;
+    if (containsSearchSecret(pasted)) {
+      event.preventDefault();
+      notify(secretSearchMessage);
+      return;
+    }
+    const target = searchTarget(pasted, $profiles);
+    if (target) {
+      event.preventDefault();
+      go(target);
+    }
   }
   function resultsPath(query:string, topic?:string) {
     return '/search' + (query ? '?q=' + encodeURIComponent(query) + (topic ? '&t=' + encodeURIComponent(topic) : '') : '');
@@ -364,7 +378,7 @@
     const query = searchText();
     if (query === undefined) return;
     if (!query) return go(searchTopic ? topicPath(searchTopic) : '/topics');
-    const direct = searchTopic && query.startsWith('#') ? '' : searchTarget(search);
+    const direct = searchTarget(search, $profiles);
     go(direct || resultsPath(query,searchTopic));
   }
   async function removeSearchTopic(button: HTMLButtonElement) {
@@ -745,6 +759,7 @@
         aria-describedby={searchTopic ? chipId : undefined}
         bind:this={searchInput}
         bind:value={search}
+        onpaste={pasteSearch}
         placeholder={searchTopic ? 'Search this topic' : 'Search Nostreddit'}
         enterkeyhint="search"
       /><kbd>/</kbd>
@@ -841,7 +856,7 @@
           <form class="refine-search" aria-label="Refine search" onsubmit={e => { e.preventDefault(); submitSearch(); }}>
             {@render searchChip(chipId+'-refine')}
             <input aria-label="Refine search" aria-describedby={searchTopic ? chipId+'-refine' : undefined}
-              bind:value={search} placeholder="Search discussions" enterkeyhint="search"/>
+              bind:value={search} onpaste={pasteSearch} placeholder="Search discussions" enterkeyhint="search"/>
             <button type="submit" aria-label="Search discussions"><Icon name="search" size={18}/></button>
           </form>
         {:else}<p>{subtitle}</p>{/if}
