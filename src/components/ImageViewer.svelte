@@ -78,6 +78,14 @@
   function cancelDrag(event: PointerEvent) {
     if (pointer?.id === event.pointerId) resetDrag();
   }
+
+  // iOS turns a horizontal swipe that drifts downward into a vertical pan and cancels it;
+  // once the swipe is horizontal, keep the touch for the slider.
+  function holdHorizontalSwipe(node: HTMLElement) {
+    const hold = (event: TouchEvent) => { if (pointer?.horizontal && event.cancelable) event.preventDefault(); };
+    node.addEventListener('touchmove', hold, {passive: false});
+    return { destroy() { node.removeEventListener('touchmove', hold); } };
+  }
   function arrowKeys(event: KeyboardEvent) {
     if (!multi || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
@@ -114,7 +122,7 @@
     <button type="button" aria-label="Close image" onclick={onclose}><Icon name="close" size={20}/></button>
   </div>
   <div class="stage" class:multi>
-    <div role="group" aria-label="Photos" bind:this={track} class="track" class:dragging={offset !== 0}
+    <div role="group" aria-label="Photos" bind:this={track} use:holdHorizontalSwipe class="track" class:dragging={offset !== 0}
       style:transform={offset ? `translateX(${offset}px)` : undefined}
       onpointerdown={beginDrag} onpointermove={moveDrag} onpointerup={endDrag}
       onpointercancel={cancelDrag} onlostpointercapture={cancelDrag}>

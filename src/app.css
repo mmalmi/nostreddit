@@ -59,6 +59,12 @@ body {
   margin: 0;
   min-width: 300px;
 }
+html:has(dialog:modal) {
+  overflow: hidden;
+}
+dialog {
+  overscroll-behavior: contain;
+}
 button,
 input,
 textarea {

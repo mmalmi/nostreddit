@@ -67,6 +67,7 @@ for (const [device,width,height] of [['desktop',1440,1000],['mobile',390,844]] a
     await viewer.getByRole('button',{name:'Previous image'}).click();
     await expect(viewer.getByText('11 / 12',{exact:true})).toBeVisible();
     const stage=await viewer.locator('.stage').boundingBox();expect(stage!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(()=>getComputedStyle(document.documentElement).overflow)).toBe('hidden');
     await page.screenshot({path:info.outputPath('photo-viewer-'+device+'.png')});
     const photo=viewer.getByRole('img',{name:'Vienna view 11',exact:true});
     const before=(await photo.boundingBox())!;
@@ -84,6 +85,9 @@ for (const [device,width,height] of [['desktop',1440,1000],['mobile',390,844]] a
       await expect.poll(async ()=>(await photo.boundingBox())!.x).toBeCloseTo(before.x,0);
       await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:point(x)});
       await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:point(x+drag)});
+      await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+drag,y:y+40,id:1}]});
+      await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+drag,y:y+160,id:1}]});
+      await expect.poll(async ()=>(await photo.boundingBox())!.x).toBeCloseTo(before.x+drag,0);
       await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
       await expect(original).toHaveAttribute('href',urls[9]);
       await touch.detach();
