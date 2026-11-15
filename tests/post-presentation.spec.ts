@@ -68,6 +68,42 @@ for (const [device,width,height] of [['desktop',1440,1000],['mobile',390,844]] a
     await expect(viewer.getByText('11 / 12',{exact:true})).toBeVisible();
     const stage=await viewer.locator('.stage').boundingBox();expect(stage!.width).toBeLessThanOrEqual(width);
     await page.screenshot({path:info.outputPath('photo-viewer-'+device+'.png')});
+    const photo=viewer.getByRole('img',{name:'Vienna view 11',exact:true});
+    const before=(await photo.boundingBox())!;
+    const x=stage!.x+stage!.width/2, y=stage!.y+stage!.height/2;
+    const drag=Math.round(stage!.width*0.35);
+    if (device==='mobile') {
+      const touch=await context.newCDPSession(page);
+      await touch.send('Emulation.setTouchEmulationEnabled',{enabled:true});
+      const point=(x:number)=>[{x,y,id:1}];
+      await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:point(x)});
+      await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:point(x-drag)});
+      await expect.poll(async ()=>(await photo.boundingBox())!.x).toBeCloseTo(before.x-drag,0);
+      await page.screenshot({path:info.outputPath('photo-swipe-mobile.png')});
+      await touch.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});
+      await expect.poll(async ()=>(await photo.boundingBox())!.x).toBeCloseTo(before.x,0);
+      await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:point(x)});
+      await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:point(x+drag)});
+      await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      await expect(original).toHaveAttribute('href',urls[9]);
+      await touch.detach();
+    } else {
+      await page.mouse.move(x,y);
+      await page.mouse.down();
+      await page.mouse.move(x-12,y,{steps:2});
+      await page.mouse.up();
+      await expect.poll(async ()=>(await photo.boundingBox())!.x).toBeCloseTo(before.x,0);
+      await expect(original).toHaveAttribute('href',urls[10]);
+      await page.mouse.move(x,y);
+      await page.mouse.down();
+      await page.mouse.move(x-drag,y,{steps:8});
+      await expect.poll(async ()=>(await photo.boundingBox())!.x).toBeCloseTo(before.x-drag,0);
+      await page.screenshot({path:info.outputPath('photo-drag-desktop.png')});
+      await page.mouse.up();
+      await expect(original).toHaveAttribute('href',urls[11]);
+      await page.keyboard.press('ArrowRight');
+      await expect(original).toHaveAttribute('href',urls[0]);
+    }
     await page.keyboard.press('Escape');
 
     const options=card.getByRole('button',{name:'Post options',exact:true});
