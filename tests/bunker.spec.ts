@@ -63,7 +63,15 @@ for (const width of [1440,390]) test(`bunker publishes, resumes after reload and
     await expect.poll(() => signer.connections).toBe(0);
     await page.screenshot({path:info.outputPath('signed-post-and-reply.png')});
     await page.locator('[data-route-active="true"] .account-button').click();
-    await page.getByRole('button',{name:'Sign out',exact:true}).click();
+    const signOut = page.getByRole('button',{name:'Sign out',exact:true});
+    await signOut.click();
+    await expect(page.getByRole('heading',{name:'Sign out?'})).toBeVisible();
+    await page.screenshot({path:info.outputPath('sign-out-confirmation.png')});
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    await expect(page.getByRole('heading',{name:'Your profile'})).toBeVisible();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('nostreddit.account.v1')!).pubkey)).toBe(signer.pubkey);
+    await signOut.click();
+    await signOut.click();
     expect(await page.evaluate(() => localStorage.getItem('nostreddit.account.v1'))).toBeNull();
     await page.reload();
     await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
