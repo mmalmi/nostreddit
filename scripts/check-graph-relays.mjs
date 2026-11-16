@@ -1,7 +1,9 @@
 import {chromium,expect} from '@playwright/test';
+import {installGraphSnapshot,blockRoute} from './graph-snapshot-fixture.mjs';
 import {WebSocketServer} from 'ws';
 import {once} from 'node:events';
-import {writeFile} from 'node:fs/promises';
+import {SocialGraph} from 'nostr-social-graph';
+import {readFile,writeFile} from 'node:fs/promises';
 const base=process.argv[2],out=process.argv[3];
 const rows=[]; const browser=await chromium.launch();
 async function replaceRelays(page, url) {
@@ -27,7 +29,7 @@ try {
   });rows.push(row);
  }
  const context=await browser.newContext({serviceWorkers:'block'});let bootstrap=0,publicSockets=[];
- await context.route('https://graph-api.iris.to/**',async route=>{bootstrap++;await route.abort();});
+ await context.route(blockRoute,async route=>{bootstrap++;await route.abort();});
  await context.routeWebSocket(/^wss:\/\//,socket=>{publicSockets.push(socket.url());socket.close();});
  await context.addInitScript(url=>{
   if(!localStorage.getItem('nostreddit.relays.v1'))localStorage.setItem('nostreddit.relays.v1',url);
@@ -50,8 +52,10 @@ try {
  await context.close();
  const switched=await browser.newContext({serviceWorkers:'block'});let requested=false,aborted=false,release;
  const held=new Promise(resolve=>{release=resolve;});
- await switched.route('https://graph-api.iris.to/**',async route=>{requested=true;await held;await route.abort().catch(()=>{});});
- switched.on('requestfailed',request=>{if(request.url().startsWith('https://graph-api.iris.to/'))aborted=true;});
+ const {root}=JSON.parse(await readFile(new URL('../public/socialGraphSnapshot.provenance.json',import.meta.url),'utf8'));
+ const seed=new SocialGraph(root);
+ await installGraphSnapshot(switched,root,await seed.toBinary(),async()=>{requested=true;await held;});
+ switched.on('requestfailed',request=>{if(blockRoute.test(request.url()))aborted=true;});
  await switched.routeWebSocket(/^wss:\/\//,socket=>socket.close());
  const second=await switched.newPage();
  try{

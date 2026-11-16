@@ -1,4 +1,5 @@
 import { chromium, expect } from '@playwright/test';
+import {blockRoute} from './graph-snapshot-fixture.mjs';
 import { SocialGraph } from 'nostr-social-graph';
 import { finalizeEvent, getPublicKey } from 'nostr-tools/pure';
 import { createRequire } from 'node:module';
@@ -92,7 +93,7 @@ try {
     const context = await browser.newContext({ serviceWorkers: 'block' });
     let bootstrapRequests = 0;
     const errors = [];
-    await context.route('https://graph-api.iris.to/**', route => { bootstrapRequests++; return route.abort(); });
+    await context.route(blockRoute, route => { bootstrapRequests++; return route.abort(); });
     await context.routeWebSocket(/^wss:\/\//, socket => socket.close());
     const fixture = new URL('/__graph_protocol_fixture__', base).href;
     await context.route(fixture, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Graph protocol fixture</title>' }));

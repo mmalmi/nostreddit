@@ -1,4 +1,5 @@
 import {chromium, expect} from '@playwright/test';
+import {installGraphSnapshot} from './graph-snapshot-fixture.mjs';
 import {SocialGraph} from 'nostr-social-graph';
 import {readFile, writeFile} from 'node:fs/promises';
 
@@ -14,14 +15,11 @@ seed.handleEvent(event(author,3,followId,at,[target]));
 seed.handleEvent(event(author,10000,muteId,at,[root]));
 const body=Buffer.from(await seed.toBinary());
 const browser=await chromium.launch();
-let requests=0;
+
 try{
  const context=await browser.newContext({serviceWorkers:'block'});
  await context.routeWebSocket(/^wss:\/\//,socket=>socket.close());
- await context.route('https://graph-api.iris.to/**',async route=>{
-  requests++;
-  await route.fulfill({status:200,headers:{'content-type':'application/octet-stream','x-graph-root':root,'access-control-allow-origin':'*','access-control-expose-headers':'x-graph-root'},body});
- });
+ const reads=await installGraphSnapshot(context,root,body);
  const page=await context.newPage(),errors=[];
  page.on('pageerror',error=>errors.push(error.message));
  const read=()=>page.evaluate(async()=>{
@@ -44,7 +42,8 @@ try{
   retained=await SocialGraph.fromBinary(root,new Uint8Array(bytes));
   return retained.getListRevision(author,3)?.id===followId&&retained.getListRevision(author,10000)?.id===muteId;
  },{timeout:15000,intervals:[500,1000]}).toBe(true);
- expect(requests).toBe(1);
+ expect(reads.blocks).toBeGreaterThan(0);expect(reads.names).toBeGreaterThan(0);
+ const initial={...reads};
  expect([...retained.getFollowedByUser(author)]).toEqual([target]);
  expect([...retained.getMutedByUser(author)]).toEqual([root]);
  retained.handleEvent(event(author,3,localId,at+1,[root]));
@@ -54,22 +53,20 @@ try{
   open.onsuccess=()=>{const db=open.result,tx=db.transaction('snapshots','readwrite');tx.objectStore('snapshots').put(new Uint8Array(bytes),'current');tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>{db.close();reject(tx.error);};};
   open.onerror=()=>reject(open.error);
  }),local);
- await context.unroute('https://graph-api.iris.to/**');
- await context.route('https://graph-api.iris.to/**',async route=>{requests++;await route.abort();});
  await page.reload({waitUntil:'domcontentloaded'});
  await expect.poll(async()=>{
   const bytes=await read();if(!bytes)return false;
   const graph=await SocialGraph.fromBinary(root,new Uint8Array(bytes));
   return graph.getListRevision(author,3)?.id===localId&&graph.getListRevision(author,10000)?.id===muteId;
  }).toBe(true);
- // Let initialization and its delayed save finish; the retained graph must skip HTTP bootstrap.
+ // Let initialization and its delayed save finish; the retained graph must skip snapshot bootstrap.
  await page.waitForTimeout(2000);
  const saved=await SocialGraph.fromBinary(root,new Uint8Array(await read()));
  expect(saved.getListRevision(author,3)?.id).toBe(localId);
  expect(saved.getListRevision(author,10000)?.id).toBe(muteId);
  expect([...saved.getFollowedByUser(author)]).toEqual([root]);
- expect(requests).toBe(1);expect(errors).toEqual([]);
- await writeFile(output,JSON.stringify({passed:true,bootstrapRequests:requests,followRevisionRetained:true,muteRevisionRetained:true,newerLocalListPreserved:true,retainedReloadSkipsBootstrap:true,errors},null,2)+'\n');
+ expect(reads).toEqual(initial);expect(reads.legacy).toBe(0);expect(errors).toEqual([]);
+ await writeFile(output,JSON.stringify({passed:true,snapshotReads:reads,followRevisionRetained:true,muteRevisionRetained:true,newerLocalListPreserved:true,retainedReloadSkipsBootstrap:true,errors},null,2)+'\n');
  console.log('PASS: actual worker bootstrap, both revision IDs persisted, newer local list retained on reload without another snapshot request');
  await context.close();
 }finally{await browser.close();}

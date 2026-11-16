@@ -1,4 +1,5 @@
 import {chromium,expect} from '@playwright/test';
+import {installGraphSnapshot,blockRoute} from './graph-snapshot-fixture.mjs';
 import {SocialGraph} from 'nostr-social-graph';
 import {readFile,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -32,10 +33,7 @@ try{
  await context.routeWebSocket(/^wss:\/\//,socket=>socket.close());
  let requested=false,release;
  const ready=new Promise(resolve=>{release=resolve;});
- await context.route('https://graph-api.iris.to/**',async route=>{
-  requested=true;await ready;
-  await route.fulfill({status:200,headers:{'content-type':'application/octet-stream','x-graph-root':root,'access-control-allow-origin':'*','access-control-expose-headers':'x-graph-root'},body:server});
- });
+ const reads=await installGraphSnapshot(context,root,server,async()=>{requested=true;await ready;});
  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
  await page.goto(base,{waitUntil:'domcontentloaded'});
  await expect.poll(()=>requested,{timeout:10000}).toBe(true);
@@ -44,12 +42,13 @@ try{
  release();
  await page.waitForTimeout(3000);
  expect(digest(await stored(page))).toBe(digest(personal));
+ expect(reads.legacy).toBe(0);
  await context.close();
 
  const damaged=await browser.newContext({serviceWorkers:'block'});
  await damaged.routeWebSocket(/^wss:\/\//,socket=>socket.close());
  let bootstrapRequests=0;
- await damaged.route('https://graph-api.iris.to/**',route=>{bootstrapRequests++;return route.abort();});
+ await damaged.route(blockRoute,route=>{bootstrapRequests++;return route.abort();});
  const fixture=new URL('/__graph_cache_fixture__',base).href;
  await damaged.route(fixture,route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Graph cache fixture</title>'}));
  const second=await damaged.newPage();second.on('pageerror',error=>errors.push(error.message));
