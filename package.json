@@ -12,6 +12,7 @@
     "dev": "vite",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "build": "node scripts/verify-inputs.mjs && vite build",
+    "refresh:social-graph": "node scripts/refresh-social-graph.mjs",
     "preview": "vite preview",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test",

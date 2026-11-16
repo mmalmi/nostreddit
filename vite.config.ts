@@ -14,7 +14,7 @@ const startupPreloads = (): Plugin => ({
   name: 'startup-preloads', apply: 'build',
   transformIndexHtml: { order: 'post', handler(_html, {bundle}) {
     const link = (attrs: Record<string, string | boolean>) => ({tag: 'link', attrs, injectTo: 'head' as const});
-    const graph = readFileSync('src/lib/graph-model.ts', 'utf8').match(/snapshotHash = '([0-9a-f]{64})'/)![1];
+    const graph = JSON.parse(readFileSync('public/socialGraphSnapshot.provenance.json', 'utf8')).snapshot.sha256;
     return [
       ...Object.keys(bundle ?? {}).filter(file => /^assets\/(relay\.worker|graph-worker)-[^/]+\.js$/.test(file))
         .map(file => link({rel: 'modulepreload', href: '/' + file})),

@@ -1,8 +1,9 @@
 import type { Event as NostrEvent } from 'nostr-tools';
 import type { SocialGraph } from 'nostr-social-graph';
+import provenance from '../../public/socialGraphSnapshot.provenance.json';
 
-export const snapshotRoot = '4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0';
-export const snapshotHash = '19b490ce9c8715cc5c8dc24b73719051ce932febaec4ec369ab1ed9f7c575d20';
+export const snapshotRoot = provenance.root;
+export const snapshotHash = provenance.snapshot.sha256;
 export type GraphBadge = { distance: number | null; muted: boolean; overmuted: boolean; followedByFriends?:number; influence?:number };
 
 export function sortVoters(keys: readonly string[], viewer: string, follows: ReadonlySet<string>, badges: Readonly<Record<string,GraphBadge>>) {

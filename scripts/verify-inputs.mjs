@@ -18,7 +18,8 @@ if (createHash('sha256').update(readFileSync('vendor/iris-identity-aaa8a51.tgz')
   throw new Error('Unexpected Iris Kit identity archive');
 }
 const graph = readFileSync('public/socialGraph.bin');
-if (createHash('sha256').update(graph).digest('hex') !== '19b490ce9c8715cc5c8dc24b73719051ce932febaec4ec369ab1ed9f7c575d20') {
+const {snapshot} = JSON.parse(readFileSync('public/socialGraphSnapshot.provenance.json', 'utf8'));
+if (graph.length !== snapshot.bytes || createHash('sha256').update(graph).digest('hex') !== snapshot.sha256) {
   throw new Error('Unexpected social graph snapshot');
 }
 const modelInputs = {

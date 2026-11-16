@@ -1,33 +1,28 @@
 {
-  "format": "nostreddit/public-social-graph-snapshot@2",
+  "format": "nostreddit/public-social-graph-snapshot@3",
   "root": "4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0",
   "source": {
-    "url": "https://graph-api.iris.to/social-graph/mobile?root=4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0",
-    "fetchedAt": "2026-11-06T12:40:27.222864+00:00",
-    "serverSource": "775de2d84aed3d5eeac33b47ed84ff9e880aea28",
-    "etag": "\"4523be58d395b1b196a9b8c82b038b6895cb02b683d0c253a955068dba1facd0:19b490ce9c8715cc5c8dc24b73719051ce932febaec4ec369ab1ed9f7c575d20\""
-  },
-  "projection": {
-    "maxNodes": 30000,
-    "maxEdges": 180000,
-    "maxEdgesPerList": 500,
-    "maxBytes": 4194304
+    "tree": "htree://npub1yscmnnadrmvape0mvgzfx9uyl267klnhzy8znsr6ysl8wtxngpqsnx6dm0/social-graph",
+    "eventId": "89416ffecfb072fbb90805def7858801b3b5770c4a5bb5cc5fd0cecebb2d2d7e",
+    "directoryHash": "18b8449d3c36d5665496137597fc0fdfae6109bdd90b2af4eaa39f8f767d30f7",
+    "file": "mobile.bin",
+    "generatedAt": 1794834028,
+    "graphCompletedAt": 1794832567
   },
   "snapshot": {
-    "binaryVersion": 4,
-    "sha256": "19b490ce9c8715cc5c8dc24b73719051ce932febaec4ec369ab1ed9f7c575d20",
-    "bytes": 1420890,
-    "users": 25771,
-    "follows": 177335,
-    "mutes": 2665,
+    "sha256": "4957fc15ffa498fd00194e48ba11b1528c5fb4f875e82a13e9880fa0b5dd9581",
+    "bytes": 1416341,
+    "users": 25805,
+    "follows": 177674,
+    "mutes": 2326,
     "sizeByDistance": {
       "0": 1,
       "1": 410,
-      "2": 20912,
-      "3": 4448
+      "2": 20922,
+      "3": 4472
     },
-    "revisions": 2015,
-    "completeRevisions": 1841,
+    "revisions": 2183,
+    "completeRevisions": 1844,
     "rootFollow": {
       "id": "86e3e8da9ed3fe18285761b0126782a8c1631df3139f6de94f3020a8eac8dee8",
       "created_at": 1793669408,
@@ -36,8 +31,7 @@
     "rootMute": {
       "id": "62717839b5b4b72e42ff673be6422062dfba633b201625db4df2cc6c045f751e",
       "created_at": 1775817519,
-      "complete": true
+      "complete": false
     }
-  },
-  "completeness": "Bounded live projection; the full server crawl remains in progress. Incomplete list revisions retain freshness ordering but are excluded from Negentropy known IDs so missing or truncated lists are fetched."
+  }
 }
