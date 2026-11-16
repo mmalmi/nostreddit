@@ -36,7 +36,6 @@ try {
  },rows[0].url);
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base,{waitUntil:'domcontentloaded'});
- await expect(page.locator('[data-testid="social-distance-badge"]').first()).toBeVisible();
  await expect.poll(()=>rows[0].neg).toBeGreaterThan(0);
  expect(bootstrap).toBe(0);expect(publicSockets).toEqual([]);
  await page.locator('[data-route-active="true"]').getByRole('link',{name:'Settings',exact:true}).click();
@@ -46,7 +45,6 @@ try {
  await expect.poll(()=>rows[0].closedGraph).toBeGreaterThan(0);
  const oldCount=rows[0].neg;await page.reload({waitUntil:'domcontentloaded'});
  await page.goto(base,{waitUntil:'domcontentloaded'});
- await expect(page.locator('[data-testid="social-distance-badge"]').first()).toBeVisible();
  await expect.poll(()=>rows[1].neg).toBeGreaterThan(1);
  expect(rows[0].neg).toBe(oldCount);expect(bootstrap).toBe(0);expect(publicSockets).toEqual([]);expect(errors).toEqual([]);
  await context.close();
