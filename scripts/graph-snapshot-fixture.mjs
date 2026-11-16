@@ -31,9 +31,17 @@ export async function installGraphSnapshot(context, root, bytes, beforeBlock) {
     const response = await route.fetch();
     const original = await response.text();
     if (!original.includes(DEFAULT_GRAPH_SNAPSHOT.publisher)) return route.fulfill({response});
-    let bundle = original.replaceAll(DEFAULT_GRAPH_SNAPSHOT.publisher, fixture.publisher);
-    for (const url of DEFAULT_GRAPH_SNAPSHOT.relays) bundle = bundle.replaceAll(url, relayUrl);
-    return route.fulfill({response, body: bundle});
+    const bundle = original.replaceAll(DEFAULT_GRAPH_SNAPSHOT.publisher, fixture.publisher);
+    // Leave the app's configured relay list intact so its privacy policy sees
+    // the same defaults as the page. Redirect only the socket connection.
+    const transport = `globalThis.WebSocket = class extends globalThis.WebSocket {
+      constructor(url, protocols) {
+        super(${JSON.stringify(DEFAULT_GRAPH_SNAPSHOT.relays)}.includes(String(url))
+          ? ${JSON.stringify(relayUrl)} : url, protocols);
+      }
+    };
+`;
+    return route.fulfill({response, body: transport + bundle});
   });
   await context.route('https://graph-api.iris.to/**', route => { reads.legacy++; return route.abort(); });
   await context.route(blockRoute, async route => {

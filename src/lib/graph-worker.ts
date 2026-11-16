@@ -40,7 +40,7 @@ async function load() {
   persistedGraph=local;
   if(local)try{authoritative=await SocialGraph.fromBinary(snapshotRoot,local);}catch{canPersist=false;}
   // An unreadable personal cache remains recoverable; only an absent cache is
-  // eligible for a server seed. The bundled graph can still render in memory.
+  // eligible for a public snapshot. The bundled graph can still render in memory.
   const refreshBootstrap=local===undefined&&canPersist&&relayPolicy.bootstrap;
   if(!authoritative){
     const response=await fetch('/socialGraph.bin?v='+snapshotHash.slice(0,16));
@@ -61,7 +61,7 @@ async function load() {
       bootstrapMerge=merging.catch(()=>{});
       await merging;
       persistChange();self.postMessage({refresh:true});
-    }).catch(()=>{/* local discovery remains ready when the server is unavailable */})
+    }).catch(()=>{/* local discovery remains ready if the signed snapshot is unavailable */})
       .finally(()=>{if(bootstrapAbort===controller)bootstrapAbort=undefined;});
   }
   return authoritative;
