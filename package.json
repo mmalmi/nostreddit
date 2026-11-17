@@ -27,7 +27,7 @@
     "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
     "@scure/base": "2.0.0",
-    "nostr-pubsub": "https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.28/nostr-pubsub-0.5.28.tgz",
+    "nostr-pubsub": "https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.32/nostr-pubsub-0.5.32.tgz",
     "nostr-social-graph": "https://github.com/mmalmi/nostr-social-graph/releases/download/v4.2.0/nostr-social-graph-4.2.0.tgz",
     "nostr-tools": "2.25.2",
     "onnxruntime-web": "1.24.3",
