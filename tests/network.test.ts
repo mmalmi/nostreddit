@@ -9,11 +9,26 @@ import { mergeChanges } from '../src/lib/local-writes';
 import { nhashEncode } from '@hashtree/core';
 import { account, exportKey, importAccount, signOut, start, loadNotifications, notifications, signInExtension, signEvent } from '../src/lib/network';
 import { visibilitySettings } from '../src/lib/visibility';
+import { setShowClientTag } from '../src/lib/client-tag';
 import type { Request, Response } from '../src/lib/relayTypes';
 
 const secret = generateSecretKey(), pubkey = getPublicKey(secret);
 const sign = (draft: Omit<EventTemplate,'created_at'>, time = Math.floor(Date.now()/1000)) =>
   finalizeEvent({...draft, created_at:time},secret);
+
+test('attributes public posts and both reply formats, respecting the posting preference', () => {
+  const photo = asPost(sign({kind:20, content:'Photo', tags:[['client','other']]}))!;
+  const comment = asPost(sign(commentDraft(photo,'First reply')))!;
+  const note = asPost(sign({kind:1, content:'Note', tags:[['client','other']]}))!;
+  try {
+    for (const enabled of [true, false]) {
+      setShowClientTag(enabled);
+      for (const draft of [postDraft({body:'Hello'}), ...[note, photo, comment].map(parent => commentDraft(parent,'Reply'))]) {
+        assert.deepEqual(sign(draft).tags.filter(t => t[0] === 'client'), enabled ? [['client','nostreddit']] : []);
+      }
+    }
+  } finally { setShowClientTag(true); }
+});
 
 test('a submitted thread remains legible in plain Nostr clients and preserves its URL and topic', () => {
   const draft = postDraft({topic:'Art',title:'Ink study',body:'Drawn from life.',url:'https://example.org/study'});

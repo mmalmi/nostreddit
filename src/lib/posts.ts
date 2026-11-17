@@ -1,6 +1,7 @@
 import type { NostrEvent } from 'nostr-pubsub';
 
 import { contentTopics, topicSlug, topicTags } from './hashtags';
+import { postClientTags } from './client-tag';
 export { topicSlug } from './hashtags';
 import { hasTreeCapability, parseTreeAttachment } from './tree-embeds';
 import { collectMedia, stripMediaUrls } from './media';
@@ -101,6 +102,7 @@ export function postDraft(input: {topic?:string; title?:string; body:string; url
   const tags = topicTags(topic,title+'\n'+body);
   if (title) tags.push(['subject',title]);
   if (link) tags.push(['r',link]);
+  tags.push(...postClientTags());
   // Title, body and link must be readable even in clients that ignore subject/r tags.
   return {kind:1, tags, content:[title, body, link && !body.includes(rawUrl) ? link : ''].filter(Boolean).join('\n\n')};
 }
@@ -108,7 +110,7 @@ export function postDraft(input: {topic?:string; title?:string; body:string; url
 export function commentDraft(parent: Post, text: string) {
   const content = text.trim();
   if (!content || content.length > 20000) throw new Error('Write a reply of up to 20,000 characters.');
-  const topics = topicTags(parent.topic,content), author = ['p',parent.pubkey];
+  const topics = [...topicTags(parent.topic,content), ...postClientTags()], author = ['p',parent.pubkey];
   if ([20,21,22].includes(parent.event.kind)) {
     const kind = String(parent.event.kind);
     return {kind:1111,tags:[['E',parent.id,'',parent.pubkey],['K',kind],['P',parent.pubkey],['e',parent.id,'',parent.pubkey],['k',kind],author,...topics],content};

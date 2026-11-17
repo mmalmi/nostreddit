@@ -53,6 +53,15 @@ for(const width of [1440,390,320]) {
     await page.screenshot({path:info.outputPath('published-replies.png')});
     const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>({tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right})).slice(0,12));
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),JSON.stringify(overflow)).toBe(true);
+    if (width === 390) {
+      await page.goto('/settings/account');
+      const attribution = page.getByLabel('Identify Nostreddit on my public posts and replies');
+      await expect(attribution).toBeChecked();
+      await page.screenshot({path:info.outputPath('posting-preference.png')});
+      await attribution.uncheck();
+      await page.reload();
+      await expect(attribution).not.toBeChecked();
+    }
   });
 }
 

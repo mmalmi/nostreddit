@@ -1,5 +1,6 @@
 <script lang="ts">
   import { account } from '../lib/network';
+  import { showClientTag, setShowClientTag } from '../lib/client-tag';
   import { settingsTabs, type SettingsTab } from '../lib/settings-tabs';
   import Icon from './Icon.svelte';
   import RelaySettings from './RelaySettings.svelte';
@@ -53,6 +54,11 @@
       <ImageProxySettings/>
     {:else if current === 'account'}
       {#if $account}
+        <section class="preferences" aria-labelledby="posting-preferences">
+          <h2 id="posting-preferences">Posting</h2>
+          <label><span>Identify Nostreddit on my public posts and replies</span><input type="checkbox" checked={$showClientTag}
+            onchange={(event) => setShowClientTag(event.currentTarget.checked)} /></label>
+        </section>
         <Outbox/>
         {#key $account.pubkey + ':' + $account.method}<ProfileBackup {active} method={$account.method}/>{/key}
       {:else}
