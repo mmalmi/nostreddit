@@ -1,6 +1,6 @@
 <script lang="ts">
   import PublicProfileEditor from '@iris/svelte-ui/PublicProfileEditor.svelte';
-  import { discardConflictingProfileEdits, pendingWrites, profileForEditor, saveProfile } from '../lib/network';
+  import { discardConflictingProfileEdits, pendingWrites, profileForEditor, saveRawProfile } from '../lib/network';
   import { safeURL } from '../lib/ui';
   let { owner, ondone }: { owner:string; ondone:()=>void } = $props();
   let reload = $state(0);
@@ -17,11 +17,16 @@
   {#await head}
     <p role="status">Loading your profile…</p>
   {:then event}
-    <PublicProfileEditor {event} onsave={async (edits, base) => {
-      if (['picture','banner','website'].some(key => typeof edits[key] === 'string' && edits[key] && !safeURL(edits[key] as string))) {
+    <PublicProfileEditor {event} onsaveraw={async (edits, base) => {
+      if (['picture','banner','website'].some(key => {
+        const raw = edits[key];
+        if (!raw?.startsWith('"')) return false;
+        const value = JSON.parse(raw);
+        return value && !safeURL(value);
+      })) {
         throw new Error('Use a full http or https URL for pictures, banners, and websites.');
       }
-      await saveProfile(edits, base); ondone();
+      await saveRawProfile(edits, base); ondone();
     }} />
   {:catch error}
     <p class="error" role="alert">{error instanceof Error ? error.message : 'Could not load your profile.'}</p>

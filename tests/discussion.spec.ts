@@ -102,7 +102,12 @@ test('extension sign-in, notifications and profile updates work for the active i
   const { WebSocket } = await import('ws');
   const owner = generateSecretKey(), pubkey = getPublicKey(owner);
   await page.exposeFunction('testPublicKey', () => pubkey);
-  await page.exposeFunction('testSign', (draft: Parameters<typeof finalizeEvent>[0]) => finalizeEvent(draft,owner));
+  const profiles: ReturnType<typeof finalizeEvent>[] = [];
+  await page.exposeFunction('testSign', (draft: Parameters<typeof finalizeEvent>[0]) => {
+    const signed = finalizeEvent(draft,owner);
+    if (signed.kind===0) profiles.push(signed);
+    return signed;
+  });
   await page.addInitScript(() => {
     const w = window as unknown as {testPublicKey: Function;testSign: Function;nostr: object};
     w.nostr = {getPublicKey:w.testPublicKey, signEvent:w.testSign};
@@ -127,10 +132,18 @@ test('extension sign-in, notifications and profile updates work for the active i
   await page.goto('/u/'+pubkey);
   await page.getByRole('button',{name:'Edit profile'}).click();
   await page.getByRole('textbox',{name:'Display name'}).fill('Field Guide');
+  const precise='[9007199254740995,{"fine":1.000000000000000000009,"tiny":1e-800}]';
+  await page.getByText(/^Custom fields \(/).click();
+  await page.getByRole('button',{name:'Add field'}).click();
+  await page.getByLabel('Field name',{exact:true}).last().fill('custom_counter');
+  await page.getByRole('combobox',{name:/Value type/}).last().selectOption('JSON');
+  await page.getByLabel('Value',{exact:true}).last().fill(precise);
   await page.getByRole('button',{name:'Review changes'}).click();
+  await expect(page.getByText(precise,{exact:true})).toBeVisible();
   await testInfo.attach('profile-review', {body: await page.screenshot(), contentType:'image/png'});
   await page.getByRole('button',{name:'Publish profile'}).click();
   await expect(page.getByRole('heading',{name:'Field Guide',exact:true})).toBeVisible();
+  await expect.poll(()=>profiles.some(e=>e.content.includes(precise))).toBe(true);
   await page.goto('/settings/account');
   await expect(page.getByText('Your signing extension manages this profile’s secret key.')).toBeVisible();
   await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);

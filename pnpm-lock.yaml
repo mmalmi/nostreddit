@@ -21,11 +21,11 @@ importers:
         specifier: file:vendor/iris-identity-aaa8a51.tgz
         version: file:vendor/iris-identity-aaa8a51.tgz(nostr-social-graph@https://github.com/mmalmi/nostr-social-graph/releases/download/v4.2.3/nostr-social-graph-4.2.3.tgz(typescript@5.9.3))(typescript@5.9.3)
       '@iris/profile-events':
-        specifier: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.13/iris-profile-events-0.1.0.tgz
-        version: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.13/iris-profile-events-0.1.0.tgz
+        specifier: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz
+        version: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz
       '@iris/svelte-ui':
-        specifier: file:vendor/iris-svelte-ui-runtime-v0.2.14.tgz
-        version: file:vendor/iris-svelte-ui-runtime-v0.2.14.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))
+        specifier: file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz
+        version: file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))
       '@noble/curves':
         specifier: 2.0.1
         version: 2.0.1
@@ -1147,13 +1147,13 @@ packages:
     peerDependencies:
       nostr-social-graph: '*'
 
-  '@iris/profile-events@https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.13/iris-profile-events-0.1.0.tgz':
-    resolution: {integrity: sha512-f61CH/ygvxssR12uvIgWJGcFkYCr4gXoxR/FR2nglqDmHCLtvuR4RPsM47d5ppL8eP64iUK06RjO055ZhwN3Rw==, tarball: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.13/iris-profile-events-0.1.0.tgz}
-    version: 0.1.0
+  '@iris/profile-events@https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz':
+    resolution: {integrity: sha512-B6groCtJFzoSCQ66ovQhDkAHcSWtN/JBNyojYmxUOGm6wgi3p1oLZ5btbGby/qzMsBFLOh9uIJ4kJBVVuxHKeQ==, tarball: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz}
+    version: 0.2.0
 
-  '@iris/svelte-ui@file:vendor/iris-svelte-ui-runtime-v0.2.14.tgz':
-    resolution: {integrity: sha512-S29X9R3kRld7LuhB0EelIz6+nVmFxWzJ5Kcdbla4vuya0NLe3cJ3/BtDxb8351YUdAORDjA1+uNPXGjJPKQAcg==, tarball: file:vendor/iris-svelte-ui-runtime-v0.2.14.tgz}
-    version: 0.1.4
+  '@iris/svelte-ui@file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz':
+    resolution: {integrity: sha512-TQyOs5nrkDDoUK68BMB2jVXVXaG8nH9hwsrjrTKT3asuNfXqhK3WZaABAsiOBTiI0TDK/tK7kBmHV1m68P1oaw==, tarball: file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz}
+    version: 0.1.5
     peerDependencies:
       svelte: ^5.0.0
 
@@ -3775,11 +3775,11 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@iris/profile-events@https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.13/iris-profile-events-0.1.0.tgz': {}
+  '@iris/profile-events@https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz': {}
 
-  '@iris/svelte-ui@file:vendor/iris-svelte-ui-runtime-v0.2.14.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))':
+  '@iris/svelte-ui@file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))':
     dependencies:
-      '@iris/profile-events': https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.13/iris-profile-events-0.1.0.tgz
+      '@iris/profile-events': https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz
       minidenticons: 4.2.1
       svelte: 5.57.1(@typescript-eslint/types@8.71.0)
 

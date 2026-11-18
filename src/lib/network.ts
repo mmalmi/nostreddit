@@ -8,7 +8,7 @@ import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
 import { lightningEndpoint, matchesZapReceipt, receivedTips, restoredTips, postTipActor, type PostTipActor, type ZapInvoice } from './zaps';
 import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './write-sync';
-import { readProfileFields } from '@iris/profile-events';
+import { readRawProfileFields } from '@iris/profile-events';
 import { cacheOwnEvents, readOwnEvents, type Change } from './local-writes';
 import { noExpansion } from './discovery/discussions';
 import type { SearchCursors } from './discovery/relay-search';
@@ -117,7 +117,8 @@ export const profiles = derived([rawProfiles, canSeeAuthor, changesForViewer, ac
   if (session) for (const change of changes) if (change.kind===0) {
     const profile = {...emptyProfile,...visible[session.pubkey]};
     for (const key of Object.keys(emptyProfile) as (keyof Profile)[]) if (Object.hasOwn(change.fields, key)) {
-      const value = change.fields[key];
+      const field = change.fields[key];
+      const value = change.encoding === 'raw-json' && typeof field === 'string' ? JSON.parse(field) : field;
       profile[key] = typeof value === 'string' ? value : '';
     }
     visible[session.pubkey] = profile;
@@ -1110,12 +1111,15 @@ export async function profileForEditor(owner:string):Promise<NostrEvent|null> {
   return candidates.sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id))[0] ?? null;
 }
 export const discardConflictingProfileEdits = () => localSync.discardConflictingProfileEdits();
-export async function saveProfile(fields:Record<string,unknown>, base?:NostrEvent|null) {
+export function saveProfile(fields:Record<string,unknown>) {
+  return saveRawProfile(Object.fromEntries(Object.entries(fields).map(([key,v]) => [key,JSON.stringify(v)])));
+}
+export async function saveRawProfile(fields:Record<string,string|undefined>, base?:NostrEvent|null) {
   if (!Object.keys(fields).length) return;
   if (base && (base.pubkey !== get(account)?.pubkey || base.kind !== 0 || !verifyEvent(base))) throw new Error('The signed-in profile changed.');
-  const original = base ? readProfileFields(base.content) : {};
+  const original = base ? readRawProfileFields(base.content) : {};
   const previous = base === undefined ? undefined : Object.fromEntries(Object.keys(fields).map(key => [key, Object.hasOwn(original,key) ? original[key] : undefined]));
-  await changeLocally({kind:0,fields,previous});
+  await changeLocally({kind:0,encoding:'raw-json',fields,previous});
 }
 async function changePerson(kind:3|10000, key:string, enabled:boolean) {
   if (!hexKey.test(key)) throw new Error('This profile has an invalid public key.');

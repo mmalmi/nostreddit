@@ -91,6 +91,14 @@ test('profile edits keep untouched raw numbers and tags and detect overlapping e
   assert.throws(() => mergeChanges(0,[{kind:0,fields:{display_name:'Updated'},previous:{display_name:'Old'}}],base),/reopen the editor/);
 });
 
+test('queued profile edits retain exact nested numbers and detect precision-only conflicts', () => {
+  const old = '9007199254740992', next = '[9007199254740993,1.000000000000000000001,1e-800]';
+  const head = {...finalizeEvent({kind:0,tags:[],created_at:1,content:"{}"},generateSecretKey()), kind:0, content:'{"count":'+old+'}'};
+  const row = {kind:0 as const, encoding:'raw-json' as const, fields:{count:next}, previous:{count:old}};
+  assert.equal(mergeChanges(0,[row],head).content,'{"count":'+next+'}');
+  assert.throws(()=>mergeChanges(0,[row],{...head,content:'{"count":9007199254740993}'}),/Profile changed/);
+});
+
 test('topic feeds use tags regardless of community addresses', () => {
   const tags=[['t','bitcoin'],['t','mostro']];
   const note=asPost(sign({kind:1,content:'Market notes',tags}))!;

@@ -1,8 +1,8 @@
-import { buildProfileDraft, conflictingProfileFields, readProfileFields } from '@iris/profile-events';
+import { buildRawProfileDraft, conflictingRawProfileFields, readRawProfileFields } from '@iris/profile-events';
 import type { NostrEvent } from 'nostr-pubsub';
 import { relayUrls, testRelays } from './relayTypes';
 
-export type Change = {kind:0; fields:Record<string,unknown>; previous?:Record<string,unknown>} | {kind:3|10000; key:string; enabled:boolean};
+export type Change = {kind:0; fields:Record<string,unknown>; encoding?:'raw-json'; previous?:Record<string,unknown>} | {kind:3|10000; key:string; enabled:boolean};
 export type QueuedWrite = {
   seq:number; owner:string; event?:NostrEvent; change?:Change;
   attempts:number; retryAt:number; error?:string; hold?:boolean;
@@ -124,19 +124,25 @@ export function claimLease(owner:string, token:string, release=false) {
 export function mergeChanges(kind:0|3|10000, changes:readonly Change[], base?:NostrEvent) {
   let tags = base?.tags ?? [], content = base?.content ?? '';
   if (kind === 0) {
-    const edits:Record<string,unknown> = Object.create(null);
-    const previous:Record<string,unknown> = Object.create(null);
-    const checked:Record<string,unknown> = Object.create(null);
+    const edits:Record<string,string|undefined> = Object.create(null);
+    const previous:Record<string,string> = Object.create(null);
+    const checked:Record<string,string|undefined> = Object.create(null);
     for (const change of changes) if (change.kind === 0) {
+      // Existing journals stored decoded values. New rows retain the user's JSON tokens.
+      const encode = (v:unknown) => change.encoding === 'raw-json' ? v as string|undefined : JSON.stringify(v);
       for (const [key, value] of Object.entries(change.fields)) {
-        edits[key] = value;
-        if (change.previous) { previous[key] = change.previous[key]; checked[key] = value; }
+        edits[key] = encode(value);
+        if (change.previous) {
+          const expected = encode(change.previous[key]);
+          if (expected === undefined) delete previous[key]; else previous[key] = expected;
+          checked[key] = edits[key];
+        }
         else delete checked[key]; // Older queued edits have no editor snapshot.
       }
     }
-    const conflicts = conflictingProfileFields(previous, readProfileFields(base?.content ?? '{}'), checked);
+    const conflicts = conflictingRawProfileFields(previous, readRawProfileFields(base?.content ?? '{}'), checked);
     if (conflicts.length) throw new Error('Profile changed: reopen the editor to review ' + conflicts.join(', ') + '.');
-    content = buildProfileDraft(base ?? null, edits).content;
+    content = buildRawProfileDraft(base ?? null, edits).content;
   } else {
     for (const change of changes) {
       if (change.kind!==kind) continue;
