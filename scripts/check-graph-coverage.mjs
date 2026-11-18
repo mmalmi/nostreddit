@@ -45,18 +45,27 @@ async function sendEvents(page,events,version){
 }
 
 async function stored(page, bytes) {
-  return page.evaluate(bytes => new Promise((resolve, reject) => {
+  const result=await page.evaluate(bytes => new Promise((resolve, reject) => {
     const open = indexedDB.open('nostreddit-social-graph', 1);
     open.onupgradeneeded = () => open.result.createObjectStore('snapshots');
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {
       const db = open.result, tx = db.transaction('snapshots', bytes === undefined ? 'readonly' : 'readwrite');
       const store = tx.objectStore('snapshots');
-      const request = bytes === undefined ? store.get('current') : store.put(new Uint8Array(bytes), 'current');
-      tx.oncomplete = () => { db.close(); resolve(bytes === undefined ? Array.from(request.result ?? []) : undefined); };
+      const request = bytes === undefined ? store.get('current') : store.put(Uint8Array.from(atob(bytes),c=>c.charCodeAt(0)), 'current');
+      tx.oncomplete = () => {
+        db.close();
+        if(bytes!==undefined){resolve();return;}
+        // Transfer one compact string, not 1.4 million individually serialized
+        // Playwright numbers. Every persisted byte is still checked below.
+        const value=request.result??new Uint8Array(),chunks=[];
+        for(let i=0;i<value.length;i+=32768)chunks.push(String.fromCharCode(...value.subarray(i,i+32768)));
+        resolve(btoa(chunks.join('')));
+      };
       tx.onerror = () => { db.close(); reject(tx.error); };
     };
-  }), bytes);
+  }), bytes===undefined?undefined:Buffer.from(bytes).toString('base64'));
+  return bytes===undefined?new Uint8Array(Buffer.from(result,'base64')):undefined;
 }
 
 export async function checkGraphCoverage(browser, base, output, contextOptions = {}, only) {
