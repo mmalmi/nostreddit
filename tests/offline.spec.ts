@@ -173,7 +173,8 @@ test('offline follow, mute and profile edits rebase onto concurrently signed lis
   await page.goto(profilePath(pubkey));
   await page.getByRole('button',{name:'Edit profile',exact:true}).click();
   await page.getByLabel('Display name',{exact:true}).fill('Marsh Archivist');
-  await page.getByRole('button',{name:'Save profile',exact:true}).click();
+  await page.getByRole('button',{name:'Review changes',exact:true}).click();
+  await page.getByRole('button',{name:'Publish profile',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Marsh Archivist',exact:true})).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading',{name:'Marsh Archivist',exact:true})).toBeVisible();
@@ -208,7 +209,7 @@ test('offline follow, mute and profile edits rebase onto concurrently signed lis
   expect(muted.tags).toEqual(expect.arrayContaining([muteTags[0],muteTags[2], remoteMuteTag]));
   expect(muted.content).toBe(remoteOpaque);
   expect(meta.tags).toEqual(remoteProfileTags);
-  expect(JSON.parse(meta.content)).toEqual({...remoteMeta,name:'Marsh Archivist',display_name:'Marsh Archivist'});
+  expect(JSON.parse(meta.content)).toEqual({...remoteMeta,display_name:'Marsh Archivist'});
 });
 
 test('changing a follow offline immediately changes which cached discussions pass the distance filter', async ({page,context}) => {

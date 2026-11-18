@@ -232,7 +232,7 @@ self.onmessage = async (message: MessageEvent<Request>) => {
     const result = await runtime.query([{ kinds: [req.kind], authors: [req.pubkey], limit: 1 }], {
       cache: 'network-only', deadline: Date.now() + 5500,
     });
-    if (!result.sources.some(source => source.complete))
+    if (!result.complete || !result.sources.some(source => source.complete))
       throw new Error('Could not read your existing profile or follows. Try again when a relay is reachable.');
     if (result.events.some(e => e.created_at > Date.now()/1000 + 600))
       throw new Error('Your existing list has a future timestamp. Check your device clock before editing it.');

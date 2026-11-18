@@ -84,6 +84,14 @@ export class WriteSync {
     await updateWrites(rows.filter(row=>includeHeld || !row.hold).map(row=>row.seq),{hold:false,retryAt:0});
     await this.refresh(); this.wake();
   }
+  async discardConflictingProfileEdits() {
+    const owner = this.owner;
+    if (!owner || owner !== this.hooks.current()) throw new Error('The signed-in profile changed.');
+    const rows = (await readWrites(owner)).filter(row => row.change?.kind === 0 && row.hold && row.error?.startsWith('Profile changed:'));
+    await finishWrites(rows.map(row => row.seq));
+    this.channel?.postMessage(owner);
+    await this.refresh(); this.wake();
+  }
   private online() {
     return !!this.owner && this.owner===this.hooks.current() && !document.hidden && navigator.onLine!==false;
   }
@@ -118,7 +126,7 @@ export class WriteSync {
         const attempts=first.attempts+1;
         // Signer denials and explicit rejections require a deliberate retry.
         const message=reason(error);
-        const hold=/(signer|extension|denied|reject|blocked:|invalid:|restricted:)/i.test(message);
+        const hold=/(signer|extension|denied|reject|blocked:|invalid:|restricted:|profile changed:)/i.test(message);
         await updateWrites(ids,{attempts,error:message,hold,retryAt:Date.now()+Math.min(300000,2000*2**Math.min(attempts-1,8))});
         this.channel?.postMessage(owner);
       }
@@ -151,6 +159,7 @@ export class WriteSync {
     const latest=[...remote,...(stored ? [stored] : []),...valid(persisted.filter(e=>e.kind===kind))].sort(byNewest)[0];
     if (this.owner!==owner || this.hooks.current()!==owner) throw new Error('Profile changed before sync.');
     const changes=rows.flatMap(row=>row.change ? [row.change] : []);
+    if (latest) this.hooks.apply([latest]);
     const draft=mergeChanges(kind,changes,latest);
     if ((!latest && !draft.tags.length && !draft.content) ||
         (latest && draft.content===latest.content && JSON.stringify(draft.tags)===JSON.stringify(latest.tags))) return latest;
@@ -163,6 +172,8 @@ export class WriteSync {
       await updateWrites([first.seq],{prepared:{baseId,through,event}});
     }
     if (this.owner!==owner || this.hooks.current()!==owner) throw new Error('Profile changed before sync.');
+    const observed = this.hooks.baseline(owner,kind);
+    if (observed && (!latest || byNewest(observed, latest) < 0)) throw new Error('A newer version arrived during signing. Retrying.');
     await this.hooks.send(event);
     return event;
   }

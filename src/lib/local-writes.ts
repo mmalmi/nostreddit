@@ -1,7 +1,8 @@
+import { buildProfileDraft, conflictingProfileFields, readProfileFields } from '@iris/profile-events';
 import type { NostrEvent } from 'nostr-pubsub';
 import { relayUrls, testRelays } from './relayTypes';
 
-export type Change = {kind:0; fields:Record<string,string>} | {kind:3|10000; key:string; enabled:boolean};
+export type Change = {kind:0; fields:Record<string,unknown>; previous?:Record<string,unknown>} | {kind:3|10000; key:string; enabled:boolean};
 export type QueuedWrite = {
   seq:number; owner:string; event?:NostrEvent; change?:Change;
   attempts:number; retryAt:number; error?:string; hold?:boolean;
@@ -123,14 +124,19 @@ export function claimLease(owner:string, token:string, release=false) {
 export function mergeChanges(kind:0|3|10000, changes:readonly Change[], base?:NostrEvent) {
   let tags = base?.tags ?? [], content = base?.content ?? '';
   if (kind === 0) {
-    let metadata:Record<string,unknown> = {};
-    if (content) {
-      const parsed = JSON.parse(content);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('The current profile metadata is invalid.');
-      metadata = parsed;
+    const edits:Record<string,unknown> = Object.create(null);
+    const previous:Record<string,unknown> = Object.create(null);
+    const checked:Record<string,unknown> = Object.create(null);
+    for (const change of changes) if (change.kind === 0) {
+      for (const [key, value] of Object.entries(change.fields)) {
+        edits[key] = value;
+        if (change.previous) { previous[key] = change.previous[key]; checked[key] = value; }
+        else delete checked[key]; // Older queued edits have no editor snapshot.
+      }
     }
-    for (const change of changes) if (change.kind===0) Object.assign(metadata,change.fields);
-    content=JSON.stringify(metadata);
+    const conflicts = conflictingProfileFields(previous, readProfileFields(base?.content ?? '{}'), checked);
+    if (conflicts.length) throw new Error('Profile changed: reopen the editor to review ' + conflicts.join(', ') + '.');
+    content = buildProfileDraft(base ?? null, edits).content;
   } else {
     for (const change of changes) {
       if (change.kind!==kind) continue;

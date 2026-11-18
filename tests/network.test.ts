@@ -82,6 +82,15 @@ test('rebase changes over newer contact, mute and metadata records without modif
     {name:'Tern',unfamiliar:{nested:1},about:'Field notes'});
 });
 
+test('profile edits keep untouched raw numbers and tags and detect overlapping edits', () => {
+  const base = sign({kind:0,tags:[['i','custom',''],['i','custom','']],content:'{"display_name":"Original","count":9007199254740993,"custom":[1,true]}'});
+  const merged = mergeChanges(0,[{kind:0,fields:{custom:undefined,display_name:'Updated'},previous:{custom:[1,true],display_name:'Original'}}],base);
+  assert.match(merged.content,/9007199254740993/);
+  assert.equal(JSON.parse(merged.content).custom,undefined);
+  assert.deepEqual(merged.tags,base.tags);
+  assert.throws(() => mergeChanges(0,[{kind:0,fields:{display_name:'Updated'},previous:{display_name:'Old'}}],base),/reopen the editor/);
+});
+
 test('topic feeds use tags regardless of community addresses', () => {
   const tags=[['t','bitcoin'],['t','mostro']];
   const note=asPost(sign({kind:1,content:'Market notes',tags}))!;

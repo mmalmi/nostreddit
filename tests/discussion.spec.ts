@@ -127,7 +127,8 @@ test('extension sign-in, notifications and profile updates work for the active i
   await page.goto('/u/'+pubkey);
   await page.getByRole('button',{name:'Edit profile'}).click();
   await page.getByRole('textbox',{name:'Display name'}).fill('Field Guide');
-  await page.getByRole('button',{name:/Save profile|Save changes/}).click();
+  await page.getByRole('button',{name:'Review changes'}).click();
+  await page.getByRole('button',{name:'Publish profile'}).click();
   await expect(page.getByRole('heading',{name:'Field Guide',exact:true})).toBeVisible();
   await page.goto('/settings/account');
   await expect(page.getByText('Your signing extension manages this profile’s secret key.')).toBeVisible();
@@ -229,8 +230,11 @@ test('a refused display name can be changed on the same local profile', async ({
   await page.getByRole('link',{name:'View profile',exact:true}).click();
   const profileUrl = page.url();
   await page.getByRole('button',{name:'Edit profile',exact:true}).click();
+  // The new-account form initially set both fields. This relay rejects either occurrence.
+  await page.getByLabel('Username',{exact:true}).fill('retry-reader');
   await page.getByLabel('Display name',{exact:true}).fill('Retry Reader');
-  await page.getByRole('button',{name:'Save profile',exact:true}).click();
+  await page.getByRole('button',{name:'Review changes'}).click();
+  await page.getByRole('button',{name:'Publish profile'}).click();
   await expect(page.getByRole('heading',{name:'Retry Reader',exact:true})).toBeVisible();
   const fresh = await browser.newContext();
   try {

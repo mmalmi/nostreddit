@@ -11,8 +11,8 @@ const treeCore = readFileSync('vendor/hashtree-core-0.4.0.tgz');
 if (createHash('sha512').update(treeCore).digest('base64') !== 'hdqjU1MoGjc55BL5WM93jgVxW7cYOWCWHcYUl5glUT8boEinFfmlmnhyjGp7TNwWgxZKQ7Rgag9XiyDnRUGBUA==') {
   throw new Error('Unexpected Hashtree Core archive');
 }
-const irisUi = readFileSync('vendor/iris-svelte-ui-3d26f8c.tgz');
-if (createHash('sha256').update(irisUi).digest('hex') !== '888f94c1422f07db33bc4b209a3b2bf5f13b12492c53d717660076de755c935b') {
+const irisUi = readFileSync('vendor/iris-svelte-ui-runtime-v0.2.14.tgz');
+if (createHash('sha256').update(irisUi).digest('hex') !== 'c92314c4a157bc4e696069ceee8dc5968f95e0b2eb8d3472192e346d6d5e0588') {
   throw new Error('Unexpected Iris Kit UI archive');
 }
 if (createHash('sha256').update(readFileSync('vendor/iris-identity-aaa8a51.tgz')).digest('hex') !== 'fcfc59889fa2c9bfdf8ec68e79f5433eb6bc37b45829315f7750bb985486045a') {

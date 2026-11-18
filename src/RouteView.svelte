@@ -1232,7 +1232,7 @@
         <p class="state loading-state" role="status">Loading…</p>
       {:then {default: EditProfile}}
         <EditProfile
-        profile={$profiles[$account.pubkey]}
+        owner={$account.pubkey}
         ondone={() => {
           closeModal();
           notify('Profile updated');
