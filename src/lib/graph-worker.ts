@@ -13,14 +13,14 @@ let bootstrapUpdates:SocialGraph|undefined, bootstrapUpdatesVersion=0;
 function rememberUpdates(events:GraphRequest['events']) {
   if(bootstrapUpdates?.handleEvent(events,true))bootstrapUpdatesVersion++;
 }
-let persistedGraph:Uint8Array|undefined,canPersist=true;
+let persistedGraph:Uint8Array|undefined,canPersist=true,persistable=false;
 let saving:Promise<void>=Promise.resolve();
 function persistChange() {
   authoritativeVersion++;
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>{
     saving=saving.then(async()=>{
-      if(!authoritative||!canPersist)return;
+      if(!authoritative||!canPersist||!persistable)return;
       const version=authoritativeVersion, bytes=await authoritative.toBinary();
       if(version!==authoritativeVersion)return;
       if(await saveGraph(bytes,persistedGraph))persistedGraph=bytes;
@@ -32,7 +32,7 @@ function persistChange() {
 function sync() {
   stopSync?.();stopSync=undefined;
   if(syncActive&&authoritative&&relayPolicy.relays.length)stopSync=startGraphSync({getGraph:()=>authoritative!,relays:relayPolicy.relays,
-    onEvent:event=>{rememberUpdates([event]);authoritativeVersion++;},
+    onEvent:event=>{rememberUpdates([event]);persistable=true;authoritativeVersion++;},
     onChange:()=>{persistChange();self.postMessage({refresh:true});}});
 }
 
@@ -42,7 +42,7 @@ import { badgesFor, discoveryRoot, profileRelationsFor, snapshotRoot, snapshotHa
 async function load() {
   const local=await readGraph().catch(()=>{canPersist=false;return undefined;});
   persistedGraph=local;
-  if(local)try{authoritative=await SocialGraph.fromBinary(snapshotRoot,local);}catch{canPersist=false;}
+  if(local)try{authoritative=await SocialGraph.fromBinary(snapshotRoot,local);persistable=true;}catch{canPersist=false;}
   // An unreadable personal cache remains recoverable; only an absent cache is
   // eligible for a public snapshot. The bundled graph can still render in memory.
   const refreshBootstrap=local===undefined&&canPersist&&relayPolicy.bootstrap;
@@ -54,6 +54,7 @@ async function load() {
     authoritative=await SocialGraph.fromBinary(snapshotRoot,bytes);
   }
   if(refreshBootstrap)bootstrapUpdates=new SocialGraph(snapshotRoot);
+  // Untouched packaged fallback stays in memory, so the next visit can retry.
   persistChange();sync();
   if(refreshBootstrap&&relayPolicy.bootstrap){
     const controller=new AbortController();bootstrapAbort=controller;
@@ -74,7 +75,7 @@ async function load() {
             await replacement.merge(fresh);
           } while(revision!==bootstrapUpdatesVersion);
           if(controller.signal.aborted)return;
-          authoritative=replacement;
+          authoritative=replacement;persistable=true;
           persistChange();self.postMessage({refresh:true});
         } finally {sync();}
       });
@@ -113,7 +114,7 @@ async function render(data:GraphRequest,silent=false) {
     const source=authoritative!;
     await source.setRoot(data.root);
     rememberUpdates(data.events);
-    if(data.events.length&&source.handleEvent(data.events,true))persistChange();
+    if(data.events.length&&source.handleEvent(data.events,true)){persistable=true;persistChange();}
     if(!displayGraph||renderedVersion!==authoritativeVersion){
       let revision:number, bytes:Uint8Array;
       do { revision=authoritativeVersion;bytes=await source.toBinary(); } while(revision!==authoritativeVersion);
