@@ -308,6 +308,12 @@
     const {left, right, top, bottom} = dialog.getBoundingClientRect();
     return event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom;
   }
+  let signOutProfileId: string | null = null;
+  function showProfileSignOut(profileId: string) {
+    if ($account?.pubkey !== profileId) return;
+    signOutProfileId = profileId;
+    showModal('signout');
+  }
   function showModal(name: string) {
     pressedBackdrop = false;
     if (!modal) dialogPrev = document.activeElement as HTMLElement;
@@ -325,6 +331,7 @@
   function closeModal() {
     const removedFeed = modal === 'feeds' && route.page === 'custom' && !$feedPreferences.some(feed => feed.id === route.value);
     showAccountAfter = '';
+    signOutProfileId = null;
     modal = '';
     zapPost = undefined;
     reactionView = undefined;
@@ -883,6 +890,7 @@
         <p class="state loading-state" role="status">Loading…</p>
       {:then {default: SettingsPage}}
         <SettingsPage {active} tab={route.value as SettingsTab | ''} {sorting} {showPreviews} onOrderChange={changeOrder}
+        onSignOut={showProfileSignOut}
         onPreviewsChange={(value) => { showPreviews = value; writeLocal('showPreviews', value); }} />
       {:catch}
         {@render componentError()}
@@ -1171,7 +1179,7 @@
     bind:this={dialog}
     class="modal"
     class:post-modal={modal==='compose'}
-    aria-label={modal === 'reactions' ? 'Reactions' : modal === 'feeds' ? 'Customize feeds' : modal === 'account'
+    aria-label={modal === 'reactions' ? 'Reactions' : modal === 'feeds' ? 'Customize feeds' : modal === 'account' || modal === 'signout'
       ? 'Nostr profile'
       : modal === 'compose'
         ? 'Create post'
@@ -1204,10 +1212,10 @@
       {:then {default: FeedManager}}
         <FeedManager initialFeed={editingFeed} ondone={closeModal}/>
       {:catch}{@render componentError()}{/await}
-    {:else if modal === 'account'}      {#await import('./components/AccountPanel.svelte')}
+    {:else if modal === 'account' || modal === 'signout'}      {#await import('./components/AccountPanel.svelte')}
         <p class="state loading-state" role="status">Loading…</p>
       {:then {default: AccountPanel}}
-        <AccountPanel onclose={accountDone} {notify} />
+        <AccountPanel onclose={accountDone} {notify} {signOutProfileId} />
       {:catch}
         {@render componentError()}
       {/await}

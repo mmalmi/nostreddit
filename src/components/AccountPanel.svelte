@@ -8,6 +8,7 @@
 
   export let onclose: () => void;
   export let notify: (s: string) => void;
+  export let signOutProfileId: string | null = null;
 
   const first = ['Amber', 'Mossy', 'Quiet', 'Silver', 'Velvet', 'Golden', 'Copper', 'Sunny', 'Lunar', 'Gentle', 'Brisk', 'Curious'];
   const last = ['Finch', 'Fern', 'Otter', 'Heron', 'Comet', 'Wren', 'Badger', 'Robin', 'Clover', 'Moth', 'Fox', 'Sparrow'];
@@ -23,7 +24,7 @@
   onMount(() => {
     if (!$account && nameInput?.closest('dialog')?.open) { nameInput.focus(); nameInput.select(); }
   });
-  let confirmingSignOut = false;
+  let confirmingSignOut = signOutProfileId;
   let mode: 'new' | 'existing' | 'retry-name' = 'new';
   let name = suggest(), secret = '', error = '', busy = false;
   let bunker = '', showBunker = false, authUrl = '';
@@ -73,9 +74,15 @@
     } finally { if (!attempt || connection === attempt) { busy = false; connection = undefined; authUrl = ''; } }
   }
   function confirmSignOut() {
+    if (!confirmingSignOut || $account?.pubkey !== confirmingSignOut) return;
     signOut();
     onclose();
     notify('Signed out');
+  }
+
+  function cancelSignOut() {
+    if (signOutProfileId) onclose();
+    else confirmingSignOut = null;
   }
 
   async function retryName() {
@@ -101,16 +108,16 @@
       <button class="primary wide" disabled={busy || !name.trim()}>{busy ? 'Publishing…' : 'Retry publishing name'}</button>
     </form>
     <button class="text-button" disabled={busy} onclick={onclose}>Continue without publishing</button>
-  {:else if $account && confirmingSignOut}
+  {:else if $account && confirmingSignOut === $account.pubkey}
     <h2>Sign out?</h2>
     <p>{ $account.method === 'local' ? 'You’ll need your secret key to sign in again.' : 'This will sign you out on this device.' }</p>
-    <button class="outline wide" onclick={() => confirmingSignOut = false}>Cancel</button>
+    <button class="outline wide" onclick={cancelSignOut}>Cancel</button>
     <button class="text-button" onclick={confirmSignOut}>Sign out</button>
   {:else if $account && !busy}
     <h2>Your profile</h2>
     <p>{displayName($account.pubkey, $profiles[$account.pubkey])}</p>
     <a class="outline wide" href={profileUrl($account.pubkey)} onclick={onclose}><Icon name="user"/> View profile</a>
-    <button class="text-button" onclick={() => confirmingSignOut = true}><Icon name="logout"/> Sign out</button>
+    <button class="text-button" onclick={() => confirmingSignOut = $account.pubkey}><Icon name="logout"/> Sign out</button>
   {:else if mode === 'new'}
     <h2>Create a profile</h2>
     <form onsubmit={(e) => {e.preventDefault(); submit('new')}}>

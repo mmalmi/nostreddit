@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { account } from '../lib/network';
+  import { account, exportKey, profiles } from '../lib/network';
+  import ProfileSettings from '@iris/svelte-ui/ProfileSettings.svelte';
+  import { copyToClipboard } from '@iris/svelte-ui/clipboard';
+  import { npubEncode } from 'nostr-tools/nip19';
+  import { displayName } from '../lib/ui';
   import { showClientTag, setShowClientTag } from '../lib/client-tag';
   import { settingsTabs, type SettingsTab } from '../lib/settings-tabs';
   import Icon from './Icon.svelte';
@@ -17,8 +21,19 @@
   export let showPreviews: boolean;
   export let onOrderChange: (value: string) => void;
   export let onPreviewsChange: (value: boolean) => void;
+  export let onSignOut: (profileId: string) => void;
   $: current = tab || settingsTabs[0].id;
   $: tabs = settingsTabs.filter(item => item.id !== 'account' || $account);
+  $: signedInProfiles = $account ? [{
+    id: $account.pubkey,
+    publicKey: npubEncode($account.pubkey),
+    name: displayName($account.pubkey, $profiles[$account.pubkey]),
+  }] : [];
+
+  async function copyProfileKey(profileId: string) {
+    if ($account?.pubkey !== profileId || $account.method !== 'local') throw new Error('Secret key unavailable.');
+    if (await copyToClipboard(exportKey()) !== 'copied') throw new Error('Could not copy the secret key.');
+  }
 </script>
 
 <div class="settings" class:menu-only={!tab}>
@@ -54,6 +69,8 @@
       <ImageProxySettings/>
     {:else if current === 'account'}
       {#if $account}
+        <ProfileSettings profiles={signedInProfiles} activeProfileId={$account.pubkey} {onSignOut}
+          onCopySecretKey={$account.method === 'local' ? copyProfileKey : undefined} />
         <section class="preferences" aria-labelledby="posting-preferences">
           <h2 id="posting-preferences">Posting</h2>
           <label><span>Identify Nostreddit on my public posts and replies</span><input type="checkbox" checked={$showClientTag}

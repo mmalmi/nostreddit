@@ -24,8 +24,8 @@ importers:
         specifier: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz
         version: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz
       '@iris/svelte-ui':
-        specifier: file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz
-        version: file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))
+        specifier: file:vendor/iris-svelte-ui-runtime-v0.2.18.tgz
+        version: file:vendor/iris-svelte-ui-runtime-v0.2.18.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))
       '@noble/curves':
         specifier: 2.0.1
         version: 2.0.1
@@ -1151,9 +1151,9 @@ packages:
     resolution: {integrity: sha512-B6groCtJFzoSCQ66ovQhDkAHcSWtN/JBNyojYmxUOGm6wgi3p1oLZ5btbGby/qzMsBFLOh9uIJ4kJBVVuxHKeQ==, tarball: https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz}
     version: 0.2.0
 
-  '@iris/svelte-ui@file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz':
-    resolution: {integrity: sha512-TQyOs5nrkDDoUK68BMB2jVXVXaG8nH9hwsrjrTKT3asuNfXqhK3WZaABAsiOBTiI0TDK/tK7kBmHV1m68P1oaw==, tarball: file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz}
-    version: 0.1.5
+  '@iris/svelte-ui@file:vendor/iris-svelte-ui-runtime-v0.2.18.tgz':
+    resolution: {integrity: sha512-ucMoZ+SyxpOosGQvAUXuPbhkXhjHjQhPr5qOh85MjdALFITAicYXKT0vN6ZdngINrNQxWjSks42Ek1xcq2ZOUA==, tarball: file:vendor/iris-svelte-ui-runtime-v0.2.18.tgz}
+    version: 0.1.7
     peerDependencies:
       svelte: ^5.0.0
 
@@ -3777,7 +3777,7 @@ snapshots:
 
   '@iris/profile-events@https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz': {}
 
-  '@iris/svelte-ui@file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))':
+  '@iris/svelte-ui@file:vendor/iris-svelte-ui-runtime-v0.2.18.tgz(svelte@5.57.1(@typescript-eslint/types@8.71.0))':
     dependencies:
       '@iris/profile-events': https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz
       minidenticons: 4.2.1

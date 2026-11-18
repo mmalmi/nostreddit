@@ -4,6 +4,46 @@ import { allowFixtureAuthors } from './helpers/graphPreferences';
 
 test.beforeEach(async ({context}) => { await allowFixtureAuthors(context); });
 
+test('Backup & sync lists the signed-in profile, copies its local key, and confirms sign-out', async ({page}, testInfo) => {
+  const { generateSecretKey, getPublicKey } = await import('nostr-tools/pure');
+  const { nsecEncode } = await import('nostr-tools/nip19');
+  const secret = generateSecretKey();
+  const nsec = nsecEncode(secret);
+  await page.addInitScript((expected) => {
+    Object.defineProperty(navigator, 'clipboard', { value: {
+      writeText: async (value: string) => sessionStorage.setItem('profile-copy-matches', String(value === expected)),
+    } });
+  }, nsec);
+  await page.goto('/');
+  await page.getByRole('button', {name:'Sign in', exact:true}).first().click();
+  await page.getByRole('button', {name:'Use an existing profile'}).click();
+  await page.getByLabel('Secret key', {exact:true}).fill(nsec);
+  await page.getByRole('button', {name:'Sign in with secret key'}).click();
+  await expect(page.getByRole('dialog', {name:'Nostr profile'})).toBeHidden();
+
+  await page.goto('/settings/account');
+  const profiles = page.getByLabel('Profiles on this device');
+  await expect(profiles.getByText(npubEncode(getPublicKey(secret)))).toBeVisible();
+  await expect(profiles.getByText('Signed in', {exact:true})).toBeVisible();
+  await expect(page.getByLabel('Your secret key')).toHaveCount(0);
+  await profiles.getByRole('button', {name:'Copy secret key'}).click();
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('profile-copy-matches'))).toBe('true');
+  await profiles.screenshot({path:testInfo.outputPath('profile-settings.png')});
+
+  const confirmation = page.getByRole('dialog', {name:'Nostr profile'});
+  const signOut = profiles.getByRole('button', {name:'Sign out'});
+  await signOut.click();
+  await expect(confirmation.getByRole('heading', {name:'Sign out?'})).toBeVisible();
+  await expect(confirmation).toContainText('You’ll need your secret key to sign in again.');
+  await confirmation.getByRole('button', {name:'Cancel'}).click();
+  await expect(signOut).toBeFocused();
+  await signOut.click();
+  await confirmation.getByRole('button', {name:'Sign out', exact:true}).click();
+  await expect(page.getByText('Sign in to back up your profile.')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Sign in to back up your profile.')).toBeVisible();
+});
+
 test('a guest can browse and save posts; a new profile can publish, reply, like and follow across sessions', async ({ page, browser }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -147,6 +187,7 @@ test('extension sign-in, notifications and profile updates work for the active i
   await page.goto('/settings/account');
   await expect(page.getByText('Your signing extension manages this profile’s secret key.')).toBeVisible();
   await expect(page.getByRole('button',{name:'Reveal secret key'})).toHaveCount(0);
+  await expect(page.getByLabel('Profiles on this device').getByRole('button',{name:'Copy secret key'})).toHaveCount(0);
 });
 
 test('a guest can search relay posts and open a Nostr event identifier', async ({ page }) => {

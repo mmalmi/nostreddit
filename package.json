@@ -24,7 +24,7 @@
     "@hashtree/core": "file:vendor/hashtree-core-0.4.0.tgz",
     "@huggingface/tokenizers": "0.2.0",
     "@iris/identity": "file:vendor/iris-identity-aaa8a51.tgz",
-    "@iris/svelte-ui": "file:vendor/iris-svelte-ui-runtime-v0.2.16.tgz",
+    "@iris/svelte-ui": "file:vendor/iris-svelte-ui-runtime-v0.2.18.tgz",
     "@iris/profile-events": "https://github.com/mmalmi/iris-kit/releases/download/runtime-v0.2.15/iris-profile-events-0.2.0.tgz",
     "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
