@@ -97,7 +97,7 @@ test('a relay-rejected post stays local and its delivery can be retried from Set
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
 });
 
-test('extension sign-in, notifications and profile updates work for the active identity', async ({page}) => {
+test('extension sign-in, notifications and profile updates work for the active identity', async ({page}, testInfo) => {
   const { finalizeEvent, generateSecretKey, getPublicKey } = await import('nostr-tools/pure');
   const { WebSocket } = await import('ws');
   const owner = generateSecretKey(), pubkey = getPublicKey(owner);
@@ -128,6 +128,7 @@ test('extension sign-in, notifications and profile updates work for the active i
   await page.getByRole('button',{name:'Edit profile'}).click();
   await page.getByRole('textbox',{name:'Display name'}).fill('Field Guide');
   await page.getByRole('button',{name:'Review changes'}).click();
+  await testInfo.attach('profile-review', {body: await page.screenshot(), contentType:'image/png'});
   await page.getByRole('button',{name:'Publish profile'}).click();
   await expect(page.getByRole('heading',{name:'Field Guide',exact:true})).toBeVisible();
   await page.goto('/settings/account');
