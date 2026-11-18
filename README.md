@@ -87,3 +87,8 @@ The catalog reuses `nostr-social-graph`'s `UniqueIds` with its own persisted dic
 ## Deploying
 
 `pnpm build && pnpm run deploy` publishes the verified `dist` bundle to the dedicated Cloudflare Worker configured in `wrangler.jsonc`. The custom domain serves the app entry point for direct topic, profile and thread links. GitHub and Hashtree carry the source history. Deployment credentials stay outside the checkout.
+
+Run `pnpm release:hashtree` to test, stage, and publish the `nostreddit-site`
+build. Set `IRIS_NATIVE_RELEASE_GATE` to the absolute path of
+`scripts/native-release-gate.mjs` in the approved Iris Sites checkout. The runner
+boots the candidate through a fresh Iris Drive profile before promotion.

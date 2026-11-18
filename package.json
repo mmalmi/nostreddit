@@ -17,7 +17,8 @@
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
     "test:relay-privacy": "playwright test --config playwright.relay-privacy.config.ts",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "release:hashtree": "node scripts/release-hashtree.mjs"
   },
   "dependencies": {
     "@hashtree/core": "file:vendor/hashtree-core-0.4.0.tgz",
