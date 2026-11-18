@@ -4,7 +4,7 @@ import { allowFixtureAuthors } from './helpers/graphPreferences';
 
 test.beforeEach(async ({context}) => { await allowFixtureAuthors(context); });
 
-test('Backup & sync lists the signed-in profile, copies its local key, and confirms sign-out', async ({page}, testInfo) => {
+test('Backup & sync offers key copy and Settings confirms sign-out without opening a tab', async ({page}, testInfo) => {
   const { generateSecretKey, getPublicKey } = await import('nostr-tools/pure');
   const { nsecEncode } = await import('nostr-tools/nip19');
   const secret = generateSecretKey();
@@ -30,8 +30,14 @@ test('Backup & sync lists the signed-in profile, copies its local key, and confi
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('profile-copy-matches'))).toBe('true');
   await profiles.screenshot({path:testInfo.outputPath('profile-settings.png')});
 
+  await page.goto('/settings');
   const confirmation = page.getByRole('dialog', {name:'Nostr profile'});
-  const signOut = profiles.getByRole('button', {name:'Sign out'});
+  const signOut = page.getByRole('button', {name:'Sign out', exact:true});
+  await expect(signOut).toHaveCount(1);
+  await expect(signOut).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  await expect(signOut).toBeVisible();
+  await page.screenshot({path:testInfo.outputPath('settings-landing.png')});
   await signOut.click();
   await expect(confirmation.getByRole('heading', {name:'Sign out?'})).toBeVisible();
   await expect(confirmation).toContainText('You’ll need your secret key to sign in again.');
@@ -39,9 +45,11 @@ test('Backup & sync lists the signed-in profile, copies its local key, and confi
   await expect(signOut).toBeFocused();
   await signOut.click();
   await confirmation.getByRole('button', {name:'Sign out', exact:true}).click();
-  await expect(page.getByText('Sign in to back up your profile.')).toBeVisible();
+  await expect(page).toHaveURL('/settings');
+  await expect(signOut).toHaveCount(0);
   await page.reload();
-  await expect(page.getByText('Sign in to back up your profile.')).toBeVisible();
+  await expect(page.getByRole('heading', {name:'Settings'})).toBeVisible();
+  await expect(signOut).toHaveCount(0);
 });
 
 test('a guest can browse and save posts; a new profile can publish, reply, like and follow across sessions', async ({ page, browser }) => {

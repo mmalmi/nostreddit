@@ -39,7 +39,15 @@
 <div class="settings" class:menu-only={!tab}>
   <div class="page-head">
     <a class="settings-back" href="/settings"><Icon name="back" size={16}/>Settings</a>
-    <h1>Settings</h1><p>Preferences are saved in this browser.</p>
+    <div class="settings-heading">
+      <h1>Settings</h1>
+      {#if !tab && $account}
+        <button type="button" class="outline compact" onclick={() => $account && onSignOut($account.pubkey)}>
+          <Icon name="logout" size={16}/>Sign out
+        </button>
+      {/if}
+    </div>
+    <p>Preferences are saved in this browser.</p>
   </div>
   <nav class="settings-menu" aria-label="Settings sections">
     {#each tabs as item (item.id)}<a class="nav-row" class:active={item.id === current} aria-current={item.id === current ? 'page' : undefined}
@@ -92,3 +100,7 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .settings-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}
+</style>
