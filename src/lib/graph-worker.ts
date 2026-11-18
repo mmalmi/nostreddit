@@ -2,12 +2,17 @@ import { SocialGraph } from 'nostr-social-graph';
 import { startGraphSync, loadGraphBootstrap } from 'nostr-social-graph/publicGraphSync';
 import { readGraph, saveGraph, boundedGraphResponse } from './graph-storage';
 import { graphRelayPolicy } from './graph-relays';
+import { discoveryGraphMinimum } from './graph-snapshot-policy.js';
 let relayPolicy=graphRelayPolicy([]);
 let bootstrapAbort:AbortController|undefined;
 let authoritative:SocialGraph|undefined, authoritativeVersion=0, renderedVersion=-1;
 let stopSync:(()=>void)|undefined, syncActive=true;
 let saveTimer:ReturnType<typeof setTimeout>|undefined;
-let bootstrapMerge:Promise<void>=Promise.resolve();
+// Only real list events received during first use belong in the personal overlay.
+let bootstrapUpdates:SocialGraph|undefined, bootstrapUpdatesVersion=0;
+function rememberUpdates(events:GraphRequest['events']) {
+  if(bootstrapUpdates?.handleEvent(events,true))bootstrapUpdatesVersion++;
+}
 let persistedGraph:Uint8Array|undefined,canPersist=true;
 let saving:Promise<void>=Promise.resolve();
 function persistChange() {
@@ -16,7 +21,6 @@ function persistChange() {
   saveTimer=setTimeout(()=>{
     saving=saving.then(async()=>{
       if(!authoritative||!canPersist)return;
-      await bootstrapMerge;
       const version=authoritativeVersion, bytes=await authoritative.toBinary();
       if(version!==authoritativeVersion)return;
       if(await saveGraph(bytes,persistedGraph))persistedGraph=bytes;
@@ -28,12 +32,12 @@ function persistChange() {
 function sync() {
   stopSync?.();stopSync=undefined;
   if(syncActive&&authoritative&&relayPolicy.relays.length)stopSync=startGraphSync({getGraph:()=>authoritative!,relays:relayPolicy.relays,
-    onEvent:()=>{authoritativeVersion++;},
+    onEvent:event=>{rememberUpdates([event]);authoritativeVersion++;},
     onChange:()=>{persistChange();self.postMessage({refresh:true});}});
 }
 
 import { createGraphRanker } from './graph-ranking';
-import { badgesFor, discoveryRoot, profileRelationsFor, snapshotRoot, snapshotHash, type GraphRequest, type GraphReply } from './graph-model';
+import { badgesFor, discoveryRoot, profileRelationsFor, snapshotRoot, snapshotHash, snapshotUsers, type GraphRequest, type GraphReply } from './graph-model';
 
 async function load() {
   const local=await readGraph().catch(()=>{canPersist=false;return undefined;});
@@ -49,26 +53,40 @@ async function load() {
     if(digest!==snapshotHash)throw new Error('Graph snapshot failed verification');
     authoritative=await SocialGraph.fromBinary(snapshotRoot,bytes);
   }
+  if(refreshBootstrap)bootstrapUpdates=new SocialGraph(snapshotRoot);
   persistChange();sync();
   if(refreshBootstrap&&relayPolicy.bootstrap){
     const controller=new AbortController();bootstrapAbort=controller;
-    void loadGraphBootstrap({root:snapshotRoot,signal:controller.signal}).then(async fresh=>{
+    void loadGraphBootstrap({root:snapshotRoot,signal:controller.signal,minUsers:discoveryGraphMinimum(snapshotUsers)}).then(async fresh=>{
       if(controller.signal.aborted)return;
-      const current=authoritative!;
-      // The merge preserves complete/newer personal lists received during fetch.
-      authoritativeVersion++;
-      const merging=current.merge(fresh);
-      bootstrapMerge=merging.catch(()=>{});
-      await merging;
-      persistChange();self.postMessage({refresh:true});
+      // Rendering and replacement share one queue. Pause catch-up during the
+      // short merge, preserving every applied event from its interrupted pass.
+      const install=processing.then(async()=>{
+        if(controller.signal.aborted)return;
+        stopSync?.();stopSync=undefined;
+        try {
+          let replacement:SocialGraph, revision:number;
+          do {
+            revision=bootstrapUpdatesVersion;
+            replacement=await SocialGraph.fromBinary(snapshotRoot,await bootstrapUpdates!.toBinary());
+            // The fresh public projection replaces bundled rows. Only actual
+            // personal events protect complete/newer rows from that projection.
+            await replacement.merge(fresh);
+          } while(revision!==bootstrapUpdatesVersion);
+          if(controller.signal.aborted)return;
+          authoritative=replacement;
+          persistChange();self.postMessage({refresh:true});
+        } finally {sync();}
+      });
+      processing=install.catch(()=>{});
+      await install;
     }).catch(()=>{/* local discovery remains ready if the signed snapshot is unavailable */})
-      .finally(()=>{if(bootstrapAbort===controller)bootstrapAbort=undefined;});
+      .finally(()=>{if(bootstrapAbort===controller){bootstrapAbort=undefined;bootstrapUpdates=undefined;}});
   }
-  return authoritative;
 }
 
 // Main sends one request at a time. Full graph traversals occur only on root or edge changes.
-let loaded: Promise<SocialGraph> | undefined;
+let loaded: Promise<void> | undefined;
 let displayGraph:SocialGraph|undefined;
 let processing=Promise.resolve();
 const ranker=createGraphRanker();
@@ -91,12 +109,14 @@ async function render(data:GraphRequest,silent=false) {
   try {
     // Fetch optional scoring alongside the graph instead of after it.
     if(data.ranking)void import('nostr-social-graph/ranking').catch(()=>{});
-    const source=await (loaded??=load());
+    await (loaded??=load());
+    const source=authoritative!;
     await source.setRoot(data.root);
+    rememberUpdates(data.events);
     if(data.events.length&&source.handleEvent(data.events,true))persistChange();
     if(!displayGraph||renderedVersion!==authoritativeVersion){
       let revision:number, bytes:Uint8Array;
-      do { await bootstrapMerge;revision=authoritativeVersion;bytes=await source.toBinary(); } while(revision!==authoritativeVersion);
+      do { revision=authoritativeVersion;bytes=await source.toBinary(); } while(revision!==authoritativeVersion);
       displayGraph=await SocialGraph.fromBinary(data.root,bytes);
       renderedVersion=revision;overlayOwner='';overlayKey='';undo={};graphRevision++;
     }

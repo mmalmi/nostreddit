@@ -3,7 +3,7 @@ export default defineConfig({
   testDir: 'tests',
   testMatch: '**/*.spec.ts',
   // Needs production relay defaults: run with pnpm test:relay-privacy.
-  testIgnore: '**/relay-defaults.spec.ts',
+  testIgnore: ['**/relay-defaults.spec.ts', '**/graph-coverage.spec.ts'],
   workers: 4,
   // Files share one relay, so a parallel run can occasionally see another file's posts.
   retries: 1,

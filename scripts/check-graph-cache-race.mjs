@@ -8,7 +8,7 @@ const [base,output]=process.argv.slice(2);
 if(!base||!output)throw new Error('Usage: node scripts/check-graph-cache-race.mjs URL RECEIPT');
 const {root}=JSON.parse(await readFile(new URL('../public/socialGraphSnapshot.provenance.json',import.meta.url),'utf8'));
 const graph=new SocialGraph(root),at=Math.floor(Date.now()/1000),target='da'.repeat(32);
-graph.handleEvent({pubkey:root,kind:3,id:'db'.repeat(32),created_at:at,tags:[['p',target]],content:'',sig:''});
+graph.handleEvent({pubkey:root,kind:3,id:'db'.repeat(32),created_at:at,tags:[target,...Array.from({length:13000},(_,i)=>(i+1).toString(16).padStart(64,'0'))].map(p=>['p',p]),content:'',sig:''});
 const server=Buffer.from(await graph.toBinary());
 graph.handleEvent({pubkey:root,kind:3,id:'dc'.repeat(32),created_at:at+1,tags:[],content:'',sig:''});
 graph.handleEvent({pubkey:root,kind:10000,id:'dd'.repeat(32),created_at:at+1,tags:[['p',target]],content:'',sig:''});

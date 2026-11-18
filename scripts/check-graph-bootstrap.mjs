@@ -10,7 +10,7 @@ const author='ab'.repeat(32), target='ac'.repeat(32), followId='ca'.repeat(32), 
 const at=Math.floor(Date.now()/1000);
 const event=(pubkey,kind,id,time,targets)=>({pubkey,kind,id,created_at:time,tags:targets.map(p=>['p',p]),content:'',sig:''});
 const seed=new SocialGraph(root);
-seed.handleEvent(event(root,3,'cd'.repeat(32),at,[author]));
+seed.handleEvent(event(root,3,'cd'.repeat(32),at,[author,...Array.from({length:13000},(_,i)=>(i+1).toString(16).padStart(64,'0'))]));
 seed.handleEvent(event(author,3,followId,at,[target]));
 seed.handleEvent(event(author,10000,muteId,at,[root]));
 const body=Buffer.from(await seed.toBinary());

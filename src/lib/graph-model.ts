@@ -4,6 +4,7 @@ import provenance from '../../public/socialGraphSnapshot.provenance.json';
 
 export const snapshotRoot = provenance.root;
 export const snapshotHash = provenance.snapshot.sha256;
+export const snapshotUsers = provenance.snapshot.users;
 export type GraphBadge = { distance: number | null; muted: boolean; overmuted: boolean; followedByFriends?:number; influence?:number };
 
 export function sortVoters(keys: readonly string[], viewer: string, follows: ReadonlySet<string>, badges: Readonly<Record<string,GraphBadge>>) {

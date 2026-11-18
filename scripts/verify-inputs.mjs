@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { verifyEmbeddedGraph } from './graph-input.mjs';
 
 const lock = readFileSync('pnpm-lock.yaml', 'utf8');
 const releases = lock.split('\nsnapshots:')[0].split('\n').filter(line => line.includes('tarball:'));
@@ -17,11 +18,7 @@ if (createHash('sha256').update(irisUi).digest('hex') !== '888f94c1422f07db33bc4
 if (createHash('sha256').update(readFileSync('vendor/iris-identity-aaa8a51.tgz')).digest('hex') !== 'fcfc59889fa2c9bfdf8ec68e79f5433eb6bc37b45829315f7750bb985486045a') {
   throw new Error('Unexpected Iris Kit identity archive');
 }
-const graph = readFileSync('public/socialGraph.bin');
-const {snapshot} = JSON.parse(readFileSync('public/socialGraphSnapshot.provenance.json', 'utf8'));
-if (graph.length !== snapshot.bytes || createHash('sha256').update(graph).digest('hex') !== snapshot.sha256) {
-  throw new Error('Unexpected social graph snapshot');
-}
+await verifyEmbeddedGraph();
 const modelInputs = {
   'search-minilm-q8.onnx': 'b190f50dd46296b9895ae8f274c3455762d08610f8788f4a9bd15019f4f7160c',
   'search-tokenizer.json': '2fc687b11de0bc1b3d8348f92e3b49ef1089a621506c7661fbf3248fcd54947e',
