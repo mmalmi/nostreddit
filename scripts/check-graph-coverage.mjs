@@ -34,14 +34,14 @@ concurrent.handleEvent(signed(10000,at-2,[root]),true);
 const concurrentBytes=await concurrent.toBinary();
 const personalEvents=[signed(3,at-1,['ab'.repeat(32)]),signed(10000,at-1,['ac'.repeat(32)])];
 const laterEvent=signed(3,at+1,['ad'.repeat(32)]);
-async function sendEvents(page,events,version){
-  await page.evaluate(({root,events,version})=>new Promise((resolve,reject)=>{
+async function sendEvents(page,events,version,inspect=false){
+  return page.evaluate(({root,events,version,inspect})=>new Promise((resolve,reject)=>{
     const worker=window.graphFixtureWorker;
     const timer=setTimeout(()=>reject(new Error('Graph worker did not reply')),8000);
-    const receive=({data})=>{if(data.version!==version)return;clearTimeout(timer);worker.removeEventListener('message',receive);data.error?reject(new Error('Graph worker failed')):resolve();};
+    const receive=({data})=>{if(data.version!==version)return;clearTimeout(timer);worker.removeEventListener('message',receive);data.error?reject(new Error('Graph worker failed')):resolve(data);};
     worker.addEventListener('message',receive);
-    worker.postMessage({root,events,version,ranking:false,authors:[],edges:{follows:{},mutes:{}},profile:'',lists:[],directory:null});
-  }),{root,events,version});
+    worker.postMessage({root,events,version,ranking:false,authors:[],edges:{follows:{},mutes:{}},profile:inspect?root:'',lists:[],directory:inspect?'following':null});
+  }),{root,events,version,inspect});
 }
 
 async function stored(page, bytes) {
@@ -74,7 +74,7 @@ export async function checkGraphCoverage(browser, base, output, contextOptions =
     ['valid-small', smallBytes], ['healthy', healthyBytes], ['healthy-partial', partialBytes], ['truncated', healthyBytes.slice(0,-1), 'malformed'],
     ['malformed-large', malformed, 'malformed'], ['duplicate-identity', duplicateGraphIdentity(healthyBytes), 'malformed'], ['bad-integrity', healthyBytes, 'integrity'],
     ['unavailable', healthyBytes, 'unavailable'], ['personal-cache', healthyBytes],
-    ['personal-during-fetch', concurrentBytes],
+    ['personal-during-fetch', concurrentBytes], ['personal-without-public', healthyBytes, 'unavailable'],
   ]) {
     if (only && name !== only) continue;
     const context = await browser.newContext({...contextOptions, serviceWorkers:'block'}), errors = [];
@@ -94,26 +94,28 @@ export async function checkGraphCoverage(browser, base, output, contextOptions =
       await context.route(fixture, route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Cache fixture</title>'}));
       await page.goto(fixture); await stored(page, Array.from(smallBytes));
     }
+    const fallback=!['healthy','healthy-partial','personal-cache','personal-during-fetch','personal-without-public'].includes(name);
     const started = performance.now();
     await page.goto(base, {waitUntil:'domcontentloaded'});
     if (name !== 'personal-cache') await expect.poll(()=>reads.blocks,{timeout:15000}).toBeGreaterThan(0);
-    if(name==='personal-during-fetch') {
+    if(name==='personal-during-fetch'||name==='personal-without-public') {
       await sendEvents(page, personalEvents, -880);
       // The first message is handled while signed snapshot bytes remain held.
       release();
     }
-    await expect.poll(async()=> (await stored(page)).length,{timeout:15000}).toBeGreaterThan(0);
+    if(!fallback)await expect.poll(async()=> (await stored(page)).length,{timeout:15000}).toBeGreaterThan(0);
     // The normal bootstrap has an eight-second deadline. Observe the persisted
     // graph after that deadline and the debounced save, including failure retries.
     await page.waitForTimeout(Math.max(0, 10_000 - (performance.now()-started)));
-    const retained = await SocialGraph.fromBinary(root, new Uint8Array(await stored(page)));
+    const saved=await stored(page);
+    const retained=fallback?undefined:await SocialGraph.fromBinary(root,saved);
     if (name === 'healthy' || name === 'healthy-partial') {
       assert.equal(retained.getListRevision(root,3)?.id, marker);
       assert.equal(retained.size().users, healthy.size().users);
       assert.equal(retained.getListRevision(root,3)?.complete, name !== 'healthy-partial');
-    } else if (name === 'personal-during-fetch') {
+    } else if (name === 'personal-during-fetch'||name === 'personal-without-public') {
       for(const event of personalEvents)assert.equal(retained.getListRevision(event.pubkey,event.kind)?.id,event.id);
-      assert.equal(retained.getListRevision(root,3)?.id,marker);
+      assert.equal(retained.getListRevision(root,3)?.id,name==='personal-during-fetch'?marker:provenance.snapshot.rootFollow.id);
       // A request after replacement must mutate the new authoritative graph.
       await sendEvents(page,[laterEvent],-881);
       await expect.poll(async()=>{
@@ -125,11 +127,16 @@ export async function checkGraphCoverage(browser, base, output, contextOptions =
       assert.equal(retained.getListRevision(root,3)?.id, marker);
       assert.equal(reads.names,0); assert.equal(reads.blocks,0);
     } else {
-      assert.equal(retained.getListRevision(root,3)?.id, provenance.snapshot.rootFollow.id, name+' must preserve the bundled root list');
-      assert.equal(retained.size().users, provenance.snapshot.users, name+' must preserve discovery coverage');
+      assert.equal(saved.length,0,name+' must not turn untouched fallback into a personal cache');
+      const reply=await sendEvents(page,[],-882,true);
+      assert.deepEqual(reply.profile.directory.keys,[...healthy.getFollowedByUser(root)].sort(),name+' retains bundled discovery in memory');
+      const names=reads.names;
+      await page.reload({waitUntil:'domcontentloaded'});
+      await expect.poll(()=>reads.names,{timeout:15000}).toBeGreaterThan(names);
+
     }
     assert.equal(reads.legacy,0); assert.deepEqual(errors,[]);
-    results.push({name, passed:true, users:retained.size().users, reads, elapsedMs:performance.now()-started});
+    results.push({name, passed:true, users:retained?.size().users, fallbackInMemory:fallback, reloadRetries:fallback, reads, elapsedMs:performance.now()-started});
     console.log(`PASS: ${name} (${Math.round(performance.now()-started)} ms)`);
     await page.evaluate(()=>window.graphFixtureWorkers.forEach(worker=>worker.terminate()));
     await context.unrouteAll({behavior:'ignoreErrors'});

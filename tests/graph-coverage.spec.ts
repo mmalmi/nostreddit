@@ -2,7 +2,7 @@ import {test, assertWorkerNetworkBlocked} from './helpers/isolatedBrowser';
 // @ts-expect-error Shared executable fixture runs against the built worker.
 import {checkGraphCoverage} from '../scripts/check-graph-coverage.mjs';
 
-for(const name of ['valid-small','healthy','healthy-partial','truncated','malformed-large','duplicate-identity','bad-integrity','unavailable','personal-cache','personal-during-fetch'])
+for(const name of ['valid-small','healthy','healthy-partial','truncated','malformed-large','duplicate-identity','bad-integrity','unavailable','personal-cache','personal-during-fetch','personal-without-public'])
 test(`default public graph: ${name}`, async ({browser,page,networkBoundary,baseURL},testInfo)=>{
   test.setTimeout(60_000);
   await assertWorkerNetworkBlocked(page,networkBoundary);
