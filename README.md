@@ -66,7 +66,7 @@ The reader uses the vendored `@hashtree/core` 0.4.0 archive from [Hashtree TS ru
 
 ## Reproducing and testing
 
-Use Node.js 26.12.1 and pnpm 10.28.2. The project was built on macOS arm64. It produces static HTML, CSS, JavaScript workers and data files. There is no server database. Dependencies and release tarballs are pinned in `pnpm-lock.yaml`.
+Use Node.js 26.13.1 and pnpm 10.28.2. The project was built on macOS arm64. It produces static HTML, CSS, JavaScript workers and data files. There is no server database. Dependencies and release tarballs are pinned in `pnpm-lock.yaml`.
 
 ```sh
 pnpm install --frozen-lockfile
