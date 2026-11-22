@@ -36,8 +36,8 @@ importers:
         specifier: 2.0.0
         version: 2.0.0
       nostr-pubsub:
-        specifier: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.38/nostr-pubsub-0.5.38.tgz
-        version: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.38/nostr-pubsub-0.5.38.tgz(nostr-tools@2.25.2(typescript@5.9.3))
+        specifier: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.40/nostr-pubsub-0.5.40.tgz
+        version: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.40/nostr-pubsub-0.5.40.tgz(nostr-tools@2.25.2(typescript@5.9.3))
       nostr-social-graph:
         specifier: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.2.5/nostr-social-graph-4.2.5.tgz
         version: https://github.com/mmalmi/nostr-social-graph/releases/download/v4.2.5/nostr-social-graph-4.2.5.tgz(typescript@5.9.3)
@@ -977,9 +977,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fips/tcp@https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.4/fips-tcp-0.2.3.tgz':
-    resolution: {integrity: sha512-0j7ucAgb7SFLkHHKMjJmR4v29psVmGoShiSgpba5IgJqAT/lJGTTKlHoAItKie+oNsiPGf/ww4YMuLTRYov2TA==, tarball: https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.4/fips-tcp-0.2.3.tgz}
-    version: 0.2.3
+  '@fips/tcp@https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-ts-v0.2.6/fips-tcp-0.2.6.tgz':
+    resolution: {integrity: sha512-lXQHNwTZEyXGYWqzRlNyKpb2UgNWJOon6HljbY1F1Ey49Q9IoE/kdF84gaTkrCpMPS8M/A6y5FTaFPOLl60+bw==, tarball: https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-ts-v0.2.6/fips-tcp-0.2.6.tgz}
+    version: 0.2.6
 
   '@hashtree/core@file:vendor/hashtree-core-0.4.0.tgz':
     resolution: {integrity: sha512-hdqjU1MoGjc55BL5WM93jgVxW7cYOWCWHcYUl5glUT8boEinFfmlmnhyjGp7TNwWgxZKQ7Rgag9XiyDnRUGBUA==, tarball: file:vendor/hashtree-core-0.4.0.tgz}
@@ -2164,9 +2164,9 @@ packages:
     resolution: {integrity: sha512-w2N8AE2bL5h7H0tOuTONOTprHS4/SVCP93lyipA/mekk+RogF3fZFh+s2lxLEDvW5tSjIJcBdX1lguX7wD5+2g==, tarball: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-reconcile-ts-v0.1.2/nostr-pubsub-reconcile-0.1.2.tgz}
     version: 0.1.2
 
-  nostr-pubsub@https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.38/nostr-pubsub-0.5.38.tgz:
-    resolution: {integrity: sha512-RfArNarYpySaZc43SCPmxlRNl4gybHd49iYWxe+y+9mJx7iR+URlh4Tc6iuff4eKJzhe174EH0p/wTiEXGYvrw==, tarball: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.38/nostr-pubsub-0.5.38.tgz}
-    version: 0.5.38
+  nostr-pubsub@https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.40/nostr-pubsub-0.5.40.tgz:
+    resolution: {integrity: sha512-nDvUCBEXacZRzM9lAEbK9Ofu03NQGAzuM4+IklXrUsvxJy8qv7vIwEDac9PbXxSjxwFuaXXwWJWYe6r4ltpO2g==, tarball: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.40/nostr-pubsub-0.5.40.tgz}
+    version: 0.5.40
     peerDependencies:
       nostr-tools: '>=2.23.3 <3'
 
@@ -3662,7 +3662,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@fips/tcp@https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.4/fips-tcp-0.2.3.tgz': {}
+  '@fips/tcp@https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-ts-v0.2.6/fips-tcp-0.2.6.tgz': {}
 
   '@hashtree/core@file:vendor/hashtree-core-0.4.0.tgz':
     dependencies:
@@ -4785,9 +4785,9 @@ snapshots:
 
   nostr-pubsub-reconcile@https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-reconcile-ts-v0.1.2/nostr-pubsub-reconcile-0.1.2.tgz: {}
 
-  nostr-pubsub@https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.38/nostr-pubsub-0.5.38.tgz(nostr-tools@2.25.2(typescript@5.9.3)):
+  nostr-pubsub@https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-ts-v0.5.40/nostr-pubsub-0.5.40.tgz(nostr-tools@2.25.2(typescript@5.9.3)):
     dependencies:
-      '@fips/tcp': https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-v0.2.4/fips-tcp-0.2.3.tgz
+      '@fips/tcp': https://github.com/mmalmi/fips-tcp/releases/download/fips-tcp-ts-v0.2.6/fips-tcp-0.2.6.tgz
       nostr-pubsub-reconcile: https://github.com/mmalmi/nostr-pubsub/releases/download/nostr-pubsub-reconcile-ts-v0.1.2/nostr-pubsub-reconcile-0.1.2.tgz
       nostr-tools: 2.25.2(typescript@5.9.3)
 
