@@ -10,8 +10,11 @@ test('startup defers optional views and revisiting settings keeps its controls m
     page.on('request', request => requests.push(new URL(request.url()).pathname));
     await page.goto('/');
     await expect(page.getByRole('main').getByRole('button', { name: 'Create a post', exact: true })).toBeVisible();
-    const optional = () => requests.filter(path => /\/(SettingsPage|ThreadComments|ProfileHeader|AccountPanel|Composer|ZapPanel)-.*\.js$/.test(path));
+    const optional = () => requests.filter(path => /\/(SettingsPage|ThreadComments|ProfileHeader|AccountPanel|Composer|ZapPanel|ImageViewer|TreeEmbed|zaps|remoteSigner|secp256k1|translation|pure)-.*\.js$/.test(path));
     expect(optional()).toEqual([]);
+    expect(await page.locator('link[rel="preload"][as="fetch"][href^="/socialGraph.bin"]').getAttribute('fetchpriority')).toBe('low');
+    await expect(page.locator('[data-route-active="true"] article').first()).toBeVisible();
+    expect(await page.locator('[data-route-active="true"] dialog.raw-event, [data-route-active="true"] [role="menuitem"]').count()).toBe(0);
     await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByRole('link', { name: 'Feeds', exact: true }).click();
     const sorting = page.getByLabel('Feed order', { exact: true });

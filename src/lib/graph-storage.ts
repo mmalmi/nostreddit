@@ -1,14 +1,8 @@
 // One authoritative local graph; server data is used only when this store is empty.
-const database = 'nostreddit-social-graph';
-async function open() {
-  return new Promise<IDBDatabase>((resolve,reject)=>{
-    const request=indexedDB.open(database,1);
-    request.onupgradeneeded=()=>request.result.createObjectStore('snapshots');
-    request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
-  });
-}
+import { idbDone, idbValue, openDb } from './idb';
+const open = () => openDb('nostreddit-social-graph', 1, db => db.createObjectStore('snapshots'));
 export async function readGraph():Promise<Uint8Array|undefined> {
-  const db=await open();try{return await new Promise((resolve,reject)=>{const request=db.transaction('snapshots').objectStore('snapshots').get('current');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}finally{db.close();}
+  const db=await open();try{return await idbValue(db.transaction('snapshots').objectStore('snapshots').get('current'));}finally{db.close();}
 }
 function sameGraph(current:unknown,expected:Uint8Array|undefined):boolean {
   if(expected===undefined)return current===undefined;
@@ -17,7 +11,7 @@ function sameGraph(current:unknown,expected:Uint8Array|undefined):boolean {
   return true;
 }
 export async function saveGraph(bytes:Uint8Array,expected:Uint8Array|undefined):Promise<boolean> {
-  const db=await open();try{return await new Promise<boolean>((resolve,reject)=>{
+  const db=await open();try{
     const tx=db.transaction('snapshots','readwrite'),store=tx.objectStore('snapshots');
     let saved=false;
     const read=store.get('current');
@@ -26,8 +20,9 @@ export async function saveGraph(bytes:Uint8Array,expected:Uint8Array|undefined):
       // never replace a personal graph that another tab saved in the meantime.
       if(sameGraph(read.result,expected)){store.put(bytes,'current');saved=true;}
     };
-    tx.oncomplete=()=>resolve(saved);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
-  });}finally{db.close();}
+    await idbDone(tx);
+    return saved;
+  }finally{db.close();}
 }
 export async function boundedGraphResponse(response:Response,limit=4*1024*1024):Promise<Uint8Array<ArrayBuffer>> {
   if(!response.ok||!response.body)throw new Error('Graph unavailable');

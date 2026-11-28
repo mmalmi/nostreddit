@@ -1,5 +1,6 @@
 import { getEventHash, verifyEvent } from 'nostr-tools/pure';
 import type { NostrEvent, NostrFilter, NostrRuntime, RuntimeSubscription } from 'nostr-pubsub';
+import { idbDone, idbValue, openDb } from './idb';
 import type { ContactQuery } from './relayTypes';
 
 const hex = /^[a-f0-9]{64}$/;
@@ -21,13 +22,8 @@ export function freshestContactLists(events: readonly NostrEvent[]): NostrEvent[
 
 let database: Promise<IDBDatabase|null> | undefined;
 function db(namespace: string) {
-  return database ??= new Promise<IDBDatabase>((resolve,reject) => {
-    const req = indexedDB.open('nostreddit-directory-v1:' + namespace,1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore('subjects',{keyPath:'subject'}).createIndex('saved','saved');
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+  return database ??= openDb('nostreddit-directory-v1:' + namespace, 1, db => {
+    db.createObjectStore('subjects',{keyPath:'subject'}).createIndex('saved','saved');
   }).catch(() => null);
 }
 
@@ -46,11 +42,7 @@ function verifyCached(event:NostrEvent) {
 async function cachedSubject(namespace:string, subject:string) {
   const database = await db(namespace);
   if (!database) return null;
-  const row = await new Promise<CachedDirectory|undefined>((resolve,reject) => {
-    const req = database.transaction('subjects').objectStore('subjects').get(subject);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  }).catch(() => undefined);
+  const row = await idbValue<CachedDirectory|undefined>(database.transaction('subjects').objectStore('subjects').get(subject)).catch(() => undefined);
   return row ? {...row,events:row.events.filter(verifyCached)} : null;
 }
 
@@ -69,28 +61,24 @@ function limitCache(subject:string, events:NostrEvent[]) {
 async function remember(namespace:string, subject:string, events:NostrEvent[], reverseChecked:boolean) {
   const database = await db(namespace);
   if (!database) return;
-  await new Promise<void>((resolve,reject) => {
-    // Merge inside one writer transaction so concurrent tabs can't roll the latest lists backward.
-    const tx = database.transaction('subjects','readwrite'), store = tx.objectStore('subjects');
-    const get = store.get(subject);
-    get.onsuccess = () => {
-      const old:CachedDirectory|undefined = get.result;
-      store.put({subject, events:limitCache(subject,[...(old?.events || []),...events]),
-        reverseChecked:reverseChecked || !!old?.reverseChecked, saved:Date.now()} satisfies CachedDirectory);
-      const count = store.count();
-      count.onsuccess = () => {
-        let remove = count.result-12;
-        if (remove <= 0) return;
-        const cursor = store.index('saved').openKeyCursor();
-        cursor.onsuccess = () => {
-          if (cursor.result && remove-- > 0) {store.delete(cursor.result.primaryKey); cursor.result.continue();}
-        };
+  // Merge inside one writer transaction so concurrent tabs can't roll the latest lists backward.
+  const tx = database.transaction('subjects','readwrite'), store = tx.objectStore('subjects');
+  const get = store.get(subject);
+  get.onsuccess = () => {
+    const old:CachedDirectory|undefined = get.result;
+    store.put({subject, events:limitCache(subject,[...(old?.events || []),...events]),
+      reverseChecked:reverseChecked || !!old?.reverseChecked, saved:Date.now()} satisfies CachedDirectory);
+    const count = store.count();
+    count.onsuccess = () => {
+      let remove = count.result-12;
+      if (remove <= 0) return;
+      const cursor = store.index('saved').openKeyCursor();
+      cursor.onsuccess = () => {
+        if (cursor.result && remove-- > 0) {store.delete(cursor.result.primaryKey); cursor.result.continue();}
       };
     };
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  };
+  await idbDone(tx);
 }
 
 type Completion = {sources: readonly {complete: boolean}[]};

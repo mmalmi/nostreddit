@@ -2,40 +2,12 @@
   import { isSettingsTab, type SettingsTab } from './lib/settings-tabs';
   import type { FeedHistoryState } from './lib/feed-history';
   import { onMount, tick } from 'svelte';
-  import * as nip19 from 'nostr-tools/nip19';
   import {
-    posts,
-    canSeeAuthor,
-    pendingWrites,
-    hiddenPostIds,
-    comments,
-    profiles,
-    account,
-    relayCounts,
-    notifications,
-    unreadNotificationCount,
-    readPostNotifications,
-    likes,
-    hotSignals,
-    createHotObserver,
-    follows,
-    mutes,
-    mute,
-    unlike,
-    loadDiscussionHistory,
-    loadHome,
-    loadFeed,
-    loadNetwork,
-    refreshFeed,
-    loadThread,
-    searchRelays,
-    loadProfile,
-    observe,
-    like,
-    follow,
-    signEvent,
-    relayUrls,
-    type Post,
+    posts, canSeeAuthor, pendingWrites, hiddenPostIds, comments, replyCounts, profiles, account,
+    relayCounts, notifications, unreadNotificationCount, readPostNotifications, likes, hotSignals,
+    createHotObserver, follows, mutes, mute, unlike, loadDiscussionHistory, loadHome, loadFeed,
+    loadNetwork, refreshFeed, loadThread, searchRelays, loadProfile, observe, like, follow,
+    signEvent, relayUrls, type Post,
   } from './lib/network';
   import { createSearchSession } from './lib/discovery/session';
   import { planPostSearch } from './lib/discovery/query';
@@ -43,13 +15,7 @@
   import type { SearchCursors } from './lib/discovery/relay-search';
   import { checkSearch, containsSearchSecret, searchTarget, searchTopics, secretSearchMessage, singleHashtag } from './lib/search';
   import { observeAuthors, observeEventAuthors, graphInfo, graphStatus, setGraphRanking } from './lib/graph';
-  import {
-    topics,
-    validTopic,
-    displayName,
-    readLocal,
-    writeLocal,
-  } from './lib/ui';
+  import { topics, validTopic, displayName, readLocal, writeLocal } from './lib/ui';
   import TopicIntro from './components/TopicIntro.svelte';
   import Mark from './components/Mark.svelte';
   import Icon from './components/Icon.svelte';
@@ -99,63 +65,45 @@
   export let returnTo: string | undefined = undefined;
   export let navigate: (path: string) => void;
   type Route = { page: string; value: string; connections?: Relationship; topic?: string };
+  function canonicalize(path: string) {
+    if (location.pathname !== path) history.replaceState(history.state, '', path + location.search + location.hash);
+  }
   function readRoute(): Route {
-    const [base, value = '', section, extra] = location.pathname
-      .replace(/^\/+|\/+$/g, '')
-      .split('/');
+    const [base, value = '', section, extra] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
     if (!base) return { page: 'home', value: '' };
     if (base === 'feeds' && /^[a-z0-9-]{1,64}$/.test(value) && !section) return { page: 'custom', value };
-    if ((base==='t' || base==='r') && !section) {
-      let slug='';
-      try {slug=topicSlug(decodeURIComponent(value));} catch { /* Invalid escaped topic. */ }
-      if(slug) {
-        const canonical=topicPath(slug);
-        if(location.pathname!==canonical) history.replaceState(history.state,'',canonical+location.search+location.hash);
-        return {page:'topic',value:slug};
-      }
+    if ((base === 't' || base === 'r') && !section) {
+      let slug = '';
+      try { slug = topicSlug(decodeURIComponent(value)); } catch { /* Invalid escaped topic. */ }
+      if (slug) { canonicalize(topicPath(slug)); return { page: 'topic', value: slug }; }
     }
     if (base === 'post' && section === undefined) {
       const id = postIdFromPath(value);
       if (id) {
-        const canonical = postUrl(id);
-        if (location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.search + location.hash);
+        canonicalize(postUrl(id));
         const params = new URLSearchParams(location.search);
-        const from = topicSlug(params.get('t') || params.get('r') || '');
-        return {page:'thread', value:id, topic:from || undefined};
+        return { page: 'thread', value: id, topic: topicSlug(params.get('t') || params.get('r') || '') || undefined };
       }
     }
     if (base === 'u' && !extra && (!section || section === 'followers' || section === 'following')) {
       const key = profileKeyFromPath(value);
       if (key) {
         const connections = section as Relationship | undefined;
-        const canonical = profileUrl(key, connections);
-        if (location.pathname !== canonical) history.replaceState(history.state, '', canonical + location.search + location.hash);
-        return {page:'profile', value:key, connections};
+        canonicalize(profileUrl(key, connections));
+        return { page: 'profile', value: key, connections };
       }
     }
     if (base === 'search') {
       const params = new URLSearchParams(location.search);
-      const query = params.get('q')?.trim() ?? '';
-      const topic = params.get('t') || '';
+      const query = params.get('q')?.trim() ?? '', topic = params.get('t') || '';
       if (containsSearchSecret(query) || containsSearchSecret(topic)) {
         history.replaceState(history.state, '', '/search');
-        return {page:base, value:''};
+        return { page: base, value: '' };
       }
-      return {page:base, value:query.slice(0, 128), topic:topicSlug(topic) || undefined};
+      return { page: base, value: query.slice(0, 128), topic: topicSlug(topic) || undefined };
     }
     if (base === 'settings' && !section && (!value || isSettingsTab(value))) return { page: base, value };
-    return {
-      page: [
-        'topics',
-        'following',
-        'saved',
-        'network',
-        'notifications',
-      ].includes(base) && !value
-        ? base
-        : 'missing',
-      value: '',
-    };
+    return { page: ['topics', 'following', 'saved', 'network', 'notifications'].includes(base) && !value ? base : 'missing', value: '' };
   }
   const orders = [
     { name: 'Hot', icon: 'hot' },
@@ -480,68 +428,77 @@
   }
   $: pageVisible = active && documentVisible;
   $: if (mounted && pageVisible && route.page === 'search') startSearch();
+  const isFeedPage = ['home','topic','following','network','saved','custom','profile','search'].includes(route.page) && !route.connections;
+  let source: Post[] = [], candidates: Post[] = [], allowedCandidates: Post[] = [];
+  let hotOptions: Parameters<typeof rankHot>[1] = {};
+  let rankedById = new Map<string, Post>();
+  $: savedIds = new Set(saved.map(s => s.id));
   $: if (active) observeEventAuthors(saved.map(p => p.pubkey));
   $: visibleSaved = saved.filter(p => $canSeeAuthor(p.pubkey));
-  $: thread = [...$posts, ...$comments, ...visibleSaved].find(
-    (p) => p.id === route.value,
-  );
+  $: thread = route.page === 'thread'
+    ? $posts.find(p => p.id === route.value) ?? $comments.find(p => p.id === route.value) ?? visibleSaved.find(p => p.id === route.value)
+    : undefined;
   $: if (mounted && pageVisible && !modal && route.page === 'thread' && thread) {
     readPostNotifications(thread.id, $notifications);
   }
   $: threadTopic = thread && route.topic && matchesTopic(thread,route.topic) ? route.topic : thread?.topic;
-  $: profile = $profiles[route.value];
+  $: profile = route.page === 'profile' ? $profiles[route.value] : undefined;
   $: profName = route.page === 'profile' ? ($canSeeAuthor(route.value) ? displayName(route.value,profile) : 'Profile') : '';
-  $: source = savedFeed ? visibleSaved : feedTopic
+  $: if (active && isFeedPage) source = savedFeed ? visibleSaved : feedTopic
     ? [...$posts.filter(p => matchesTopic(p,feedTopic)), ...$comments.filter(p => mentionsTopic(p,feedTopic))] : $posts;
   $: plan = route.page === 'search' && route.value ? planPostSearch(route.value) : undefined;
-  $: lexical = new Map(plan ? source.map(p => [p.id, keywordScore(plan!, p, displayName(p.pubkey, $profiles[p.pubkey]))] as const) : []);
+  $: lexical = active && plan ? new Map(source.map(p => [p.id, keywordScore(plan!, p, displayName(p.pubkey, $profiles[p.pubkey]))] as const)) : new Map<string, number>();
   $: assisted = plan && related && allowModel(plan) ? plan : undefined;
   $: if (assisted && !pageVisible) assistance.pause();
-    else assistance.update(assisted, assisted ? [...source.filter(p => remoteIds.has(p.id)), ...source.filter(p => !remoteIds.has(p.id))]
+    else if (active) assistance.update(assisted, assisted ? [...source.filter(p => remoteIds.has(p.id)), ...source.filter(p => !remoteIds.has(p.id))]
       .filter(p => (lexical.get(p.id) ?? -1) >= 0) : []);
   $: minimum = semanticFloor(plan, $assistance.scores);
-  $: matchScores = new Map([...lexical].map(([id, score]) => [id, relevance(score, $assistance.scores.get(id), minimum)]));
+  $: matchScores = active && plan ? new Map([...lexical].map(([id, score]) => [id, relevance(score, $assistance.scores.get(id), minimum)])) : new Map<string, number>();
   $: activeOrder = route.page === 'search' ? searchOrder : selectedFeed?.order ?? sorting;
-  $: candidates = source.filter((p) => {
-    if (selectedFeed) return matchesFeed(p, selectedFeed, $follows, $graphInfo[p.pubkey]?.distance);
-    if (route.page === 'custom') return false;
-    if (route.page === 'profile') return p.pubkey === route.value;
-    if (route.page === 'search') return (matchScores.get(p.id) ?? 0) > 0;
-    return true;
-  });
-  $: replyCounts = $comments.reduce<Record<string, number>>((m, c) => {
-    m[c.root] = (m[c.root] || 0) + 1;
-    return m;
-  }, {});
-  $: allowedCandidates = candidates.filter(p =>
-    (route.page === 'profile' || (!$graphInfo[p.pubkey]?.muted && !$mutes.includes(p.pubkey))) &&
-    (route.page !== 'network' || ($graphInfo[p.pubkey]?.distance ?? 99) <= 2));
+  $: if (active && isFeedPage) {
+    const followSet = selectedFeed?.source === 'following' ? new Set($follows) : $follows;
+    candidates = source.filter((p) => {
+      if (selectedFeed) return matchesFeed(p, selectedFeed, followSet, $graphInfo[p.pubkey]?.distance);
+      if (route.page === 'custom') return false;
+      if (route.page === 'profile') return p.pubkey === route.value;
+      if (route.page === 'search') return (matchScores.get(p.id) ?? 0) > 0;
+      return true;
+    });
+  }
+  $: if (active && isFeedPage) {
+    const muteSet = new Set($mutes);
+    allowedCandidates = candidates.filter(p =>
+      (route.page === 'profile' || (!$graphInfo[p.pubkey]?.muted && !muteSet.has(p.pubkey))) &&
+      (route.page !== 'network' || ($graphInfo[p.pubkey]?.distance ?? 99) <= 2));
+  }
   // Author queries include replies. Read a few more pages to fill the visible
   // list with top-level discussions, then let the reader choose to continue.
   $: if (pageVisible && route.page === 'profile' && !route.connections && $canSeeAuthor(route.value)
       && canFillHistory && allowedCandidates.length < limit) historyFeed?.more('automatic');
-  $: hotActive = activeOrder === 'Hot' && ['home','topic','following','network','saved','custom','profile','search'].includes(route.page) && !route.connections;
+  $: hotActive = activeOrder === 'Hot' && isFeedPage;
   $: hotScope = hotActive ? `${route.page}:${route.value}:${feedScope}:${$account?.pubkey || 'guest'}:${hotRefresh}` : '';
   $: if(mounted && active)setGraphRanking(hotActive && $hotPreferences.connectionStrength);
-  $: hotOptions = {now:Date.now()/1000,signals:$hotSignals,follows:new Set($follows),saved:visibleSaved,
+  $: if (active && hotActive) hotOptions = {now:Date.now()/1000,signals:$hotSignals,follows:new Set($follows),saved:visibleSaved,
     topic:route.page === 'topic' ? route.value : '', seen:new Set(seenHot),
     distance:(key:string)=>$graphInfo[key]?.distance, knownBy:(key:string)=>$graphInfo[key]?.followedByFriends ?? 0,
     influence:$hotPreferences.connectionStrength ? (key:string)=>$graphInfo[key]?.influence : undefined};
-  $: if (active) baseHot = hotActive ? rankHot(allowedCandidates,hotOptions) : [];
-  $: discoveryActors = $follows.length ? $follows : Object.keys($graphInfo).filter(key=>$graphInfo[key].distance===1);
-  $: if(mounted) hotObserver.update(allowedCandidates.map(p=>p.id),pageVisible ? hotScope : '',discoveryActors);
-  $: hotInterest = hotQuery(route.page === 'topic' ? route.value : '', $hotPreferences.interests,visibleSaved);
+  $: if (active && isFeedPage) baseHot = hotActive ? rankHot(allowedCandidates,hotOptions) : [];
+  $: discoveryActors = active && hotActive && route.page === 'home'
+    ? ($follows.length ? $follows : Object.keys($graphInfo).filter(key=>$graphInfo[key].distance===1))
+    : [];
+  $: if(mounted) hotObserver.update(active && hotActive ? allowedCandidates.map(p=>p.id) : [],pageVisible ? hotScope : '',discoveryActors);
+  $: hotInterest = active && hotActive ? hotQuery(route.page === 'topic' ? route.value : '', $hotPreferences.interests,visibleSaved) : '';
   $: aiHotActive = hotActive && ['home','topic'].includes(route.page) && pageVisible && $hotPreferences.ai;
   $: aiCandidates = aiHotActive ? hotCandidates(allowedCandidates,baseHot,hotInterest) : [];
   $: hotAssistance.update(aiHotActive ? hotInterest : '',aiCandidates,hotScope);
-  $: if (active) ranked = hotActive ? ($hotAssistance.scores.size ? rankHot(allowedCandidates,{...hotOptions,ai:$hotAssistance.scores}) : baseHot)
+  $: if (active && isFeedPage) ranked = hotActive ? ($hotAssistance.scores.size ? rankHot(allowedCandidates,{...hotOptions,ai:$hotAssistance.scores}) : baseHot)
     : [...allowedCandidates].sort((a,b) => {
       const score = (p:Post) => activeOrder === 'Best match' ? matchScores.get(p.id) ?? 0 : activeOrder === 'New' ? p.created_at
-        : ($likes[p.id]?.length || 0) + (replyCounts[p.id] || 0);
+        : ($likes[p.id]?.length || 0) + ($replyCounts.roots.get(p.id) || 0);
       return score(b)-score(a) || b.created_at-a.created_at || a.id.localeCompare(b.id);
     });
-  $: rankedById = new Map(ranked.map(p=>[p.id,p]));
-  $: stableFeed = ['home','topic','following','network','saved','custom','profile'].includes(route.page) && !route.connections;
+  $: if (active && isFeedPage) rankedById = new Map(ranked.map(p=>[p.id,p]));
+  $: stableFeed = isFeedPage && route.page !== 'search';
   $: if (mounted) feedPresentation.update(`${activeOrder}:${feedScope}:${$account?.pubkey || 'guest'}`,
     ranked.map(p=>p.id), stableFeed && pageVisible,
     hotActive && navigator.onLine !== false ? $hotSignals.some(signal=>rankedById.has(signal.target)) : undefined);
@@ -559,73 +516,56 @@
     notify('Hot refreshed');
     window.scrollTo({top:0,behavior:'instant'});
   }
-  $: if (mounted && active && route.page !== 'thread')
+  $: if (mounted && active && isFeedPage)
     observeAuthors([
       ...(route.page === 'profile' ? [route.value] : []),
       ...candidates.slice(0, 240).map((p) => p.pubkey),
     ]);
-  $: ids = (route.connections || ['thread','topics','missing','notifications','settings'].includes(route.page)
-    ? [] : visible.slice(0, 48).map((p) => p.id))
-    .sort()
-    .join(',');
+  $: ids = (isFeedPage ? visible.slice(0, 48).map((p) => p.id) : []).sort().join(',');
   $: if (mounted) watch(active ? ids : '');
-  $: discovered = [
+  $: discovered = route.page === 'topics' || route.page === 'search' ? [
     ...new Set([
       ...$seenTopics.map(t=>t.slug),
       ...topics.map((t) => t.slug),
     ]),
-  ].filter(validTopic);
+  ].filter(validTopic) : [];
   $: directoryTopic = topicSlug(directoryFilter.trim().replace(/^[tr]\//i,''));
   $: scopedHashtag = feedTopic && route.page === 'search' ? singleHashtag(route.value) : '';
   $: topicMatches = scopedHashtag && scopedHashtag !== feedTopic ? [scopedHashtag]
     : plan && !feedTopic ? searchTopics(plan, discovered) : [];
-  $: title =
-    route.page === 'home'
-      ? 'Home'
-      : selectedFeed ? selectedFeed.name : route.page === 'topic'
-        ? 't/' + route.value
-        : route.page === 'following'
-          ? 'Following'
-          : route.page === 'network'
-            ? 'In network'
-            : route.page === 'saved'
-              ? 'Saved posts'
-              : route.page === 'settings'
-                ? 'Settings'
-                : route.page === 'notifications'
-                ? 'Notifications'
-                : route.page === 'topics'
-                  ? 'Topics'
-                  : route.page === 'search'
-                    ? 'Search results'
-                    : route.page === 'profile'
-                      ? (route.connections ? (route.connections === 'followers' ? 'Known followers' : 'Following') + ' · ' + profName : profName)
-                      : route.page === 'thread'
-                        ? 'Discussion'
-                        : 'Page not found';
-  $: subtitle =
-    route.page === 'custom' && selectedFeed ? feedSummary(selectedFeed) : route.page === 'following'
-          ? 'Conversations from people you follow.'
-          : route.page === 'network'
-            ? 'People within two steps of your social graph.'
-            : route.page === 'saved'
-              ? 'Posts bookmarked in this browser.'
-              : route.page === 'notifications'
-                ? 'Replies, mentions, reactions, and tips for your profile.'
-                : route.page === 'topics'
-                  ? 'Browse a topic or enter any tag to open it.'
-                  : route.page === 'search'
-                    ? feedTopic ? 'Discussions in t/' + feedTopic + '.' : 'Discussions and topics.'
-                    : '';
+  const pageTitles: Record<string, string> = {
+    home:'Home', following:'Following', network:'In network', saved:'Saved posts',
+    settings:'Settings', notifications:'Notifications', topics:'Topics', search:'Search results', thread:'Discussion',
+  };
+  const pageSubtitles: Record<string, string> = {
+    following:'Conversations from people you follow.',
+    network:'People within two steps of your social graph.',
+    saved:'Posts bookmarked in this browser.',
+    notifications:'Replies, mentions, reactions, and tips for your profile.',
+    topics:'Browse a topic or enter any tag to open it.',
+  };
+  $: title = route.page === 'home' ? 'Home'
+    : selectedFeed ? selectedFeed.name
+    : route.page === 'topic' ? 't/' + route.value
+    : route.page === 'profile' ? (route.connections ? (route.connections === 'followers' ? 'Known followers' : 'Following') + ' · ' + profName : profName)
+    : pageTitles[route.page] ?? 'Page not found';
+  $: subtitle = route.page === 'custom' && selectedFeed ? feedSummary(selectedFeed)
+    : route.page === 'search' ? (feedTopic ? 'Discussions in t/' + feedTopic + '.' : 'Discussions and topics.')
+    : pageSubtitles[route.page] ?? '';
   $: if (active) document.title =
     (route.page === 'thread' && thread ? thread.title.slice(0, 70) : title) +
     ' · Nostreddit';
+  async function withBusy(key: string, work: () => Promise<void>, fallback: string) {
+    if (busy.has(key)) return;
+    busy = new Set(busy).add(key);
+    try { await work(); }
+    catch (e) { notify(e instanceof Error ? e.message : fallback); }
+    finally { const next = new Set(busy); next.delete(key); busy = next; }
+  }
   async function action(kind: string, p: Post) {
     if (kind === 'save') {
-      const exists = saved.some((x) => x.id === p.id);
-      saved = exists
-        ? saved.filter((x) => x.id !== p.id)
-        : [p, ...saved].slice(0, 250);
+      const exists = savedIds.has(p.id);
+      saved = exists ? saved.filter(x => x.id !== p.id) : [p, ...saved].slice(0, 250);
       writeLocal('saved', saved);
       notify(exists ? 'Bookmark removed' : 'Post saved');
       return;
@@ -637,77 +577,31 @@
         try { await navigator.share({url}); return; }
         catch (error) { if (error instanceof Error && error.name === 'AbortError') return; }
       }
-      try {
-        await navigator.clipboard.writeText(url);
-        notify('Post link copied');
-      } catch {
-        window.prompt('Copy post link', url);
-      }
+      try { await navigator.clipboard.writeText(url); notify('Post link copied'); }
+      catch { window.prompt('Copy post link', url); }
       return;
     }
-    if (kind === 'upvotes' || kind === 'tips') {
-      reactionView = {post:p, tab:kind};
-      showModal('reactions');
-      return;
-    }
-    if (kind === 'zap') {
-      zapPost = p;
-      showModal('zap');
-      return;
-    }
-    if (!$account) {
-      showModal('account');
-      return;
-    }
-    const key = kind + p.id;
-    if (busy.has(key)) return;
-    busy = new Set([...busy, key]);
-    try {
+    if (kind === 'upvotes' || kind === 'tips') { reactionView = {post:p, tab:kind}; showModal('reactions'); return; }
+    if (kind === 'zap') { zapPost = p; showModal('zap'); return; }
+    if (!$account) { showModal('account'); return; }
+    await withBusy(kind + p.id, async () => {
       if (kind === 'like') {
-        if (($likes[p.id] || []).includes($account.pubkey)) await unlike(p);
+        if (($likes[p.id] || []).includes($account!.pubkey)) await unlike(p);
         else await like(p);
       }
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Could not publish your action.');
-    } finally {
-      busy.delete(key);
-      busy = new Set(busy);
-    }
+    }, 'Could not publish your action.');
   }
   async function toggleFollow(key: string, enabled = !$follows.includes(key)) {
-    if (!$account) {
-      showAccountAfter = 'follow:' + key;
-      showModal('account');
-      return;
-    }
-    if (busy.has('follow')) return;
-    busy = new Set([...busy, 'follow']);
-    try {
-      await follow(key, enabled);
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Could not update follows.');
-    } finally {
-      busy.delete('follow');
-      busy = new Set(busy);
-    }
+    if (!$account) { showAccountAfter = 'follow:' + key; showModal('account'); return; }
+    await withBusy('follow', () => follow(key, enabled), 'Could not update follows.');
   }
   async function toggleMute(key: string) {
-    if (!$account) {
-      showModal('account');
-      return;
-    }
-    if (busy.has('mute')) return;
-    busy = new Set([...busy, 'mute']);
-    try {
+    if (!$account) { showModal('account'); return; }
+    await withBusy('mute', async () => {
       const muted = $mutes.includes(key);
       await mute(key, !muted);
       notify(muted ? 'Author unmuted' : 'Author muted');
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Could not update mute list.');
-    } finally {
-      busy.delete('mute');
-      busy = new Set(busy);
-    }
+    }, 'Could not update mute list.');
   }
   function changeOrder(name: string) {
     if (selectedFeed && selectedFeed.id !== 'home' && $feedPreferences.some(feed => feed.id === selectedFeed.id)) {
@@ -716,15 +610,6 @@
     }
     sorting = name;
     writeLocal('sort', name);
-  }
-  function profileKey(query: string) {
-    if (/^[a-f0-9]{64}$/.test(query)) return query;
-    try {
-      const value = nip19.decode(query);
-      return value.type === 'npub' ? value.data : '';
-    } catch {
-      return '';
-    }
   }
 </script>
 
@@ -736,6 +621,8 @@
     </button>
   {/if}
 {/snippet}
+
+{#snippet loading()}<p class="state loading-state" role="status">Loading…</p>{/snippet}
 
 {#snippet componentError()}
   <p class="state" role="alert">Could not load this page.</p>
@@ -877,32 +764,20 @@
     {/if}
     {#if route.connections}
       {#key route.value + route.connections}
-              {#await import('./components/ProfileConnections.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: ProfileConnections}}
-        <ProfileConnections pubkey={route.value} direction={route.connections}/>
-      {:catch}
-        {@render componentError()}
-      {/await}
+        {#await import('./components/ProfileConnections.svelte')}{@render loading()}
+        {:then {default: ProfileConnections}}<ProfileConnections pubkey={route.value} direction={route.connections}/>
+        {:catch}{@render componentError()}{/await}
       {/key}
     {:else if route.page === 'settings'}
-            {#await import('./components/SettingsPage.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: SettingsPage}}
-        <SettingsPage {active} tab={route.value as SettingsTab | ''} {sorting} {showPreviews} onOrderChange={changeOrder}
+      {#await import('./components/SettingsPage.svelte')}{@render loading()}
+      {:then {default: SettingsPage}}<SettingsPage {active} tab={route.value as SettingsTab | ''} {sorting} {showPreviews} onOrderChange={changeOrder}
         onSignOut={showProfileSignOut}
         onPreviewsChange={(value) => { showPreviews = value; writeLocal('showPreviews', value); }} />
-      {:catch}
-        {@render componentError()}
-      {/await}
+      {:catch}{@render componentError()}{/await}
     {:else if route.page === 'notifications'}
-            {#await import('./components/Notifications.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: Notifications}}
-        <Notifications active={pageVisible && !modal && !menu} onSignIn={() => showModal('account')} />
-      {:catch}
-        {@render componentError()}
-      {/await}
+      {#await import('./components/Notifications.svelte')}{@render loading()}
+      {:then {default: Notifications}}<Notifications active={pageVisible && !modal && !menu} onSignIn={() => showModal('account')} />
+      {:catch}{@render componentError()}{/await}
     {:else if route.page === 'topics'}
       <label class="directory-input"
         ><Icon name="search" /><input
@@ -950,18 +825,14 @@
         <Card
           post={thread}
           contextTopic={threadTopic}
-          saved={saved.some((s) => s.id === thread.id)}
+          saved={savedIds.has(thread.id)}
           full
           onaction={action}
         />
         {#key thread.id}
-                {#await import('./components/ThreadComments.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: ThreadComments}}
-        <ThreadComments routeActive={active} {thread} {saved} onaction={action} onSignIn={() => showModal('account')} {notify}/>
-      {:catch}
-        {@render componentError()}
-      {/await}
+          {#await import('./components/ThreadComments.svelte')}{@render loading()}
+          {:then {default: ThreadComments}}<ThreadComments routeActive={active} {thread} {saved} onaction={action} onSignIn={() => showModal('account')} {notify}/>
+          {:catch}{@render componentError()}{/await}
         {/key}
       {:else if $hiddenPostIds.has(route.value) || saved.some(p => p.id === route.value && !$canSeeAuthor(p.pubkey))}
         <div class="empty loading-state"><Icon name="globe" size={28}/><h2>{$graphStatus === 'loading' ? 'Checking your network…' : 'Outside your graph settings'}</h2>
@@ -992,32 +863,22 @@
       {/await}
       {/if}
       {#if route.page === 'search'}
+        {@const searchedProfile = !feedTopic ? profileKeyFromPath(route.value) : null}
         <div class="search-assist">
           <label><input type="checkbox" checked={related} onchange={e => {
             related = e.currentTarget.checked; writeLocal('relatedSearch', related);
           }}/> Match related meanings</label>
-          <small role="status" class:loading-state={['loading','ranking'].includes($assistance.status)}>{$assistance.status === 'loading' ? 'Preparing on-device search…' :
-            $assistance.status === 'ranking' ? 'Finding related discussions…' :
-            $assistance.status === 'ready' ? 'Ranked on this device' :
-            $assistance.status === 'unavailable' ? 'On-device model unavailable. Showing keyword matches.' : 'Keyword matches'}</small>
+          <small role="status" class:loading-state={['loading','ranking'].includes($assistance.status)}>
+            {({idle:'Keyword matches', loading:'Preparing on-device search…', ranking:'Finding related discussions…', ready:'Ranked on this device',
+              unavailable:'On-device model unavailable. Showing keyword matches.'})[$assistance.status]}
+          </small>
         </div>
         <div class="relay-search">
           {#if !searching}<button class="outline compact" disabled={route.value.length < 2} onclick={() => expandSearch()}><Icon name="search" size={15}/>{searchMessage ? 'Try again' : 'Search again'}</button>{/if}
           <small role="status" class:loading-state={searching}>{searching ? 'Searching discussions…' : searchMessage || (searched ? (ordered.length ? `Found ${ordered.length} matching discussion${ordered.length === 1 ? '' : 's'}.` : canSearchMore ? 'No matches in this batch. Load more to search older discussions.' : 'No matching discussions within your current filters.') : 'Enter at least two characters to search.')}</small>
         </div>
-        {#if !feedTopic && profileKey(route.value)}<a
-            class="search-profile"
-            href={profileUrl(profileKey(route.value))}
-            ><Icon name="user" /> Open Nostr profile <Icon
-              name="next"
-              size={15}
-            /></a
-          >{/if}
-        {#if topicMatches.length}<div class="search-topics">
-            {#each topicMatches as slug}<a href={topicPath(slug)}
-                ><TopicIcon {slug} small />{feedTopic ? 'Open ' : ''}t/{slug}</a
-              >{/each}
-          </div>{/if}
+        {#if searchedProfile}<a class="search-profile" href={profileUrl(searchedProfile)}><Icon name="user" /> Open Nostr profile <Icon name="next" size={15} /></a>{/if}
+        {#if topicMatches.length}<div class="search-topics">{#each topicMatches as slug}<a href={topicPath(slug)}><TopicIcon {slug} small />{feedTopic ? 'Open ' : ''}t/{slug}</a>{/each}</div>{/if}
       {/if}
       {#if ['home','topic','following','network','custom'].includes(route.page)}<FeedComposer oncreate={compose}/>{/if}
       <div class="feed-heading">
@@ -1064,63 +925,31 @@
             contextTopic={feedTopic}
             {showPreviews}
             post={p}
-            saved={saved.some((s) => s.id === p.id)}
+            saved={savedIds.has(p.id)}
             onaction={action}
           />{:else}
           <!-- A connected relay can still be waiting for posts. Keep the delay
                for the entire empty interval, including loading/status changes. -->
           <!-- Posts held for their first ranked paint are not an empty feed. -->
-          <div class="empty" style:display={stableFeed && ranked.length ? 'none' : undefined} class:loading-state={savedFeed ? saved.length > 0 :
-            !followingFeed || !!$account}>
-            <span class="empty-icon"
-              ><Icon
-                name={savedFeed
-                  ? 'save'
-                  : followingFeed
-                    ? 'users'
-                    : 'wave'}
-                size={24}
-              /></span
-            >
-            {#if savedFeed && !saved.length}<h2>No saved posts yet</h2>
-              <p>Use the bookmark on any post to keep it here.</p>
-              <a href="/">Browse the feed</a>
-            {:else if followingFeed && !$account}<h2>
-                Your following feed
-              </h2>
-              <p>Sign in to read posts from the people you follow.</p>
-              <button
-                class="primary compact"
-                onclick={() => showModal('account')}>Sign in</button
-              >
-            {:else if followingFeed && !$follows.length}<h2>You aren’t following anyone yet</h2>
-              <p>Follow people from their profiles to see their posts here.</p>
-              <a href="/">Explore the feed</a>
-            {:else if followingFeed}<h2>
-                No posts from follows yet
-              </h2>
-              <p>Your filters may also hide some posts.</p>
-              <a href="/">Explore the feed</a>
-            {:else if route.page === 'search'}<h2>{searching ? 'Looking for matches…' : 'No matching posts'}</h2>
-              <p>{searching ? 'Fetching discussions for your search.' : 'Try a different search or explore a topic.'}</p>
-              <a href="/topics">Browse topics</a>
-            {:else if route.page === 'network' && $graphStatus === 'unavailable'}<h2
-              >
-                Social graph unavailable
-              </h2>
-              <p>You can still browse all public discussions.</p>
-              <a href="/">Open home feed</a>
+          <div class="empty" style:display={stableFeed && ranked.length ? 'none' : undefined} class:loading-state={savedFeed ? saved.length > 0 : !followingFeed || !!$account}>
+            <span class="empty-icon"><Icon name={savedFeed ? 'save' : followingFeed ? 'users' : 'wave'} size={24} /></span>
+            {#if savedFeed && !saved.length}
+              <h2>No saved posts yet</h2><p>Use the bookmark on any post to keep it here.</p><a href="/">Browse the feed</a>
+            {:else if followingFeed && !$account}
+              <h2>Your following feed</h2><p>Sign in to read posts from the people you follow.</p><button class="primary compact" onclick={() => showModal('account')}>Sign in</button>
+            {:else if followingFeed && !$follows.length}
+              <h2>You aren’t following anyone yet</h2><p>Follow people from their profiles to see their posts here.</p><a href="/">Explore the feed</a>
+            {:else if followingFeed}
+              <h2>No posts from follows yet</h2><p>Your filters may also hide some posts.</p><a href="/">Explore the feed</a>
+            {:else if route.page === 'search'}
+              <h2>{searching ? 'Looking for matches…' : 'No matching posts'}</h2><p>{searching ? 'Fetching discussions for your search.' : 'Try a different search or explore a topic.'}</p><a href="/topics">Browse topics</a>
+            {:else if route.page === 'network' && $graphStatus === 'unavailable'}
+              <h2>Social graph unavailable</h2><p>You can still browse all public discussions.</p><a href="/">Open home feed</a>
             {:else if selectedFeed && (route.page === 'custom' || selectedFeed.topics.length || selectedFeed.keywords.length || selectedFeed.exclude.length || selectedFeed.authors.length)}
-              <h2>No posts match this feed yet</h2><p>Try adjusting your filters or check back for new discussions.</p>
-              <button class="outline compact" onclick={() => customize(selectedFeed)}>Edit feed</button>
-            {:else}<h2>
-                {route.page === 'topic' ? 'No discussions here yet' : 'Nothing seen yet'}
-              </h2>
-              {#if route.page === 'topic'}<p>Start a conversation in t/{route.value}.</p>{/if}
-              {#if route.page === 'topic'}<button
-                  class="primary compact"
-                  onclick={()=>compose()}>Create a post</button
-                >{:else}<a href="/topics">Explore topics</a>{/if}
+              <h2>No posts match this feed yet</h2><p>Try adjusting your filters or check back for new discussions.</p><button class="outline compact" onclick={() => customize(selectedFeed)}>Edit feed</button>
+            {:else}
+              <h2>{route.page === 'topic' ? 'No discussions here yet' : 'Nothing seen yet'}</h2>
+              {#if route.page === 'topic'}<p>Start a conversation in t/{route.value}.</p><button class="primary compact" onclick={()=>compose()}>Create a post</button>{:else}<a href="/topics">Explore topics</a>{/if}
             {/if}
           </div>{/each}
       </section>
@@ -1179,92 +1008,41 @@
     bind:this={dialog}
     class="modal"
     class:post-modal={modal==='compose'}
-    aria-label={modal === 'reactions' ? 'Reactions' : modal === 'feeds' ? 'Customize feeds' : modal === 'account' || modal === 'signout'
-      ? 'Nostr profile'
-      : modal === 'compose'
-        ? 'Create post'
-        : modal === 'zap'
-          ? 'Tip post'
-          : 'Edit profile'}
-    oncancel={(e) => {
-      e.preventDefault();
-      closeModal();
-    }}
+    aria-label={({reactions:'Reactions', feeds:'Customize feeds', account:'Nostr profile', signout:'Nostr profile', compose:'Create post', zap:'Tip post'})[modal] ?? 'Edit profile'}
+    oncancel={(e) => { e.preventDefault(); closeModal(); }}
     onpointerdown={event => { pressedBackdrop = onBackdrop(event); }}
     onpointercancel={() => { pressedBackdrop = false; }}
-    onclick={event => {
-      if (pressedBackdrop && onBackdrop(event)) closeModal();
-      pressedBackdrop = false;
-    }}
+    onclick={event => { if (pressedBackdrop && onBackdrop(event)) closeModal(); pressedBackdrop = false; }}
   >
-    <button class="modal-close" aria-label="Close dialog" onclick={closeModal}
-      ><Icon name="close" size={18} /></button
-    >
+    <button class="modal-close" aria-label="Close dialog" onclick={closeModal}><Icon name="close" size={18} /></button>
     {#if modal === 'reactions' && reactionView}
-      {#await import('./components/PostReactions.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: PostReactions}}
-        <PostReactions post={reactionView.post} initialTab={reactionView.tab}/>
+      {#await import('./components/PostReactions.svelte')}{@render loading()}
+      {:then {default: PostReactions}}<PostReactions post={reactionView.post} initialTab={reactionView.tab}/>
       {:catch}{@render componentError()}{/await}
     {:else if modal === 'feeds'}
-      {#await import('./components/FeedManager.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: FeedManager}}
-        <FeedManager initialFeed={editingFeed} ondone={closeModal}/>
+      {#await import('./components/FeedManager.svelte')}{@render loading()}
+      {:then {default: FeedManager}}<FeedManager initialFeed={editingFeed} ondone={closeModal}/>
       {:catch}{@render componentError()}{/await}
-    {:else if modal === 'account' || modal === 'signout'}      {#await import('./components/AccountPanel.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: AccountPanel}}
-        <AccountPanel onclose={accountDone} {notify} {signOutProfileId} />
-      {:catch}
-        {@render componentError()}
-      {/await}
-    {:else if modal === 'compose' && $account}      {#await import('./components/Composer.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: Composer}}
-        <Composer
-        initialTopic={route.page === 'topic' ? route.value : ''}
-        initialMode={composeMode}
-        owner={$account.pubkey}
-        oncancel={closeModal}
-        onpublish={(p) => {
-          closeModal();
-          go(postUrl(p.id));
-          notify('Post saved');
-        }}
-      />
-      {:catch}
-        {@render componentError()}
-      {/await}
-    {:else if modal === 'profile' && $account}      {#await import('./components/EditProfile.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: EditProfile}}
-        <EditProfile
-        owner={$account.pubkey}
-        ondone={() => {
-          closeModal();
-          notify('Profile updated');
-        }}
-      />
-      {:catch}
-        {@render componentError()}
-      {/await}
-    {:else if modal === 'zap' && zapPost}<div
-        class="dialog-content zap-content"
-      >
-              {#await import('./lib/ZapPanel.svelte')}
-        <p class="state loading-state" role="status">Loading…</p>
-      {:then {default: ZapPanel}}
-        <ZapPanel
-          event={zapPost.event}
-          profile={$profiles[zapPost.pubkey]}
-          relays={relayUrls}
-          sign={$account ? signEvent : undefined}
-        />
-      {:catch}
-        {@render componentError()}
-      {/await}
-      </div>{/if}
+    {:else if modal === 'account' || modal === 'signout'}
+      {#await import('./components/AccountPanel.svelte')}{@render loading()}
+      {:then {default: AccountPanel}}<AccountPanel onclose={accountDone} {notify} {signOutProfileId} />
+      {:catch}{@render componentError()}{/await}
+    {:else if modal === 'compose' && $account}
+      {#await import('./components/Composer.svelte')}{@render loading()}
+      {:then {default: Composer}}<Composer initialTopic={route.page === 'topic' ? route.value : ''} initialMode={composeMode} owner={$account.pubkey} oncancel={closeModal}
+        onpublish={(p) => { closeModal(); go(postUrl(p.id)); notify('Post saved'); }} />
+      {:catch}{@render componentError()}{/await}
+    {:else if modal === 'profile' && $account}
+      {#await import('./components/EditProfile.svelte')}{@render loading()}
+      {:then {default: EditProfile}}<EditProfile owner={$account.pubkey} ondone={() => { closeModal(); notify('Profile updated'); }} />
+      {:catch}{@render componentError()}{/await}
+    {:else if modal === 'zap' && zapPost}
+      <div class="dialog-content zap-content">
+        {#await import('./lib/ZapPanel.svelte')}{@render loading()}
+        {:then {default: ZapPanel}}<ZapPanel event={zapPost.event} profile={$profiles[zapPost.pubkey]} relays={relayUrls} sign={$account ? signEvent : undefined} />
+        {:catch}{@render componentError()}{/await}
+      </div>
+    {/if}
   </dialog>
 {/if}
 {#if toast}<div class="toast" role="status">

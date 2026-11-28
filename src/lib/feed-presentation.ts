@@ -53,6 +53,7 @@ export function createFeedPresentation(viewportSlots: () => number, atTop: () =>
       if (active && pending && timer === undefined) schedule();
     },
     update(nextScope: string, ids: string[], isActive: boolean, engagement?: boolean) {
+      const sameBatch = scope === nextScope && active === isActive && signals === engagement && sameOrder(latest, ids);
       latest = ids;
       active = isActive;
       signals = engagement;
@@ -76,7 +77,7 @@ export function createFeedPresentation(viewportSlots: () => number, atTop: () =>
         cancel();
         set(latest, false);
       } else if (active) {
-        schedule();
+        if (!sameBatch || timer === undefined) schedule();
       } else {
         cancel();
       }

@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store';
-import { verifyEvent, type EventTemplate } from 'nostr-tools/pure';
+import type { EventTemplate } from 'nostr-tools/pure';
 import type { NostrEvent } from 'nostr-pubsub';
 import { claimLease, enqueueWrite, finishWrites, journalChannel, mergeChanges, readOwnEvents, readWrites, updateWrites, type Change, type QueuedWrite } from './local-writes';
 
@@ -15,7 +15,11 @@ export const pendingWrites = writable<QueuedWrite[]>([]);
 export const outboxError = writable('');
 export const outboxReady = writable(false);
 export const syncing = writable(false);
-const valid = (events:NostrEvent[]) => events.filter(e => verifyEvent(e) && Number.isSafeInteger(e.created_at));
+const valid = async (events:NostrEvent[]) => {
+  if (!events.length) return [];
+  const { verifyEvent } = await import('nostr-tools/pure');
+  return events.filter(e => verifyEvent(e) && Number.isSafeInteger(e.created_at));
+};
 const byNewest = (a:NostrEvent,b:NostrEvent) => b.created_at-a.created_at || a.id.localeCompare(b.id);
 const reason = (error:unknown) => error instanceof Error ? error.message : 'Delivery failed.';
 
@@ -72,7 +76,9 @@ export class WriteSync {
     if (history) {
       this.hydrated=owner; outboxError.set('');
       const pending=rows.flatMap(row=>row.event ? [row.event] : []);
-      this.hooks.apply(valid([...events,...pending]).sort((a,b)=>a.created_at-b.created_at || a.kind-b.kind));
+      const verified=await valid([...events,...pending]);
+      if (this.owner!==owner) return;
+      this.hooks.apply(verified.sort((a,b)=>a.created_at-b.created_at || a.kind-b.kind));
     }
     if (version>=this.displayedVersion) { this.displayedVersion=version; pendingWrites.set(rows); }
     if (this.hydrated===owner) outboxReady.set(true);
@@ -155,8 +161,8 @@ export class WriteSync {
     // The user already sees their queued delta even if this read is offline.
     const remote=await this.hooks.latest(owner,kind);
     const stored=this.hooks.baseline(owner,kind);
-    const persisted=await readOwnEvents(owner);
-    const latest=[...remote,...(stored ? [stored] : []),...valid(persisted.filter(e=>e.kind===kind))].sort(byNewest)[0];
+    const persisted=await valid((await readOwnEvents(owner)).filter(e=>e.kind===kind));
+    const latest=[...remote,...(stored ? [stored] : []),...persisted].sort(byNewest)[0];
     if (this.owner!==owner || this.hooks.current()!==owner) throw new Error('Profile changed before sync.');
     const changes=rows.flatMap(row=>row.change ? [row.change] : []);
     if (latest) this.hooks.apply([latest]);

@@ -52,3 +52,17 @@ test('catalog bounds authors, tags, pairs and serialized size under a large infl
   const crowded=new TopicCatalog();crowded.observe(Array.from({length:100},(_,i)=>post(i+1,['busy'])),now);
   assert.equal(crowded.entries(()=>true,now)[0].authors,64);
 });
+
+test('repeated observations and full snapshot merges avoid quadratic pruning',()=>{
+  const catalog=new TopicCatalog();
+  const batch=Array.from({length:1200},(_,i)=>post((i%600)+1,Array.from({length:5},(_,j)=>'topic'+((i*7+j)%400)),now-i));
+  assert.equal(catalog.observe(batch,now),true);
+  const start=performance.now();
+  for(let i=0;i<5;i++)assert.equal(catalog.observe(batch,now),false);
+  const snapshot=catalog.snapshot();
+  const restored=new TopicCatalog();
+  assert.equal(restored.merge(snapshot,now),true);
+  assert.equal(restored.merge(snapshot,now),false);
+  assert.ok(performance.now()-start<100);
+  assert.deepEqual(restored.snapshot(),snapshot);
+});

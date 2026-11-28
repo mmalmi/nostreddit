@@ -10,30 +10,68 @@ const hex = /^[a-f0-9]{64}$/;
 const compare = (a:string,b:string) => a < b ? -1 : a > b ? 1 : 0;
 const recent = (at:unknown,now:number):at is number => typeof at==='number' && Number.isSafeInteger(at) && at>=now-catalogLimits.days*86400 && at<=now;
 
+type ChangeState = {mutated:boolean; perTagOver:boolean; before?:string};
+
 /** Bounded local evidence from verified posts, never a network-wide census.
  * IDs belong to this dictionary, not the replaceable social-graph snapshot. */
 export class TopicCatalog {
   private ids = new UniqueIds();
   private tags = new Map<string,Map<number,number>>();
+  private pairs = 0;
+  private oldest = Infinity;
+
+  private addPair(slug:string, key:string, at:number, now:number, state:ChangeState) {
+    const users = this.tags.get(slug);
+    const known = this.ids.has(key);
+    const existingId = known ? this.ids.id(key) : -1;
+    const prev = known && users ? users.get(existingId) : undefined;
+    if (prev !== undefined && at <= prev) return;
+    const isNew = prev === undefined;
+    if (state.before === undefined && isNew && (
+      this.pairs >= catalogLimits.pairs ||
+      (!users && this.tags.size >= catalogLimits.tags) ||
+      (!known && this.ids.size >= catalogLimits.authors) ||
+      (users !== undefined && users.size >= catalogLimits.perTag)
+    )) {
+      state.before = this.fingerprint();
+    }
+    const id = known ? existingId : this.ids.id(key);
+    const target = users ?? new Map<number,number>();
+    if (!users) this.tags.set(slug, target);
+    target.set(id, at);
+    if (isNew) {
+      this.pairs++;
+      if (target.size > catalogLimits.perTag) state.perTagOver = true;
+    }
+    if (at < this.oldest) this.oldest = at;
+    state.mutated = true;
+    // Bound intermediate memory as well as the final persisted representation.
+    if (this.pairs > catalogLimits.pairs * 2 || this.tags.size > catalogLimits.tags * 2 || this.ids.size > catalogLimits.authors * 2) {
+      this.prune(now);
+      state.perTagOver = false;
+    }
+  }
+
+  private finish(now:number, state:ChangeState):boolean {
+    const expired = this.oldest < now - catalogLimits.days * 86400;
+    const overLimit = state.perTagOver || this.pairs > catalogLimits.pairs ||
+      this.tags.size > catalogLimits.tags || this.ids.size > catalogLimits.authors;
+    if (!state.mutated && !expired) return false;
+    if (expired || overLimit) this.prune(now);
+    return state.before !== undefined ? this.fingerprint() !== state.before : true;
+  }
 
   observe(posts:readonly Post[], now=Math.floor(Date.now()/1000)):boolean {
-    const before=this.fingerprint();
-    let batch=0;
+    const state: ChangeState = {mutated:false, perTagOver:false};
     for(const post of posts) {
       if(!hex.test(post.pubkey) || !recent(post.created_at,now))continue;
-      const slugs=[...postTopics(post)].slice(0,catalogLimits.perPost);
-      if(!slugs.length)continue;
-      const id=this.ids.id(post.pubkey);
-      for(const slug of slugs) {
-        let users=this.tags.get(slug);
-        if(!users){users=new Map();this.tags.set(slug,users);}
-        users.set(id,Math.max(users.get(id) ?? 0,post.created_at));
+      let count=0;
+      for(const slug of postTopics(post)) {
+        this.addPair(slug, post.pubkey, post.created_at, now, state);
+        if(++count>=catalogLimits.perPost)break;
       }
-      // Bound intermediate memory as well as the final persisted representation.
-      if(++batch%32===0)this.prune(now);
     }
-    this.prune(now);
-    return this.fingerprint()!==before;
+    return this.finish(now, state);
   }
 
   private prune(now:number) {
@@ -43,7 +81,7 @@ export class TopicCatalog {
     }
     all.sort((a,b)=>b[2]-a[2] || compare(a[0],b[0]) || compare(this.ids.str(a[1]),this.ids.str(b[1])));
     const tags=new Map<string,Map<number,number>>(), authors=new Set<number>();
-    let pairs=0;
+    let pairs=0, oldest=Infinity;
     for(const [slug,id,at] of all) {
       if(pairs>=catalogLimits.pairs)break;
       if(!authors.has(id) && authors.size>=catalogLimits.authors)continue;
@@ -51,16 +89,26 @@ export class TopicCatalog {
       const users=tags.get(slug) ?? new Map<number,number>();
       if(users.size>=catalogLimits.perTag)continue;
       users.set(id,at);tags.set(slug,users);authors.add(id);pairs++;
+      if(at<oldest)oldest=at;
     }
     this.tags=tags;
+    this.pairs=pairs;
+    this.oldest=oldest;
     for(const [id] of this.ids)if(!authors.has(id))this.ids.remove(id);
   }
 
   entries(allowed:(key:string)=>boolean=()=>true,now=Math.floor(Date.now()/1000)):CatalogEntry[] {
-    return [...this.tags].flatMap(([slug,users])=>{
-      const visible=[...users].filter(([id,at])=>recent(at,now) && allowed(this.ids.str(id)));
-      return visible.length ? [{slug,authors:visible.length,latest:Math.max(...visible.map(([,at])=>at))}] : [];
-    }).sort((a,b)=>b.authors-a.authors || b.latest-a.latest || compare(a.slug,b.slug));
+    const out: CatalogEntry[] = [];
+    for(const [slug,users] of this.tags) {
+      let authors=0, latest=0;
+      for(const [id,at] of users) {
+        if(!recent(at,now) || !allowed(this.ids.str(id)))continue;
+        authors++;
+        if(at>latest)latest=at;
+      }
+      if(authors)out.push({slug,authors,latest});
+    }
+    return out.sort((a,b)=>b.authors-a.authors || b.latest-a.latest || compare(a.slug,b.slug));
   }
   authors() {return [...this.ids].map(([,key])=>key);}
   snapshot():CatalogSnapshot {
@@ -71,11 +119,11 @@ export class TopicCatalog {
   private fingerprint() {return JSON.stringify(this.snapshot());}
 
   merge(value:unknown,now=Math.floor(Date.now()/1000)):boolean {
-    const before=this.fingerprint();
     if(!value || typeof value!=='object')return false;
     const input=value as Partial<CatalogSnapshot>;
     if(input.version!==1 || !Array.isArray(input.authors) || !Array.isArray(input.tags) ||
       input.authors.length>catalogLimits.authors || input.tags.length>catalogLimits.tags)return false;
+    const state: ChangeState = {mutated:false, perTagOver:false};
     let pairs=0;
     for(const item of input.tags) {
       if(!Array.isArray(item) || item.length!==2)continue;
@@ -88,13 +136,10 @@ export class TopicCatalog {
         if(!Number.isSafeInteger(index) || index<0 || !recent(at,now))continue;
         const key=input.authors[index];
         if(typeof key!=='string' || !hex.test(key))continue;
-        const id=this.ids.id(key), target=this.tags.get(slug) ?? new Map<number,number>();
-        target.set(id,Math.max(target.get(id) ?? 0,at));this.tags.set(slug,target);
+        this.addPair(slug, key, at, now, state);
       }
-      this.prune(now);
       if(pairs>catalogLimits.pairs)break;
     }
-    this.prune(now);
-    return before!==this.fingerprint();
+    return this.finish(now, state);
   }
 }

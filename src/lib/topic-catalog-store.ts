@@ -25,9 +25,14 @@ export function startTopicCatalog(posts:Readable<Post[]>, comments:Readable<Post
     dirty=!writeLocal(storageKey,catalog.snapshot());render();
   }
   const scheduleSave=()=>{if(dirty && !saveTimer)saveTimer=setTimeout(flush,1000);};
+  const observed=new WeakSet<Post>();
   function update() {
     clearTimeout(updateTimer);updateTimer=undefined;
-    dirty=catalog.observe([...roots,...replies].filter(p=>allowed(p.pubkey))) || dirty;
+    const fresh:Post[]=[];
+    for(const list of [roots,replies]) for(const p of list) {
+      if(!observed.has(p) && allowed(p.pubkey)){observed.add(p);fresh.push(p);}
+    }
+    dirty=catalog.observe(fresh) || dirty;
     render();
     scheduleSave();
   }

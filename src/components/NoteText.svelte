@@ -21,8 +21,10 @@
   let stop = () => {};
   $: parts = parsedParts ?? noteParts(text, tags);
   $: quoteIds = showPreviews && !inline ? [...new Set(parts.flatMap(part=>part.event ? [part.event] : []))].slice(0,4) : [];
-  $: embedded = new Set([...embeddedIds,...quoteIds.filter(id=>$referencePosts.has(id))]);
-  $: visibleParts = parts.filter(part=>!part.event || !embedded.has(part.event));
+  $: embedded = quoteIds.length || embeddedIds.length
+    ? new Set([...embeddedIds, ...(quoteIds.length ? quoteIds.filter(id=>$referencePosts.has(id)) : [])])
+    : undefined;
+  $: visibleParts = embedded?.size ? parts.filter(part=>!part.event || !embedded.has(part.event)) : parts;
   $: people = [...new Set(parts.flatMap(part=>part.person ? [part.person] : []))].slice(0,24);
   $: scope = quoteIds.join(',')+'|'+people.join(',');
   $: if (mounted) watch(active ? scope : '|');

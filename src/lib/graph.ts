@@ -54,11 +54,16 @@ function startWorker() {
     if ('error' in data) return unavailable();
     if (data.version === version) {
       graphDiscoveryRoot.set(data.discoveryRoot);
-      const accepted = Object.entries(data.badges).filter(([key]) => interested.has(key));
-      if (accepted.length) {
-        cached = {...cached, ...Object.fromEntries(accepted)};
-        graphInfo.set(cached);
+      let changed = false, next = cached;
+      for (const [key, badge] of Object.entries(data.badges)) {
+        if (!interested.has(key)) continue;
+        const prev = cached[key];
+        if (prev && prev.distance === badge.distance && prev.muted === badge.muted && prev.overmuted === badge.overmuted &&
+            prev.followedByFriends === badge.followedByFriends && prev.influence === badge.influence) continue;
+        if (!changed) { next = {...cached}; changed = true; }
+        next[key] = badge;
       }
+      if (changed) { cached = next; graphInfo.set(cached); }
       if (sentProfileVersion === profileVersion && data.profile?.subject === selectedProfile) profileRelations.set(data.profile);
       graphStatus.set('ready');
     }
@@ -68,8 +73,9 @@ function startWorker() {
 
 // Posts stay hidden until their authors are checked against the graph. Begin
 // loading it with the app instead of when the first posts arrive.
-export function warmGraph() {
+export function warmGraph(initialRanking = false) {
   if (worker || failed || typeof Worker === 'undefined' || document.hidden) return;
+  if (initialRanking) ranking = true;
   try { startWorker(); worker!.postMessage({warm:true, root, ranking, edges}); } catch { unavailable(); }
 }
 

@@ -74,11 +74,12 @@ export function normalizeFeeds(raw: unknown): Feed[] {
 export function restoreDefaultFeeds(feeds: Feed[]) {
   return normalizeFeeds([...defaultFeeds(), ...feeds.filter(feed => !isDefaultFeed(feed.id))]);
 }
-export function matchesFeed(post: Post, feed: Feed, follows: readonly string[], distance?: number | null) {
-  if (feed.source === 'following' && !follows.includes(post.pubkey)) return false;
+export function matchesFeed(post: Post, feed: Feed, follows: readonly string[] | ReadonlySet<string>, distance?: number | null) {
+  if (feed.source === 'following' && ('has' in follows ? !follows.has(post.pubkey) : !follows.includes(post.pubkey))) return false;
   if (feed.source === 'network' && (distance ?? Infinity) > 2) return false;
   if (feed.authors.length && !feed.authors.includes(post.pubkey)) return false;
   if (feed.topics.length && !feed.topics.some(topic => matchesTopic(post, topic))) return false;
+  if (!feed.keywords.length && !feed.exclude.length) return true;
   const text = (post.title + '\n' + post.event.content).toLowerCase();
   return (!feed.keywords.length || feed.keywords.some(word => text.includes(word))) && !feed.exclude.some(word => text.includes(word));
 }

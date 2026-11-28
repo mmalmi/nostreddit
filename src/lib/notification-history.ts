@@ -1,5 +1,5 @@
 import type { NostrEvent } from 'nostr-pubsub';
-import { verifyEvent } from 'nostr-tools/pure';
+import { idbDone, idbValue, openDb } from './idb';
 import { relayUrls, testRelays } from './relayTypes';
 import { asPost } from './posts';
 
@@ -17,35 +17,18 @@ const encoder = new TextEncoder();
 let opening: Promise<IDBDatabase> | undefined;
 
 function database() {
-  return opening ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open('nostreddit-inbox:' + (testRelays ? relayUrls.join(',') : 'public'), 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore('inboxes');
-      req.result.createObjectStore('seen');
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+  return opening ??= openDb('nostreddit-inbox:' + (testRelays ? relayUrls.join(',') : 'public'), 1, db => {
+    db.createObjectStore('inboxes');
+    db.createObjectStore('seen');
   }).catch(error => { opening = undefined; throw error; });
 }
-
-function result<T>(req: IDBRequest<T>) {
-  return new Promise<T>((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function committed(tx: IDBTransaction) {
-  return new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onabort = tx.onerror = () => reject(tx.error);
-  });
-}
+const result = idbValue, committed = idbDone;
 
 export async function loadInbox(owner: string): Promise<InboxRecord[]> {
   const db = await database();
   const rows = await result(db.transaction('inboxes').objectStore('inboxes').get(owner));
-  if (!Array.isArray(rows)) return [];
+  if (!Array.isArray(rows) || !rows.length) return [];
+  const { verifyEvent } = await import('nostr-tools/pure');
   const checked = new Map<string, NostrEvent>();
   function signed(value?: NostrEvent) {
     if (!value) return;

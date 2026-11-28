@@ -1,14 +1,14 @@
 import { derived, get, readable, writable, type Writable } from 'svelte/store';
-import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type EventTemplate } from 'nostr-tools/pure';
+import type { EventTemplate } from 'nostr-tools/pure';
 import { decode, nsecEncode } from 'nostr-tools/nip19';
+import { readRawProfileFields } from '@iris/profile-events';
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
 import { graphViewer, graphInfo, graphStatus, networkAuthors, observeEventAuthors, observeGraphEvent, observeDirectoryLists, observeProfile, profileRelations, setPendingEdges, setGraphPeers, setGraphRoot, setGraphRelays } from './graph';
 import { asPost, discussionKinds, commentDraft, hexKey, postDraft, matchesTopic, mentionsTopic, resolveCommunityThreads, type Post } from './posts';
 import { snapshotRoot, type RelationshipKind } from './graph-model';
 import { authorPolicy, visibilitySettings } from './visibility';
-import { lightningEndpoint, matchesZapReceipt, receivedTips, restoredTips, postTipActor, type PostTipActor, type ZapInvoice } from './zaps';
+import type { PostTipActor, ZapInvoice } from './zaps';
 import { pendingWrites, outboxReady, outboxError, syncing, WriteSync } from './write-sync';
-import { readRawProfileFields } from '@iris/profile-events';
 import { cacheOwnEvents, readOwnEvents, type Change } from './local-writes';
 import { noExpansion } from './discovery/discussions';
 import type { SearchCursors } from './discovery/relay-search';
@@ -78,7 +78,25 @@ const deleted = new Map<string,NostrEvent>();
 const ownReactionTime = new Map<string,number>();
 const keyStorage = 'nostreddit.account.v1';
 let secret: Uint8Array | undefined;
+let accountEpoch = 0;
 const noop = () => {};
+let pureMod: Promise<typeof import('nostr-tools/pure')> | undefined;
+const loadPure = () => (pureMod ??= import('nostr-tools/pure'));
+let zapsMod: typeof import('./zaps') | undefined;
+let zapsPromise: Promise<typeof import('./zaps')> | undefined;
+const loadZaps = () => (zapsPromise ??= import('./zaps').then(mod => (zapsMod = mod)));
+let pendingZaps: NostrEvent[] = [];
+let zapsQueued = false;
+function queueZap(event: NostrEvent) {
+  if (pendingZaps.length < 2000) pendingZaps.push(event);
+  if (zapsQueued) return;
+  zapsQueued = true;
+  void loadZaps().then(() => {
+    zapsQueued = false;
+    const batch = pendingZaps.splice(0);
+    if (batch.length && active) apply(batch);
+  }).catch(() => { zapsQueued = false; pendingZaps = []; });
+}
 const newest = (a:NostrEvent, b?:NostrEvent) => !b || a.created_at > b.created_at || (a.created_at === b.created_at && a.id < b.id);
 
 // Keep verified source records available to relay routing, replaceable-event merges and deletions.
@@ -112,6 +130,19 @@ function visibleList<T extends {pubkey:string}>(raw: Writable<T[]>) {
   return derived([raw, canSeeAuthor], ([items, allowed]) => items.filter(item => allowed(item.pubkey)));
 }
 export const posts = visibleList(rawPosts), comments = visibleList(rawComments);
+export const replyCounts = derived(comments, items => {
+  const byRoot = new Map<string, number>(), byParent = new Map<string, number>();
+  for (const c of items) {
+    if (c.root) byRoot.set(c.root, (byRoot.get(c.root) ?? 0) + 1);
+    if (c.parent) byParent.set(c.parent, (byParent.get(c.parent) ?? 0) + 1);
+  }
+  return { roots: byRoot, parents: byParent };
+});
+export const pendingEventIds = derived(pendingWrites, rows => {
+  const ids = new Set<string>();
+  for (const row of rows) if (row.event) ids.add(row.event.id);
+  return ids;
+});
 export const profiles = derived([rawProfiles, canSeeAuthor, changesForViewer, account], ([items, allowed,changes,session]) => {
   const visible = Object.fromEntries(Object.entries(items).filter(([key]) => allowed(key)));
   if (session) for (const change of changes) if (change.kind===0) {
@@ -125,60 +156,83 @@ export const profiles = derived([rawProfiles, canSeeAuthor, changesForViewer, ac
   }
   return visible;
 });
-const ownLightningEndpoint = derived([profiles, account], ([known, viewer]) =>
-  viewer ? lightningEndpoint(known[viewer.pubkey]) : null);
 const verifiedTipEndpoints = writable(new Map<string, string>());
-const incomingTips = derived([inboxReceipts, ownLightningEndpoint, account, verifiedTipEndpoints], ([receipts, endpoint, viewer, verified], set) => {
+let hadIncomingTips = false;
+const incomingTips = derived([inboxReceipts, profiles, account, verifiedTipEndpoints], ([receipts, known, viewer, verified], set) => {
   let current = true;
-  if (!viewer || !endpoint || !receipts.length) { set([]); return; }
-  const show = (payments: Awaited<ReturnType<typeof receivedTips>>) => {
-    if (current) set(payments.filter(tip => tip.sender !== viewer.pubkey)
-      .map(({event, ...tip}) => ({...event, tip})));
-  };
-  show(restoredTips(viewer.pubkey, endpoint, receipts, verified));
-  if (receipts.some(event => verified.get(event.id) !== endpoint)) {
-    void receivedTips(viewer.pubkey, endpoint, receipts, verified).then(payments => {
-      if (!current) return;
-      if (payments.some(({event}) => verified.get(event.id) !== endpoint)) {
-        verifiedTipEndpoints.set(new Map(payments.map(({event}) => [event.id, endpoint])));
-      } else show(payments);
-    }).catch(noop);
+  if (!viewer || !receipts.length) {
+    if (hadIncomingTips) { hadIncomingTips = false; set([]); }
+    return;
   }
+  void loadZaps().then(zaps => {
+    if (!current) return;
+    const endpoint = zaps.lightningEndpoint(known[viewer.pubkey]);
+    if (!endpoint) { if (hadIncomingTips) { hadIncomingTips = false; set([]); } return; }
+    const show = (payments: Awaited<ReturnType<typeof zaps.receivedTips>>) => {
+      if (!current) return;
+      const rows = payments.filter(tip => tip.sender !== viewer.pubkey).map(({event, ...tip}) => ({...event, tip}));
+      if (rows.length || hadIncomingTips) { hadIncomingTips = rows.length > 0; set(rows); }
+    };
+    show(zaps.restoredTips(viewer.pubkey, endpoint, receipts, verified));
+    if (receipts.some(event => verified.get(event.id) !== endpoint)) {
+      void zaps.receivedTips(viewer.pubkey, endpoint, receipts, verified).then(payments => {
+        if (!current) return;
+        if (payments.some(({event}) => verified.get(event.id) !== endpoint)) {
+          verifiedTipEndpoints.set(new Map(payments.map(({event}) => [event.id, endpoint])));
+        } else show(payments);
+      }).catch(noop);
+    }
+  }).catch(noop);
   return () => { current = false; };
 }, [] as InboxEvent[]);
-const allowedBulkInboxPosts = derived([bulkInboxPosts, viewerLists, rawPosts, rawComments], ([candidates, lists]) => {
+let hadBulkInbox = false;
+const allowedBulkInboxPosts = derived([bulkInboxPosts, viewerLists, rawPosts, rawComments], ([candidates, lists], set) => {
+  if (!candidates.length) { if (hadBulkInbox) { hadBulkInbox = false; set([]); } return; }
+  hadBulkInbox = true;
   const authorOf = (id: string) => (roots.get(id) ?? replies.get(id))?.pubkey;
-  return candidates.filter(event => lists.follows.has(event.pubkey) || isDirectNotificationReply(event, lists.viewer, authorOf));
-});
-export const notifications = derived([rawNotifications, allowedBulkInboxPosts, incomingTips, canSeeAuthor, account], ([events, bulkPosts, tips, allowed, viewer]): InboxEvent[] => {
-  if (!viewer) return [];
-  return [...events, ...bulkPosts, ...tips].filter(event => {
+  set(candidates.filter(event => lists.follows.has(event.pubkey) || isDirectNotificationReply(event, lists.viewer, authorOf)));
+}, [] as NostrEvent[]);
+let hadNotifications = false;
+export const notifications = derived([rawNotifications, allowedBulkInboxPosts, incomingTips, canSeeAuthor, account], ([events, bulkPosts, tips, allowed, viewer], set) => {
+  if (!viewer) { if (hadNotifications) { hadNotifications = false; set([]); } return; }
+  const list = [...events, ...bulkPosts, ...tips].filter(event => {
     const author = notificationAuthor(event);
     return (author === null || allowed(author)) && event.tags.some(tag => tag[0] === 'p' && tag[1] === viewer.pubkey);
-  })
-    .sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id)).slice(0,100);
-});
+  }).sort((a,b) => b.created_at-a.created_at || a.id.localeCompare(b.id)).slice(0,100);
+  if (list.length || hadNotifications) { hadNotifications = list.length > 0; set(list); }
+}, [] as InboxEvent[]);
 export const notificationGroups = derived(notifications, groupNotifications);
 const readNotificationIds = writable(new Set<string>());
 export const unreadNotificationIds = derived([notifications, readNotificationIds], ([events, read]) =>
   new Set(events.filter(event => !read.has(notificationReadId(event))).map(notificationReadId)));
 export const unreadNotificationCount = derived([notificationGroups, unreadNotificationIds], ([groups, unread]) =>
   groups.filter(group => group.events.some(event => unread.has(notificationReadId(event)))).length);
+function filterRecord<T>(items: Record<string, T[]>, keep: (item: T) => boolean, prev: Record<string, T[]>): Record<string, T[]> {
+  const next: Record<string, T[]> = {};
+  for (const [id, list] of Object.entries(items)) {
+    const filtered = list.filter(keep);
+    const old = prev[id];
+    next[id] = old && old.length === filtered.length && old.every((item, i) => item === filtered[i]) ? old : filtered;
+  }
+  return next;
+}
+let prevLikes: Record<string, string[]> = {};
 export const likes = derived([rawLikes, canSeeAuthor], ([items, allowed]) =>
-  Object.fromEntries(Object.entries(items).map(([id, keys]) => [id, keys.filter(allowed)])) as Record<string,string[]>);
+  (prevLikes = filterRecord(items, allowed, prevLikes)));
 
 const tipActors = new WeakMap<NostrEvent, PostTipActor | null>();
 function cachedTipActor(receipt: NostrEvent): PostTipActor | null {
   if (tipActors.has(receipt)) return tipActors.get(receipt)!;
-  const actor = postTipActor(receipt);
-  tipActors.set(receipt, actor);
+  const actor = zapsMod ? zapsMod.postTipActor(receipt) : null;
+  if (zapsMod) tipActors.set(receipt, actor);
   return actor;
 }
+let prevReceipts: Record<string, NostrEvent[]> = {};
 export const receipts = derived([rawReceipts, canSeeAuthor], ([items, allowed]) =>
-  Object.fromEntries(Object.entries(items).map(([id, events]) => [id, events.filter(event => {
+  (prevReceipts = filterRecord(items, event => {
     const actor = cachedTipActor(event);
     return actor !== null && (actor.sender === null || allowed(actor.sender));
-  })])) as Record<string,NostrEvent[]>);
+  }, prevReceipts)));
 export const hotSignals = derived([rawHotSignals,comments,canSeeAuthor], ([signals,replies,allowed]) => [
   ...signals.filter(signal=>allowed(signal.actor)),
   ...replies.flatMap(reply=>[...new Set([reply.root,reply.parent])].filter(Boolean)
@@ -190,13 +244,18 @@ export const hiddenPostIds = derived([rawPosts, rawComments, canSeeAuthor], ([ro
 // Paying an invoice is an explicit user action, including guest zaps from an ephemeral key.
 // Confirm it only against the exact signed request and provider; never expose raw receipt records.
 export function watchZapPayment(id: string, zap: ZapInvoice, set: (confirmed:boolean) => void) {
-  let paid = false;
-  return rawReceipts.subscribe(records => {
-    if (paid) return;
-    paid = (records[id] ?? []).some(event => event.pubkey === zap.provider &&
-      event.tags.some(t => t[0] === 'description' && t[1] === zap.description) && matchesZapReceipt(event, zap));
+  let paid = false, live = true;
+  const check = (records: Record<string, NostrEvent[]>) => {
+    if (paid || !live) return;
+    const list = records[id];
+    if (!list?.length) { set(false); return; }
+    if (!zapsMod) { void loadZaps().then(() => check(get(rawReceipts))); return; }
+    paid = list.some(event => event.pubkey === zap.provider &&
+      event.tags.some(t => t[0] === 'description' && t[1] === zap.description) && zapsMod!.matchesZapReceipt(event, zap));
     set(paid);
-  });
+  };
+  const unsub = rawReceipts.subscribe(check);
+  return () => { live = false; unsub(); };
 }
 
 function jsonObject(input:string): Record<string,unknown> {
@@ -240,37 +299,39 @@ function addInboxEvents(store: Writable<NostrEvent[]>, events: NostrEvent[]) {
   }
 }
 function apply(events:NostrEvent[]) {
+  const viewer = get(account)?.pubkey;
   const authors = new Set<string>();
   for (const event of events) {
     if (event.kind === 9735) {
+      if (!zapsMod) { queueZap(event); continue; }
       const sender = cachedTipActor(event)?.sender;
       if (sender) authors.add(sender);
     } else if ([0,7,...discussionKinds].includes(event.kind)) authors.add(event.pubkey);
   }
   if (authors.size) observeEventAuthors([...authors]);
-  if (notificationOwner && get(account)?.pubkey === notificationOwner) {
+  if (notificationOwner && viewer === notificationOwner) {
     const addressed = events.filter(e => e.tags.some(t => t[0] === 'p' && t[1] === notificationOwner));
     const posts = addressed.filter(e => [1,7,1111].includes(e.kind) && e.pubkey !== notificationOwner);
     addInboxEvents(rawNotifications, posts.filter(e => !isBulkAddressed(e)));
     addInboxEvents(bulkInboxPosts, posts.filter(isBulkAddressed));
     addInboxEvents(inboxReceipts, addressed.filter(e => e.kind === 9735));
   }
-  let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, hotDirty = false;
+  let rootsDirty = false, repliesDirty = false, profilesDirty = false, likesDirty = false, hotDirty = false, listsDirty = false, reactionsAdded = false;
   const changedReceipts = new Set<string>();
   const ps = get(rawProfiles), ls = get(rawLikes), rs = get(rawReceipts);
   for (const event of events) {
     if (event.kind === 3 || event.kind === 10000) observeGraphEvent(event);
-    if (event.kind === 3 && event.pubkey === get(account)?.pubkey && newest(event,contacts.get(event.pubkey))) {
+    if (event.kind === 3 && event.pubkey === viewer && newest(event,contacts.get(event.pubkey))) {
       contacts.set(event.pubkey,event);
-      listRevision.update(n=>n+1);
+      listsDirty = true;
       void cacheOwnEvents([event]).catch(noop);
-    } else if (event.kind === 10000 && event.pubkey === (get(account)?.pubkey ?? snapshotRoot) && newest(event,muteEvents.get(event.pubkey))) {
+    } else if (event.kind === 10000 && event.pubkey === (viewer ?? snapshotRoot) && newest(event,muteEvents.get(event.pubkey))) {
       muteEvents.set(event.pubkey,event);
-      listRevision.update(n=>n+1);
-      if (event.pubkey===get(account)?.pubkey) void cacheOwnEvents([event]).catch(noop);
+      listsDirty = true;
+      if (event.pubkey === viewer) void cacheOwnEvents([event]).catch(noop);
     } else if (event.kind === 0 && newest(event,metadata.get(event.pubkey))) {
       metadata.set(event.pubkey,event); ps[event.pubkey] = readProfile(event); profilesDirty = true;
-      if (event.pubkey === get(account)?.pubkey) void cacheOwnEvents([event]).catch(noop);
+      if (event.pubkey === viewer) void cacheOwnEvents([event]).catch(noop);
     } else if (event.kind === 5) {
       for (const tag of event.tags.filter(t => t[0] === 'e' && hexKey.test(t[1]))) {
         const key = event.pubkey+':'+tag[1], prior = deleted.get(key);
@@ -295,17 +356,17 @@ function apply(events:NostrEvent[]) {
       const target = event.tags.filter(t => t[0] === 'e' && hexKey.test(t[1])).at(-1)?.[1];
       if (!target) continue;
       if (event.kind === 7 && ['', '+'].includes(event.content)) {
-        if (event.pubkey===get(account)?.pubkey) {const key=event.pubkey+':'+target; ownReactionTime.set(key,Math.max(ownReactionTime.get(key) ?? 0,event.created_at));}
+        if (event.pubkey === viewer) {const key=event.pubkey+':'+target; ownReactionTime.set(key,Math.max(ownReactionTime.get(key) ?? 0,event.created_at));}
         const tombstone = deleted.get(event.pubkey+':'+event.id);
         if (tombstone && tombstone.created_at >= event.created_at) continue;
         const entries = reactions.get(target) || new Map<string,NostrEvent>();
         if (!entries.has(event.id) && entries.size < reactionViewLimit) {
           entries.set(event.id,event); reactions.set(target,entries); reactionTargets.set(event.id,target);
           hotDirty = true;
-          reactionIds.update(count => count+1);
+          reactionsAdded = true;
           if (!ls[target]?.includes(event.pubkey)) { ls[target] = [...(ls[target] || []),event.pubkey]; likesDirty = true; }
         }
-      } else if (event.kind === 9735 && cachedTipActor(event) && !rs[target]?.some(receipt => receipt.id === event.id)) {
+      } else if (event.kind === 9735 && zapsMod && cachedTipActor(event) && !rs[target]?.some(receipt => receipt.id === event.id)) {
         rs[target] = [...(rs[target] || []),event];
         changedReceipts.add(target);
       }
@@ -318,6 +379,8 @@ function apply(events:NostrEvent[]) {
       else { roots.set(post.id,post); rootsDirty = true; }
     }
   }
+  if (listsDirty) listRevision.update(n => n + 1);
+  if (reactionsAdded) reactionIds.update(count => count + 1);
   if (rootsDirty) rawPosts.set(ordered(roots,700));
   if (repliesDirty) {
     resolveCommunityThreads(replies);
@@ -326,7 +389,7 @@ function apply(events:NostrEvent[]) {
   if (profilesDirty) {
     while (metadata.size > 1500) {
       const key = metadata.keys().next().value!;
-      if (key === get(account)?.pubkey) { const own = metadata.get(key)!; metadata.delete(key); metadata.set(key,own); continue; }
+      if (key === viewer) { const own = metadata.get(key)!; metadata.delete(key); metadata.set(key,own); continue; }
       metadata.delete(key); delete ps[key];
     }
     rawProfiles.set(ps);
@@ -819,7 +882,7 @@ function watchInboxHistory(pubkey: string) {
       if (!row && !read.has(notificationReadId(item))) unknown.push(notificationReadId(item));
       if (!row || row.profile !== profile || row.wallet !== wallet || row.parent !== parent) {
         const {tip, ...event} = item;
-        const endpoint = tip && get(ownLightningEndpoint);
+        const endpoint = tip && zapsMod?.lightningEndpoint(get(profiles)[pubkey]);
         row = {event, profile, wallet, parent, verification: endpoint ? {receiptId: event.id, endpoint} : undefined};
         changes.push(row);
       }
@@ -982,12 +1045,13 @@ export function createHotObserver() {
     }
     pending=[...new Set(ids)].filter(id=>hexKey.test(id)).slice(0,160);
     // Coalesce incoming relay batches into bounded one-shot reads.
-    if(pending.some(id=>!seen.has(id))&&seen.size<160){clearTimeout(timer);timer=setTimeout(flush,350);}
+    if(pending.some(id=>!seen.has(id))&&seen.size<160){clearTimeout(timer);timer=setTimeout(flush,seen.size?350:60);}
   }};
 }
 function remember(session:Account, sk?:Uint8Array, bunker?:BunkerSession) {
   try { localStorage.setItem(keyStorage,JSON.stringify({...session,...(sk ? {nsec:nsecEncode(sk)} : {}),...(bunker ? {bunker} : {})})); }
   catch { throw new Error('Allow local storage to save your sign-in on this device.'); }
+  accountEpoch++;
   cancelSignerRequests(); bunkerSession = bunker;
   secret?.fill(0); secret = sk; account.set(session);
 }
@@ -998,8 +1062,14 @@ function restoreAccount() {
     if (raw.method === 'local') {
       if (typeof raw.nsec !== 'string') return;
       const data = decode(raw.nsec as string);
-      if (data.type !== 'nsec' || getPublicKey(data.data) !== raw.pubkey) return;
-      secret = data.data;
+      if (data.type !== 'nsec') return;
+      const epoch = accountEpoch;
+      void loadPure().then(({ getPublicKey }) => {
+        if (epoch !== accountEpoch || getPublicKey(data.data) !== raw.pubkey) return;
+        secret = data.data;
+        account.set({pubkey:raw.pubkey,method:'local'});
+      }).catch(noop);
+      return;
     } else if (raw.method === 'bunker') {
       bunkerSession = readBunkerSession(raw.bunker);
       if (!bunkerSession) return;
@@ -1024,6 +1094,7 @@ export async function signInBunker(connection:string, signal:AbortSignal, onAuth
   remember({pubkey:paired.pubkey, method:'bunker'}, undefined, paired.bunker);
 }
 export async function importAccount(input:string) {
+  const { getPublicKey } = await loadPure();
   let sk:Uint8Array;
   try { const decoded = decode(input.trim()); if (decoded.type !== 'nsec') throw Error(); sk = decoded.data; getPublicKey(sk); }
   catch { throw new Error('Enter a valid Nostr secret key starting with nsec1.'); }
@@ -1033,6 +1104,7 @@ export async function createProfile(name: string) {
   const displayName = name.trim();
   if (!displayName || displayName.length > 60) throw new Error('Choose a display name of up to 60 characters.');
   if (/nsec1[0-9a-z]+/i.test(displayName)) throw new Error('Use the secret key to sign in to your existing profile.');
+  const { generateSecretKey, getPublicKey } = await loadPure();
   const sk = generateSecretKey();
   remember({ pubkey: getPublicKey(sk), method: 'local' }, sk);
   await publish({kind:0, tags:[], content:JSON.stringify({name:displayName, display_name:displayName})});
@@ -1042,12 +1114,14 @@ export function exportKey() {
   return nsecEncode(secret);
 }
 export function signOut() {
+  accountEpoch++;
   localStorage.removeItem(keyStorage); cancelSignerRequests(); bunkerSession = undefined;
   secret?.fill(0); secret = undefined; account.set(null);
 }
 export async function signEvent(template:EventTemplate):Promise<NostrEvent> {
   const session = get(account);
   if (!session) throw new Error('Sign in to continue.');
+  const { finalizeEvent, verifyEvent } = await loadPure();
   let signed: NostrEvent;
   if (session.method === 'bunker') {
     if (!bunkerSession) throw new Error('Sign in with your bunker again.');
@@ -1097,6 +1171,7 @@ function changeLocally(change:Change) {
   return localSync.enqueue({change},owner);
 }
 export async function profileForEditor(owner:string):Promise<NostrEvent|null> {
+  const { verifyEvent } = await loadPure();
   const local = () => metadata.get(owner);
   const stored = (await readOwnEvents(owner)).filter(event => event.kind === 0 && event.pubkey === owner && verifyEvent(event));
   const observed = local();
@@ -1116,6 +1191,7 @@ export function saveProfile(fields:Record<string,unknown>) {
 }
 export async function saveRawProfile(fields:Record<string,string|undefined>, base?:NostrEvent|null) {
   if (!Object.keys(fields).length) return;
+  const { verifyEvent } = await loadPure();
   if (base && (base.pubkey !== get(account)?.pubkey || base.kind !== 0 || !verifyEvent(base))) throw new Error('The signed-in profile changed.');
   const original = base ? readRawProfileFields(base.content) : {};
   const previous = base === undefined ? undefined : Object.fromEntries(Object.keys(fields).map(key => [key, Object.hasOwn(original,key) ? original[key] : undefined]));

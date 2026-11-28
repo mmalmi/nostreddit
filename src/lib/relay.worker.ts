@@ -1,5 +1,6 @@
 import { MemoryEventStore, NostrRuntime, type NostrEvent, type NostrFilter, type NostrVerifiedEvent, type RuntimeSubscribeOptions, type RuntimeSubscription } from 'nostr-pubsub';
 import { normalizeURL } from 'nostr-tools/utils';
+import { idbDone, idbValue, openDb } from './idb';
 import { trackFeedPage } from './feed-history';
 import { discussionKinds } from './posts';
 import { focusedThread, VisitedThreads } from './visited-threads';
@@ -73,12 +74,7 @@ let cacheTimer: ReturnType<typeof setTimeout> | undefined;
 const cacheKey = testRelays ? relayUrls.join(',') : 'public';
 const visited = new VisitedThreads(cacheKey);
 let delivery = Promise.resolve();
-const database = new Promise<IDBDatabase>((resolve, reject) => {
-  const request = indexedDB.open('nostreddit-feed-v1', 1);
-  request.onupgradeneeded = () => request.result.createObjectStore('snapshots');
-  request.onsuccess = () => resolve(request.result);
-  request.onerror = () => reject(request.error);
-}).catch(() => null);
+const database = openDb('nostreddit-feed-v1', 1, db => db.createObjectStore('snapshots')).catch(() => null);
 
 function emit(event: NostrEvent) {
   if (event.content.length > 64000 || event.tags.length > ([3,10000].includes(event.kind) ? 20000 : 5000) ||
@@ -112,13 +108,9 @@ async function saveSnapshot() {
     bytes += size;
     return true;
   });
-  await new Promise<void>((resolve,reject) => {
-    const tx = db.transaction('snapshots','readwrite');
-    tx.objectStore('snapshots').put(snapshot,cacheKey);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  const tx = db.transaction('snapshots','readwrite');
+  tx.objectStore('snapshots').put(snapshot,cacheKey);
+  await idbDone(tx);
 }
 
 function scheduleSnapshot() {
@@ -141,11 +133,7 @@ async function admitSnapshot(raw: unknown) {
 async function restore() {
   const db = await database;
   if (!db) return;
-  const events = await new Promise<unknown>((resolve, reject) => {
-    const request = db.transaction('snapshots').objectStore('snapshots').get(cacheKey);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+  const events = await idbValue(db.transaction('snapshots').objectStore('snapshots').get(cacheKey));
   await admitSnapshot(events);
 }
 void restore().catch(() => {});

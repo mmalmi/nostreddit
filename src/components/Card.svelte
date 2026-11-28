@@ -4,21 +4,20 @@
   import {
     profiles,
     likes,
-    comments,
+    replyCounts,
     receipts,
-    pendingWrites,
+    pendingEventIds,
     outboxReady,
     account,
     type Post,
   } from '../lib/network';
-  import { displayName, age, safeURL } from '../lib/ui';
+  import { displayName, displayText, paragraphs, age, safeURL, type Translations } from '../lib/ui';
   import { collectMedia, stripAttachments } from '../lib/media';
   import { findTreeEmbeds, hasTreeCapability } from '../lib/tree-embeds';
   import { topicPath } from '../lib/hashtags';
   import { matchesTopic } from '../lib/posts';
   import MediaEmbed from './MediaEmbed.svelte';
   import ProxyAvatar from './ProxyAvatar.svelte';
-  import TreeEmbed from './TreeEmbed.svelte';
   import { noteParts, partText } from '../lib/mentions';
   import { referencePosts } from '../lib/note-references';
   import ZapCount from '../lib/ZapCount.svelte';
@@ -26,7 +25,6 @@
   import Icon from './Icon.svelte';
   import TopicIcon from './TopicIcon.svelte';
   import SocialBadge from './SocialBadge.svelte';
-  import { displayText, paragraphs, type Translations } from '../lib/translation';
   import TranslationButton from './TranslationButton.svelte';
   import PostMenu from './PostMenu.svelte';
   import { onDestroy } from 'svelte';
@@ -73,10 +71,8 @@
   $: name = displayName(post.pubkey, author);
   $: likers = $likes[post.id] ?? [];
   $: liked = Boolean($account && likers.includes($account.pubkey));
-  $: queued = $pendingWrites.some(row=>row.event?.id===post.id);
-  $: replyCount = $comments.filter(
-    (c) => (comment ? c.parent : c.root) === post.id,
-  ).length;
+  $: queued = $pendingEventIds.has(post.id);
+  $: replyCount = (comment ? $replyCounts.parents : $replyCounts.roots).get(post.id) ?? 0;
   $: topic = contextTopic && matchesTopic(post,contextTopic) ? contextTopic : post.topic;
   $: tagged = matchesTopic(post,topic);
   $: permalink = postUrl(post.id, contextTopic && topic===contextTopic ? topic : undefined);
@@ -117,11 +113,11 @@
   $: visibleBody = full || comment ? shownBody : shownBody.replace(/\s*\n\s*/g, ' ');
   $: headingParts = noteParts(shownHeading, post.event.tags);
   $: headingQuoteIds = renderEmbeds ? [...new Set(headingParts.flatMap(part=>part.event ? [part.event] : []))].slice(0,4) : [];
-  $: embeddedHeadingIds = headingQuoteIds.filter(id=>$referencePosts.has(id));
-  $: visibleHeadingParts = headingParts.filter(part=>!part.event || !embeddedHeadingIds.includes(part.event));
+  $: embeddedHeadingIds = headingQuoteIds.length ? headingQuoteIds.filter(id=>$referencePosts.has(id)) : [];
+  $: visibleHeadingParts = embeddedHeadingIds.length ? headingParts.filter(part=>!part.event || !embeddedHeadingIds.includes(part.event)) : headingParts;
   $: taggedHeading = visibleHeadingParts.some(part=>part.topic);
   $: hasReferences = headingParts.some(part=>part.event || part.person);
-  $: renderedHeading = visibleHeadingParts.map(part => partText(part,$profiles,$referencePosts)).join('').trim();
+  $: renderedHeading = hasReferences ? visibleHeadingParts.map(part => partText(part,$profiles,$referencePosts)).join('').trim() : shownHeading.trim();
 </script>
 
 {#snippet authorIdentity()}
@@ -166,7 +162,7 @@
     {#if photoAlbum && !trees.length}<div class="album-label"><Icon name="image" size={14}/>{media.length} photos</div>{/if}
     <div class="media-gallery" class:photos={photoAlbum && !trees.length} class:album-detail={full && photoAlbum && !trees.length}>
       {#each shownMedia as item (item.url)}<MediaEmbed {item} compact={!full} tile={photoAlbum && !trees.length} gallery={images}/>{/each}
-      {#each trees as attachment (attachment.url)}<TreeEmbed {attachment}/>{/each}
+      {#if trees.length}{#await import('./TreeEmbed.svelte') then { default: TreeEmbed }}{#each trees as attachment (attachment.url)}<TreeEmbed {attachment}/>{/each}{/await}{/if}
     </div>
     {#if shownMedia.length < media.length}<a class="album-more" href={permalink}>View all {media.length} photos <Icon name="next" size={14}/></a>{/if}
   {:else if !renderEmbeds}

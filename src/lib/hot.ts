@@ -56,13 +56,15 @@ export function hotScores(posts:readonly Post[], options:HotOptions={}) {
   }
   const interests=new Set<string>();
   for(const post of (options.saved||[]).slice(0,32)) interests.add(post.topic);
+  const hasInterest=(post:Post)=>{for(const topic of interests)if(matchesTopic(post,topic))return true;return false;};
   return posts.map(post=>{
     const age=Math.max(0,now-post.created_at)/HOUR;
     const crowd=actors.get(post.id);
-    const engagement=[...(crowd?.values()||[])].reduce((sum,value)=>sum+value,0);
+    let engagement=0;
+    if(crowd)for(const value of crowd.values())engagement+=value;
     const steps=distance(post.pubkey);
     const social=follows.has(post.pubkey)||steps===1 ? .65 : steps===2 ? .3 : 0;
-    const interested=[...interests].some(topic=>matchesTopic(post,topic)) ? .45 : 0;
+    const interested=interests.size && hasInterest(post) ? .45 : 0;
     const rawAI=options.ai?.get(post.id);
     // Weak incidental similarities are common on real timelines. They should
     // not amplify an unrelated shop announcement or a topical greeting.
@@ -78,26 +80,40 @@ export function hotScores(posts:readonly Post[], options:HotOptions={}) {
 
 export function rankHot(posts:readonly Post[],options:HotOptions={}) {
   const rows=hotScores(posts,options).sort((a,b)=>b.score-a.score||b.post.created_at-a.post.created_at||a.post.id.localeCompare(b.post.id));
+  const fps=rows.map(row=>fingerprint(row.post));
+  const used=new Uint8Array(rows.length);
   const authors=new Map<string,number>(), topics=new Map<string,number>(), copies=new Set<string>();
   const output:Post[]=[];
+  const limit=Math.min(120,rows.length);
   // Diversity only needs a short frontier. At most 120 * 700 cheap comparisons;
   // no graph traversal, inference, timers, or content tokenization in this loop.
-  while(rows.length && output.length<120) {
-    let best=0, score=-Infinity;
-    const explore=output.length%5===4 && rows.some(row=>row.age<24 && row.engagement===0 && !authors.has(row.post.pubkey) && !options.seen?.has(row.post.id));
+  while(output.length<limit) {
+    let best=-1, score=-Infinity;
+    let explore=false;
+    if(output.length%5===4) {
+      for(let i=0;i<rows.length;i++) {
+        if(used[i])continue;
+        const row=rows[i];
+        if(row.age<24 && row.engagement===0 && !authors.has(row.post.pubkey) && !options.seen?.has(row.post.id)){explore=true;break;}
+      }
+    }
     for(let i=0;i<rows.length;i++) {
+      if(used[i])continue;
       const row=rows[i], post=row.post;
       if(explore && (row.age>=24||row.engagement>0||authors.has(post.pubkey)||options.seen?.has(post.id))) continue;
+      const fp=fps[i];
       const value=row.score*Math.pow(.48,Math.min(4,authors.get(post.pubkey)||0))
         *(options.topic?1:Math.pow(.9,Math.min(5,topics.get(post.topic)||0)))
-        *(fingerprint(post).length>30 && copies.has(fingerprint(post))?.08:1);
+        *(fp.length>30 && copies.has(fp)?.08:1);
       if(value>score) {score=value;best=i;}
     }
-    const {post}=rows.splice(best,1)[0];
+    used[best]=1;
+    const {post}=rows[best];
     output.push(post); authors.set(post.pubkey,(authors.get(post.pubkey)||0)+1);
-    topics.set(post.topic,(topics.get(post.topic)||0)+1); copies.add(fingerprint(post));
+    topics.set(post.topic,(topics.get(post.topic)||0)+1); copies.add(fps[best]);
   }
-  return [...output,...rows.map(row=>row.post)];
+  for(let i=0;i<rows.length;i++)if(!used[i])output.push(rows[i].post);
+  return output;
 }
 
 /** Membership is decided before AI. The model can never pull unrelated posts

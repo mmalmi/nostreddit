@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { bech32 } from '@scure/base';
 import { HashTree, LinkType, MemoryStore, nhashEncode, toHex, fromHex } from '@hashtree/core';
 import { npubEncode } from 'nostr-tools/nip19';
 import { findTreeEmbeds, hasTreeCapability, parseTreeAttachment } from '../src/lib/tree-embeds';
@@ -32,6 +33,14 @@ test('rejects malformed hashes, unsafe paths and third-party or credential-beari
   }
   assert.equal(parseTreeAttachment(nhash+'/image.svg')!.kind,'file');
   assert.equal(parseTreeAttachment(nhash+'/payload.html')!.mime,'application/octet-stream');
+  const raw32 = bech32.encode('nhash', bech32.toWords(new Uint8Array(32).fill(9)), 5000);
+  const v1Key = nhashEncode({hash:new Uint8Array(32).fill(3), key:Uint8Array.of(1, ...new Uint8Array(32).fill(4))});
+  const badSuite = bech32.encode('nhash', bech32.toWords(Uint8Array.of(0, 32, ...new Uint8Array(32).fill(3), 5, 33, 9, ...new Uint8Array(32))), 5000);
+  const truncated = bech32.encode('nhash', bech32.toWords(Uint8Array.of(0, 32, 1, 2, 3)), 5000);
+  assert.ok(parseTreeAttachment(raw32));
+  assert.ok(parseTreeAttachment(v1Key));
+  assert.equal(parseTreeAttachment(badSuite), null);
+  assert.equal(parseTreeAttachment(truncated), null);
 });
 
 async function encryptedFixture() {

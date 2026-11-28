@@ -2,7 +2,7 @@
   import { collectMedia, stripAttachments } from '../lib/media';
   import { findTreeEmbeds } from '../lib/tree-embeds';
   import { noteParts, type NotePart } from '../lib/mentions';
-  import { displayText, paragraphs, type Translations } from '../lib/translation';
+  import { displayText, paragraphs, type Translations } from '../lib/ui';
   import NoteText from './NoteText.svelte';
   import MediaEmbed from './MediaEmbed.svelte';
   import TreeEmbed from './TreeEmbed.svelte';

@@ -118,6 +118,9 @@ export function trimNoteUrl(raw: string): string {
 export function collectMedia(
   content: string, tags: readonly (readonly string[])[], extraUrl = '', eventKind = 1,
 ): MediaItem[] {
+  const hasUrl = /https?:\/\//i.test(content);
+  const pictureKind = eventKind === 20 || eventKind === 21 || eventKind === 22;
+  if (!hasUrl && !extraUrl && !pictureKind) return [];
   const metadata = new Map<string, readonly string[]>();
   for (const tag of tags) {
     if (tag[0] !== 'imeta') continue;
@@ -135,20 +138,23 @@ export function collectMedia(
     const item = mediaItem(url, metadata.get(url.href));
     if (item) items.push(item);
   }
-  for (const match of content.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
-    add(trimNoteUrl(match[0]));
-    if (items.length >= MAX_MEDIA_ITEMS) break;
+  if (hasUrl) {
+    for (const match of content.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
+      add(trimNoteUrl(match[0]));
+      if (items.length >= MAX_MEDIA_ITEMS) break;
+    }
   }
   if (extraUrl) add(extraUrl);
   // Clients can leave obsolete upload metadata in ordinary notes. NIP-68
   // picture posts explicitly identify their attachments through imeta alone.
-  if ([20,21,22].includes(eventKind)) for (const url of metadata.keys()) add(url);
+  if (pictureKind) for (const url of metadata.keys()) add(url);
   return items;
 }
 
 // Match complete URL tokens, including URLs normalized by the browser (for
 // example Unicode paths). Never remove a prefix from a different URL.
 export function stripMediaUrls(text: string, urls: readonly string[]): string {
+  if (!urls.length) return text.trim();
   const embedded = new Set(urls.map(raw => httpUrl(raw)?.href).filter(Boolean));
   return text.replace(/https?:\/\/[^\s<>"']+/gi, raw => {
     const token = trimNoteUrl(raw);
@@ -157,9 +163,10 @@ export function stripMediaUrls(text: string, urls: readonly string[]): string {
 }
 
 export function stripAttachments(text: string, urls: readonly string[]): string {
+  if (!urls.length) return text.trim();
   let clean = stripMediaUrls(text, urls);
-  for (const url of urls.filter(url => !/^https?:\/\//i.test(url) || hasTreeCapability(url))) {
-    clean = clean.split(url).join('');
+  for (const url of urls) {
+    if (!/^https?:\/\//i.test(url) || hasTreeCapability(url)) clean = clean.split(url).join('');
   }
   return clean.trim();
 }

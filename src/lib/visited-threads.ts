@@ -1,4 +1,5 @@
 import type { NostrEvent, NostrFilter } from 'nostr-pubsub';
+import { idbDone, idbValue as result, openDb } from './idb';
 import { asPost, discussionKinds, hexKey, type Post } from './posts';
 
 const maxThreads = 32;
@@ -61,32 +62,17 @@ export function threadRecords(focus: string, events: readonly NostrEvent[]): Nos
 type Stored = {id:string; visited:number; ids:string[]; events:NostrEvent[]};
 type Session = {focus:string; candidates:Map<string,{event:NostrEvent;bytes:number}>; bytes:number; known:Set<string>};
 
-function result<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve,reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
 export class VisitedThreads {
   private sessions = new Map<number,Session>();
   private opening?: Promise<IDBDatabase>;
   constructor(private scope: string) {}
 
   private database() {
-    if (!this.opening) {
-      this.opening = new Promise<IDBDatabase>((resolve,reject) => {
-        const req = indexedDB.open('nostreddit-visited:'+this.scope,1);
-        req.onupgradeneeded = () => {
-          const store = req.result.createObjectStore('threads',{keyPath:'id'});
-          store.createIndex('visited','visited');
-          store.createIndex('eventIds','ids',{multiEntry:true});
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      }).catch(error => {this.opening = undefined; throw error;});
-    }
-    return this.opening;
+    return this.opening ??= openDb('nostreddit-visited:'+this.scope, 1, db => {
+      const store = db.createObjectStore('threads',{keyPath:'id'});
+      store.createIndex('visited','visited');
+      store.createIndex('eventIds','ids',{multiEntry:true});
+    }).catch(error => {this.opening = undefined; throw error;});
   }
 
   async open(watchId:number, focus:string, hydrate:(events:NostrEvent[])=>Promise<void>) {
@@ -138,10 +124,7 @@ export class VisitedThreads {
     // Re-read and merge inside one read/write transaction so two tabs viewing
     // the same discussion cannot clobber each other's newly discovered replies.
     const tx = db.transaction('threads','readwrite');
-    const done = new Promise<void>((resolve,reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = tx.onabort = () => reject(tx.error || new Error('Thread cache update failed.'));
-    });
+    const done = idbDone(tx, 'Thread cache update failed.');
     const store = tx.objectStore('threads');
     const update = async () => {
       const old = await result<Stored | undefined>(store.get(session.focus));

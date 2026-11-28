@@ -63,14 +63,8 @@ export function languageChoices(prefs: Preferences) {
 const literals = /(`[^`\n]*`|(?:[a-z][\w+.-]*:\/\/|nostr:|lightning:|bitcoin:|magnet:|mailto:|www\.|(?:npub|nprofile|naddr|nevent|note|nsec|nhash|lnurl)1|ln(?:bc|tb|bcrt)\d|cashu[AB]|creqA)\S+|\b[\da-f]{64}\b|[\w.+-]+@[\w.-]+\.[\w-]+|#\[\d+\]|[#@][\p{L}\p{M}\p{N}_-]+|:[\w+-]+:)/giu;
 function spans(value: string) { return value.split(literals); }
 function prose(part: string, index: number) { return index % 2 === 0 && /\p{L}/u.test(part); }
-export type Paragraphs = readonly (readonly string[])[];
-export type Translations = ReadonlyMap<string, string>;
-export function paragraphs(...fields: string[]): Paragraphs {
-  return fields.flatMap(field => field.split(/\r?\n/).filter(Boolean).map(line => [line]));
-}
-export function displayText(value: string, translations?: Translations) {
-  return translations ? value.replace(/[^\r\n]+/g, line => translations.get(line) ?? line) : value;
-}
+import type { Paragraphs, Translations } from './ui';
+export { displayText, paragraphs, type Paragraphs, type Translations } from './ui';
 
 type Part = {fields: readonly string[]; pair: Pair; readiness: Availability};
 async function inspect(groups: Paragraphs, recognizer: Detector, prefs: Preferences, signal: AbortSignal) {
@@ -135,6 +129,24 @@ async function translate(plan: Part[], signal: AbortSignal) {
     for (const session of sessions.values()) void session.then(model => model.destroy(), () => {});
   }
 }
+
+function createVisibilityWatcher(options?: IntersectionObserverInit) {
+  const callbacks = new WeakMap<Element, () => void>();
+  let observer: IntersectionObserver | undefined;
+  return (element: Element, onVisible: () => void) => {
+    observer ??= new IntersectionObserver(entries => {
+      for (const entry of entries) if (entry.isIntersecting) {
+        const cb = callbacks.get(entry.target);
+        if (cb) { callbacks.delete(entry.target); observer!.unobserve(entry.target); cb(); }
+      }
+    }, options);
+    callbacks.set(element, onVisible);
+    observer.observe(element);
+    return () => { callbacks.delete(element); observer?.unobserve(element); };
+  };
+}
+const watchSeen = createVisibilityWatcher();
+const watchNear = createVisibilityWatcher({rootMargin: '550px 0px'});
 
 // The button occupies the same space in every state. Only unseen content below
 // the viewport can switch automatically. A late result waits for a click.
@@ -212,14 +224,9 @@ export function attachTranslation(button: HTMLButtonElement, groups: Paragraphs,
     if (nearby) void prepare(false);
   }
   label();
-  const visible = new IntersectionObserver(entries => {
-    if (entries.some(entry => entry.isIntersecting)) { seen = true; visible.disconnect(); }
-  });
-  const near = new IntersectionObserver(entries => {
-    if (entries.some(entry => entry.isIntersecting)) { nearby = true; near.disconnect(); void prepare(false); }
-  }, {rootMargin: '550px 0px'});
-  near.observe(item); visible.observe(item);
+  const stopSeen = watchSeen(item, () => { seen = true; });
+  const stopNear = watchNear(item, () => { nearby = true; void prepare(false); });
   const unsubscribe = onPreferences(reset);
   button.addEventListener('click', click);
-  return () => { run.abort(); near.disconnect(); visible.disconnect(); unsubscribe(); button.removeEventListener('click', click); };
+  return () => { run.abort(); stopNear(); stopSeen(); unsubscribe(); button.removeEventListener('click', click); };
 }

@@ -18,7 +18,7 @@ const startupPreloads = (): Plugin => ({
     return [
       ...Object.keys(bundle ?? {}).filter(file => /^assets\/(relay\.worker|graph-worker)-[^/]+\.js$/.test(file))
         .map(file => link({rel: 'modulepreload', href: '/' + file})),
-      link({rel: 'preload', as: 'fetch', crossorigin: true, href: '/socialGraph.bin?v=' + graph.slice(0, 16)}),
+      link({rel: 'preload', as: 'fetch', crossorigin: true, fetchpriority: 'low', href: '/socialGraph.bin?v=' + graph.slice(0, 16)}),
     ];
   }},
 });

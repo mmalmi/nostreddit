@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { get } from 'svelte/store';
   import RouteView from './RouteView.svelte';
   import { warmGraph } from './lib/graph';
   import { start, clearRelaySearch, signerAuthUrl, cancelSignerRequests } from './lib/network';
   import { watchAppearance } from './lib/appearance';
-  import { watchHotPreferences } from './lib/hot-preferences';
+  import { hotPreferences, watchHotPreferences } from './lib/hot-preferences';
   import { watchFeedPreferences } from './lib/feed-preferences';
+  import { readLocal } from './lib/ui';
 
   type Entry = { id: string; url: string; scroll: number; focus?: HTMLElement;
     from?: string; anchor?: { node: HTMLElement; top: number } };
@@ -90,7 +92,8 @@
 
   onMount(() => {
     const stop = start(location.pathname !== '/');
-    warmGraph();
+    const warmHot = /^\/(?:$|t\/|r\/)/.test(location.pathname) && readLocal<string>('sort', 'Hot') === 'Hot' && get(hotPreferences).connectionStrength;
+    warmGraph(warmHot);
     const stopAppearance = watchAppearance();
     const stopHot = watchHotPreferences();
     const stopFeeds = watchFeedPreferences();

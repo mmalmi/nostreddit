@@ -39,6 +39,14 @@ export function age(time: number) {
     ...(delta > 31536000 ? { year: 'numeric' } : {}),
   });
 }
+export type Paragraphs = readonly (readonly string[])[];
+export type Translations = ReadonlyMap<string, string>;
+export function paragraphs(...fields: string[]): Paragraphs {
+  return fields.flatMap(field => field.split(/\r?\n/).filter(Boolean).map(line => [line]));
+}
+export function displayText(value: string, translations?: Translations) {
+  return translations ? value.replace(/[^\r\n]+/g, line => translations.get(line) ?? line) : value;
+}
 export function readLocal<T>(key: string, fallback: T): T {
   try {
     const value = localStorage.getItem('nostreddit.ui.' + key);

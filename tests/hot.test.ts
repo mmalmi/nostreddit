@@ -106,3 +106,18 @@ test('a full local window ranks quickly without quadratic graph calls',t=>{
   assert.equal(result.length,700);assert.ok(calls<=800);assert.ok(ms<250,`ranking took ${ms}ms`);
   t.diagnostic(`700 posts, 2000 signals: ${ms.toFixed(1)} ms`);
 });
+
+test('identical reactive updates do not reset initial feed paint timers', async t => {
+  const { get } = await import('svelte/store');
+  const { createFeedPresentation } = await import('../src/lib/feed-presentation');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const feed = createFeedPresentation(() => 4);
+  try {
+    feed.update('Hot:home:guest', ['a', 'b'], true, true);
+    t.mock.timers.tick(150);
+    // Repeated identical updates while waiting must not reset the 250ms quiet timer.
+    feed.update('Hot:home:guest', ['a', 'b'], true, true);
+    t.mock.timers.tick(110);
+    assert.deepEqual(get(feed).ids, ['a', 'b']);
+  } finally { feed.destroy(); }
+});

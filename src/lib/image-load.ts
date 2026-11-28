@@ -5,6 +5,17 @@ import { cachedPhoto, rememberPhoto } from './photo-cache';
 interface LoadOptions extends ImageOptions {
   url:string; reset?:()=>void; offline?:boolean; remember?:boolean; unavailable?:()=>void;
 }
+const lazyHandlers = new WeakMap<Element, (visible: boolean) => void>();
+let lazyObserver: IntersectionObserver | undefined;
+function watchLazy(node: Element, onChange: (visible: boolean) => void) {
+  if (typeof IntersectionObserver === 'undefined') return;
+  lazyObserver ??= new IntersectionObserver(entries => {
+    for (const entry of entries) lazyHandlers.get(entry.target)?.(entry.isIntersecting);
+  });
+  lazyHandlers.set(node, onChange);
+  lazyObserver.observe(node);
+  return () => { lazyHandlers.delete(node); lazyObserver?.unobserve(node); };
+}
 export function proxyImage(node:HTMLImageElement, initial:LoadOptions) {
   let options=initial, settings=get(imageProxySettings), version=0, signature='', current='', fallback='', objectUrl='';
   let readingCache=false, visible=node.loading!=='lazy';
@@ -15,10 +26,7 @@ export function proxyImage(node:HTMLImageElement, initial:LoadOptions) {
     if (!visible || !fallback || !current || current===fallback || node.complete && node.naturalWidth) return;
     timer=setTimeout(()=>{if (!document.hidden && !(node.complete && node.naturalWidth)) void error();},2000);
   }
-  const observer=!visible && typeof IntersectionObserver!=='undefined' ? new IntersectionObserver(entries=>{
-    visible=entries.some(entry=>entry.isIntersecting);timeFallback();
-  }) : null;
-  observer?.observe(node);
+  const unwatch = !visible ? watchLazy(node, next => { visible = next; timeFallback(); }) : undefined;
   function releaseObject() {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl='';
@@ -79,7 +87,7 @@ export function proxyImage(node:HTMLImageElement, initial:LoadOptions) {
       if (newlyOpened && version===previousVersion && node.complete && node.naturalWidth) loaded();
     },
     destroy() {
-      version++; stop(); observer?.disconnect(); clearTimeoutForLoad(); node.removeEventListener('error',error); node.removeEventListener('load',loaded);
+      version++; stop(); unwatch?.(); clearTimeoutForLoad(); node.removeEventListener('error',error); node.removeEventListener('load',loaded);
       releaseObject();
     }
   };

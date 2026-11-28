@@ -12,7 +12,10 @@ const keyPattern = /^[0-9a-f]{64}$/i;
 const tokens = /(https?:\/\/[^\s<>]+|(?<![\p{L}\p{N}_/:])(?:nostr:)?(?:npub|nprofile|note|nevent)1[a-z0-9]+(?![\p{L}\p{N}_/])|\b[0-9a-f]{64}\b)/giu;
 
 export function noteParts(text: string, tags: readonly string[][]): NotePart[] {
-  const named = new Set(tags.filter(tag => tag[0] === 'p' && keyPattern.test(tag[1])).map(tag => tag[1]));
+  if (!text) return [];
+  const named = /[0-9a-f]{64}/i.test(text)
+    ? new Set(tags.filter(tag => tag[0] === 'p' && keyPattern.test(tag[1])).map(tag => tag[1]))
+    : undefined;
   return text.split(tokens).filter(Boolean).flatMap<NotePart>(value => {
     if (/^https?:\/\//i.test(value)) {
       const token = trimNoteUrl(value);
@@ -22,7 +25,7 @@ export function noteParts(text: string, tags: readonly string[][]): NotePart[] {
       const link = tree ? {text:tree.name, url:tree.viewerUrl} : {text:token, url:capability ? undefined : safeURL(token)};
       return token.length === value.length ? link : [link, {text:value.slice(token.length)}];
     }
-    if (named.has(value)) return {text:value,person:value};
+    if (named?.has(value)) return {text:value,person:value};
     if (/^(?:nostr:)?(?:npub|nprofile|note|nevent)1[a-z0-9]+$/i.test(value)) {
       try {
         const pointer = decode(value.replace(/^nostr:/i, ''));

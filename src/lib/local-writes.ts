@@ -1,5 +1,6 @@
 import { buildRawProfileDraft, conflictingRawProfileFields, readRawProfileFields } from '@iris/profile-events';
 import type { NostrEvent } from 'nostr-pubsub';
+import { idbDone, idbValue, openDb } from './idb';
 import { relayUrls, testRelays } from './relayTypes';
 
 export type Change = {kind:0; fields:Record<string,unknown>; encoding?:'raw-json'; previous?:Record<string,unknown>} | {kind:3|10000; key:string; enabled:boolean};
@@ -14,36 +15,20 @@ let opening: Promise<IDBDatabase> | undefined;
 export const journalChannel = 'nostreddit-writes:' + scope;
 
 function database() {
-  if (!opening) opening = new Promise<IDBDatabase>((resolve,reject) => {
-    const req = indexedDB.open(journalChannel,1);
-    req.onupgradeneeded = () => {
-      const pending = req.result.createObjectStore('pending',{keyPath:'seq',autoIncrement:true});
-      pending.createIndex('owner','owner');
-      pending.createIndex('eventId','event.id',{unique:true});
-      const saved = req.result.createObjectStore('events',{keyPath:'key'});
-      saved.createIndex('owner','owner');
-      saved.createIndex('saved','saved');
-      req.result.createObjectStore('leases',{keyPath:'owner'});
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+  return opening ??= openDb(journalChannel, 1, db => {
+    const pending = db.createObjectStore('pending',{keyPath:'seq',autoIncrement:true});
+    pending.createIndex('owner','owner');
+    pending.createIndex('eventId','event.id',{unique:true});
+    const saved = db.createObjectStore('events',{keyPath:'key'});
+    saved.createIndex('owner','owner');
+    saved.createIndex('saved','saved');
+    db.createObjectStore('leases',{keyPath:'owner'});
   }).catch(error => {opening = undefined; throw error;});
-  return opening;
 }
-function result<T>(request: IDBRequest<T>) {
-  return new Promise<T>((resolve,reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
+const result = idbValue;
 async function transaction<T>(stores: string[], mode: IDBTransactionMode, run: (tx: IDBTransaction)=>Promise<T>): Promise<T> {
-  const db = await database();
-  const tx = db.transaction(stores,mode);
-  const done = new Promise<void>((resolve,reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onabort = () => reject(tx.error || new Error('Local save was interrupted.'));
-    tx.onerror = () => reject(tx.error);
-  });
+  const tx = (await database()).transaction(stores,mode);
+  const done = idbDone(tx, 'Local save was interrupted.');
   try { const [value] = await Promise.all([run(tx), done]); return value; }
   catch(error) { try {tx.abort();} catch { /* Already finished. */ } throw error; }
 }

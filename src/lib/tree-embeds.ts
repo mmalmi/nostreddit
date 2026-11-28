@@ -1,6 +1,24 @@
 // Iris file shares use the filename after an nhash both for a file CID's label and for a path inside a directory.
-import { nhashDecode } from '@hashtree/core';
+import { bech32 } from '@scure/base';
 import { decode } from 'nostr-tools/nip19';
+
+function validNhash(code: string): boolean {
+  const { prefix, words } = bech32.decode(code as `${string}1${string}`, 5000);
+  if (prefix !== 'nhash') return false;
+  const data = bech32.fromWords(words);
+  if (data.length === 32) return true;
+  let hashLen = 0, key: Uint8Array | undefined;
+  for (let i = 0; i < data.length;) {
+    if (i + 2 > data.length) return false;
+    const type = data[i], len = data[i + 1];
+    i += 2;
+    if (i + len > data.length) return false;
+    if (type === 0 && !hashLen) hashLen = len;
+    else if (type === 5 && !key) key = data.subarray(i, i + len);
+    i += len;
+  }
+  return hashLen === 32 && (!key || key.length === 32 || (key.length === 33 && (key[0] === 1 || key[0] === 2)));
+}
 
 export type TreeKind = 'image' | 'video' | 'audio' | 'file' | 'tree';
 export type TreeAttachment = {
@@ -49,8 +67,9 @@ export function parseTreeAttachment(raw: string): TreeAttachment | null {
   try {
     if (mutable) {
       if (!parts[0] || decode(root).type !== 'npub') return null;
-    } else if (/^nhash1/i.test(root)) nhashDecode(root);
-    else return null;
+    } else if (/^nhash1/i.test(root)) {
+      if (!validNhash(root)) return null;
+    } else return null;
     if (parts.at(-1) === '') parts.pop();
     const path = parts.map(decodeURIComponent);
     if (path.some(s => !s || s.length > 255 || s === '.' || s === '..' || /[\/\\\u0000-\u001f\u007f]/.test(s))) return null;
@@ -65,6 +84,7 @@ export function parseTreeAttachment(raw: string): TreeAttachment | null {
 }
 
 export function findTreeEmbeds(text: string): TreeAttachment[] {
+  if (!/(?:nhash1|npub1|htree:|hashtree:|nhash:|drive\.iris\.to)/i.test(text)) return [];
   const result: TreeAttachment[] = [], seen = new Set<string>();
   // Consume whole HTTP URLs first so an nhash inside an unrelated site's query/path cannot become an embed.
   const tokens = /\b(?:https?:\/\/|(?:htree|hashtree|nhash):\/\/|hashtree:)[^\s<>"'`]+|\b(?:nhash|npub)1[a-z0-9]+(?:\/[^\s<>"'`]*)?/gi;

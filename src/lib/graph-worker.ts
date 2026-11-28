@@ -5,7 +5,7 @@ import { graphRelayPolicy } from './graph-relays';
 import { discoveryGraphMinimum } from './graph-snapshot-policy.js';
 let relayPolicy=graphRelayPolicy([]);
 let bootstrapAbort:AbortController|undefined;
-let authoritative:SocialGraph|undefined, authoritativeVersion=0, renderedVersion=-1;
+let authoritative:SocialGraph|undefined, authoritativeVersion=0, loadedVersion=0, renderedVersion=-1;
 let stopSync:(()=>void)|undefined, syncActive=true;
 let saveTimer:ReturnType<typeof setTimeout>|undefined;
 // Only real list events received during first use belong in the personal overlay.
@@ -55,7 +55,7 @@ async function load() {
   }
   if(refreshBootstrap)bootstrapUpdates=new SocialGraph(snapshotRoot);
   // Untouched packaged fallback stays in memory, so the next visit can retry.
-  persistChange();sync();
+  persistChange();loadedVersion=authoritativeVersion;sync();
   if(refreshBootstrap&&relayPolicy.bootstrap){
     const controller=new AbortController();bootstrapAbort=controller;
     void loadGraphBootstrap({root:snapshotRoot,signal:controller.signal,minUsers:discoveryGraphMinimum(snapshotUsers)}).then(async fresh=>{
@@ -114,39 +114,50 @@ async function render(data:GraphRequest,silent=false) {
     const source=authoritative!;
     await source.setRoot(data.root);
     rememberUpdates(data.events);
-    if(data.events.length&&source.handleEvent(data.events,true)){persistable=true;persistChange();}
-    if(!displayGraph||renderedVersion!==authoritativeVersion){
-      let revision:number, bytes:Uint8Array;
-      do { revision=authoritativeVersion;bytes=await source.toBinary(); } while(revision!==authoritativeVersion);
-      displayGraph=await SocialGraph.fromBinary(data.root,bytes);
-      renderedVersion=revision;overlayOwner='';overlayKey='';undo={};graphRevision++;
-    }
-    const graph=displayGraph;
-    let changed = false;
-    const nextKey=JSON.stringify(data.edges.follows);
-    const updateEdges=data.root!==overlayOwner || nextKey!==overlayKey || data.events.some(e=>e.pubkey===data.root && e.kind===3);
-    if (updateEdges) {
-      for (const [person,wasFollowed] of Object.entries(undo)) setEdge(graph,overlayOwner,person,wasFollowed);
-      changed=Object.keys(undo).length>0;
-      undo={};
-    }
-    if (data.events.length) {
-      await graph.setRoot(data.root);
-      changed = graph.handleEvent(data.events, true) || changed;
-    }
-    if (updateEdges) {
-      overlayOwner=data.root; overlayKey=nextKey;
-      for (const [person,followed] of Object.entries(data.edges.follows)) {
-        if (person===data.root) continue;
-        const current=graph.isFollowing(data.root,person);
-        if (current===followed) continue;
-        undo[person]=current; setEdge(graph,data.root,person,followed); changed=true;
+    let sourceChanged=false;
+    if(data.events.length&&source.handleEvent(data.events,true)){persistable=true;persistChange();sourceChanged=true;}
+    const hasFollowEdits=Object.keys(data.edges.follows).length>0;
+    const needsOverlay=hasFollowEdits||discoveryRoot(source,data.root)!==data.root;
+    let graph:SocialGraph, changed=false;
+    if (!needsOverlay) {
+      graph=source;
+      if (displayGraph) { displayGraph=undefined; overlayOwner=''; overlayKey=''; undo={}; graphRevision++; }
+      if (renderedVersion!==authoritativeVersion) {
+        if (sourceChanged||renderedVersion>=0||authoritativeVersion!==loadedVersion) await graph.recalculateFollowDistances(5000,100000,()=>{});
+        renderedVersion=authoritativeVersion; graphRevision++;
+      }
+    } else {
+      if (!displayGraph||renderedVersion!==authoritativeVersion) {
+        let revision:number, bytes:Uint8Array;
+        do { revision=authoritativeVersion;bytes=await source.toBinary(); } while(revision!==authoritativeVersion);
+        displayGraph=await SocialGraph.fromBinary(data.root,bytes);
+        renderedVersion=revision;overlayOwner='';overlayKey='';undo={};graphRevision++;
+      }
+      graph=displayGraph;
+      const nextKey=JSON.stringify(data.edges.follows);
+      const updateEdges=data.root!==overlayOwner || nextKey!==overlayKey || data.events.some(e=>e.pubkey===data.root && e.kind===3);
+      if (updateEdges) {
+        for (const [person,wasFollowed] of Object.entries(undo)) setEdge(graph,overlayOwner,person,wasFollowed);
+        changed=Object.keys(undo).length>0;
+        undo={};
+      }
+      if (data.events.length) {
+        await graph.setRoot(data.root);
+        changed = graph.handleEvent(data.events, true) || changed;
+      }
+      if (updateEdges) {
+        overlayOwner=data.root; overlayKey=nextKey;
+        for (const [person,followed] of Object.entries(data.edges.follows)) {
+          if (person===data.root) continue;
+          const current=graph.isFollowing(data.root,person);
+          if (current===followed) continue;
+          undo[person]=current; setEdge(graph,data.root,person,followed); changed=true;
+        }
       }
     }
     const effective = discoveryRoot(graph,data.root);
-    if (graph.getRoot() !== effective) await graph.setRoot(effective);
-    else if (changed) await graph.recalculateFollowDistances(5000, 100000, () => {});
-    if(changed)graphRevision++;
+    if (graph.getRoot() !== effective) { await graph.setRoot(effective); graphRevision++; }
+    else if (changed) { await graph.recalculateFollowDistances(5000, 100000, () => {}); graphRevision++; }
     await ranker.update(graph,data.root,data.edges.mutes,graphRevision,data.ranking);
     const badges=badgesFor(graph,data.authors,data.root,data.edges.mutes);
     for(const [author,badge] of Object.entries(badges))badge.influence=ranker.weight(author);

@@ -1,12 +1,22 @@
 <script lang="ts">
-  import { attachTranslation, supported, type Paragraphs, type Translations } from '../lib/translation';
+  import type { Paragraphs, Translations } from '../lib/ui';
+  const supported = 'LanguageDetector' in globalThis && 'Translator' in globalThis;
   export let groups: Paragraphs;
   export let ondisplay: (result?: Translations) => void;
   function attach(button: HTMLButtonElement, paragraphs: Paragraphs) {
-    let stop = attachTranslation(button, paragraphs, ondisplay);
+    let stop = () => {}, current = paragraphs, destroyed = false;
+    let load: Promise<typeof import('../lib/translation')> | undefined;
+    function start(next: Paragraphs) {
+      current = next;
+      stop(); stop = () => {};
+      void (load ??= import('../lib/translation')).then(({ attachTranslation }) => {
+        if (!destroyed && current === next) stop = attachTranslation(button, next, ondisplay);
+      });
+    }
+    start(paragraphs);
     return {
-      update(next: Paragraphs) { stop(); ondisplay(); stop = attachTranslation(button, next, ondisplay); },
-      destroy() { stop(); }
+      update(next: Paragraphs) { ondisplay(); start(next); },
+      destroy() { destroyed = true; stop(); }
     };
   }
 </script>

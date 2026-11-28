@@ -11,14 +11,16 @@
   let shareMenu = false;
   let optionsButton: HTMLButtonElement;
   let trigger: HTMLButtonElement;
-  let menu: HTMLDivElement;
-  let dialog: HTMLDialogElement;
+  let menu: HTMLDivElement | undefined;
+  let dialog: HTMLDialogElement | undefined;
+  let menuOpen = false;
   let open = false;
   $: shareExpanded = open && shareMenu;
   let status = '';
   let raw = '';
   let statusTimer: ReturnType<typeof setTimeout>;
-  onDestroy(() => clearTimeout(statusTimer));
+  const onResize = () => { if (open) closeMenu(false); };
+  onDestroy(() => { clearTimeout(statusTimer); window.removeEventListener('resize', onResize); });
   let left = 0, top = 0;
   // Keep local annotations and application state out of the signed event.
   function eventJSON() {
@@ -33,15 +35,16 @@
     void toggleMenu(button, true);
   }
   async function toggleMenu(button: HTMLButtonElement, sharing = false) {
-    if (menu.matches(':popover-open')) {
+    if (menu?.matches(':popover-open')) {
       closeMenu(false);
       if (trigger === button) return;
     }
     trigger = button;
     shareMenu = sharing;
     status = '';
+    menuOpen = true;
     await tick();
-    if (!button.isConnected) return;
+    if (!button.isConnected || !menu) return;
     menu.showPopover();
     const bounds = button.getBoundingClientRect();
     const panel = menu.getBoundingClientRect();
@@ -50,14 +53,21 @@
     menu.querySelector<HTMLButtonElement>('button')?.focus();
   }
   function closeMenu(restoreFocus = true) {
-    menu.hidePopover();
-    if (restoreFocus) trigger.focus({preventScroll:true});
+    if (menu?.matches(':popover-open')) menu.hidePopover();
+    else { open = false; menuOpen = false; window.removeEventListener('resize', onResize); }
+    if (restoreFocus) trigger?.focus({preventScroll:true});
   }
   function choose(action: string) { closeMenu(); onaction(action, post); }
-  function showRaw() { closeMenu(); raw = eventJSON(); status = ''; dialog.showModal(); }
+  async function showRaw() {
+    closeMenu(false);
+    raw = eventJSON();
+    status = '';
+    await tick();
+    if (dialog && !dialog.open) dialog.showModal();
+  }
   async function copy(value: string, label: string) {
     try { await navigator.clipboard.writeText(value); status = label + ' copied'; }
-    catch { if (!dialog.open) showRaw(); status = 'Could not copy. Select and copy the data below.'; }
+    catch { if (!dialog?.open) await showRaw(); status = 'Could not copy. Select and copy the data below.'; }
     clearTimeout(statusTimer);
     statusTimer = setTimeout(() => status = '', 4000);
   }
@@ -67,6 +77,7 @@
   }
   function menuKeys(event: KeyboardEvent) {
     if (event.key === 'Escape' || event.key === 'Tab') { closeMenu(); return; }
+    if (!menu) return;
     const buttons = [...menu.querySelectorAll<HTMLButtonElement>('button')];
     const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
     const next = event.key === 'ArrowDown' ? (current + 1) % buttons.length :
@@ -76,19 +87,23 @@
     event.preventDefault(); buttons[next].focus();
   }
   function closeOnBackdrop(event: MouseEvent) {
-    if (event.target !== dialog) return;
+    if (!dialog || event.target !== dialog) return;
     const bounds = dialog.getBoundingClientRect();
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
   }
 </script>
 
-<svelte:window onresize={() => { if (open) closeMenu(false); }}/>
 <div class="post-menu">
   <button class="menu-trigger" bind:this={optionsButton} type="button" aria-label="Post options" title="Post options"
     aria-haspopup="menu" aria-expanded={open && !shareMenu} onclick={() => toggleMenu(optionsButton)}><Icon name="more" size={20}/></button>
+  {#if menuOpen}
   <div class="menu-panel" bind:this={menu} popover="auto" role="menu" tabindex="-1" aria-label={shareMenu ? 'Share post' : 'Post options'}
     style:left={left + 'px'} style:top={top + 'px'} onkeydown={menuKeys}
-    ontoggle={event => { open = event.newState === 'open'; }}>
+    ontoggle={event => {
+      open = event.newState === 'open';
+      if (open) window.addEventListener('resize', onResize);
+      else { window.removeEventListener('resize', onResize); if (!menu?.matches(':popover-open')) menuOpen = false; }
+    }}>
     {#if shareMenu}
     <button role="menuitem" onclick={() => choose('copy-link')}><Icon name="link" size={17}/>Copy link</button>
     <button role="menuitem" onclick={() => choose('share')}><Icon name="share" size={17}/>Share via…</button>
@@ -98,23 +113,26 @@
     <button role="menuitem" onclick={() => choose('save')}><Icon name="save" size={17}/>{saved ? 'Remove bookmark' : 'Save post'}</button>
     <button role="menuitem" onclick={() => choose('upvotes')}><Icon name="wave" size={17}/>View reactions</button>
     <div class="divider"></div>
-    <button role="menuitem" onclick={showRaw}><Icon name="tech" size={17}/>View raw event</button>
+    <button role="menuitem" onclick={() => void showRaw()}><Icon name="tech" size={17}/>View raw event</button>
     <button role="menuitem" onclick={() => copyFromMenu(eventJSON(),'Event JSON')}><Icon name="copy" size={17}/>Copy event JSON</button>
     {/if}
   </div>
-  <span class="copy-status" role="status">{!dialog?.open ? status : ''}</span>
+  {/if}
+  <span class="copy-status" role="status">{!raw ? status : ''}</span>
 </div>
 
+{#if raw}
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Native dialog backdrop dismissal.) -->
 <dialog class="raw-event" bind:this={dialog} aria-label="Raw Nostr event" onclick={closeOnBackdrop}
-  onclose={() => { raw = ''; trigger.focus({preventScroll:true}); }}>
+  onclose={() => { raw = ''; trigger?.focus({preventScroll:true}); }}>
   <header><div><h3>Raw event</h3><p>The original signed Nostr data.</p></div>
-    <button type="button" aria-label="Close raw event" onclick={() => dialog.close()}><Icon name="close" size={20}/></button>
+    <button type="button" aria-label="Close raw event" onclick={() => dialog?.close()}><Icon name="close" size={20}/></button>
   </header>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users need to scroll and select the raw data.) -->
   <pre role="region" tabindex="0" aria-label="Event JSON">{raw}</pre>
   <footer><span role="status">{status}</span><button class="copy-json" type="button" onclick={() => copy(raw,'Event JSON')}><Icon name="copy" size={16}/>Copy JSON</button></footer>
 </dialog>
+{/if}
 
 <style>
   .post-menu {margin-left:auto;flex:none}

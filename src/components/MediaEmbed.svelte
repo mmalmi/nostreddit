@@ -4,7 +4,6 @@
   import { imageProxySettings, type ImageProxySettings } from '../lib/image-proxy';
   import type { MediaItem } from '../lib/media';
   import Icon from './Icon.svelte';
-  import ImageViewer from './ImageViewer.svelte';
 
   export let item: MediaItem;
   export let compact = false;
@@ -71,8 +70,10 @@
       </span>
     </a>
     {#if enlargedUrl === item.url}
-      <ImageViewer url={item.url} alt={viewerAlt(item)} items={viewerItems}
-        start={viewerItems.findIndex(image => image.url === item.url)} onclose={() => enlargedUrl = ''}/>
+      {#await import('./ImageViewer.svelte') then { default: ImageViewer }}
+        <ImageViewer url={item.url} alt={viewerAlt(item)} items={viewerItems}
+          start={viewerItems.findIndex(image => image.url === item.url)} onclose={() => enlargedUrl = ''}/>
+      {/await}
     {/if}
   {:else}
     {#if (compact || provider || item.clickToLoad) && !expanded}
